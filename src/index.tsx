@@ -13,6 +13,7 @@ type Bindings = {
   MAILERSEND_API_KEY: string;
   MAILERSEND_FROM_EMAIL: string;
   MAILERSEND_FROM_NAME: string;
+  DB: D1Database;
 }
 
 type Variables = {
