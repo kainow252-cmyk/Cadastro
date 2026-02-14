@@ -416,12 +416,13 @@ app.get('/cadastro/:linkId', (c) => {
                                 
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-2">
-                                        Tipo de Empresa
+                                        Tipo de Pessoa/Empresa
                                     </label>
                                     <select name="companyType"
                                         class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition">
-                                        <option value="">Não se aplica</option>
-                                        <option value="MEI">MEI</option>
+                                        <option value="">Selecione...</option>
+                                        <option value="">Pessoa Física</option>
+                                        <option value="MEI">MEI - Microempreendedor Individual</option>
                                         <option value="LIMITED">Limitada</option>
                                         <option value="INDIVIDUAL">Individual</option>
                                         <option value="ASSOCIATION">Associação</option>
@@ -889,12 +890,13 @@ app.get('/', (c) => {
                                 
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-2">
-                                        Tipo de Empresa
+                                        Tipo de Pessoa/Empresa
                                     </label>
                                     <select name="companyType"
                                         class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
                                         <option value="">Selecione...</option>
-                                        <option value="MEI">MEI</option>
+                                        <option value="">Pessoa Física</option>
+                                        <option value="MEI">MEI - Microempreendedor Individual</option>
                                         <option value="LIMITED">Limitada</option>
                                         <option value="INDIVIDUAL">Individual</option>
                                         <option value="ASSOCIATION">Associação</option>
