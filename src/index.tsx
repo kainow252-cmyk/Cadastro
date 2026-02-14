@@ -126,6 +126,346 @@ app.post('/api/signup-link', async (c) => {
   }
 })
 
+// Página de cadastro público
+app.get('/cadastro/:linkId', (c) => {
+  const linkId = c.req.param('linkId')
+  
+  // Extrair accountId do linkId (formato: accountId-timestamp-random)
+  const accountId = linkId.split('-')[0]
+  
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Cadastro - Asaas</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    </head>
+    <body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
+        <div class="container mx-auto px-4 py-8">
+            <div class="max-w-3xl mx-auto">
+                <!-- Header -->
+                <div class="text-center mb-8">
+                    <div class="inline-block bg-white rounded-full p-4 shadow-lg mb-4">
+                        <i class="fas fa-building text-blue-600 text-4xl"></i>
+                    </div>
+                    <h1 class="text-4xl font-bold text-gray-800 mb-2">Bem-vindo!</h1>
+                    <p class="text-gray-600 text-lg">Complete seu cadastro para começar</p>
+                </div>
+
+                <!-- Form Card -->
+                <div class="bg-white rounded-2xl shadow-xl p-8">
+                    <div class="mb-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="text-2xl font-bold text-gray-800">
+                                <i class="fas fa-user-plus mr-2 text-blue-600"></i>
+                                Dados do Cadastro
+                            </h2>
+                            <span class="text-xs bg-blue-100 text-blue-800 px-3 py-1 rounded-full">
+                                <i class="fas fa-shield-alt mr-1"></i>Seguro
+                            </span>
+                        </div>
+                        <p class="text-sm text-gray-500">
+                            <i class="fas fa-info-circle mr-1"></i>
+                            Todos os seus dados são protegidos e criptografados
+                        </p>
+                    </div>
+
+                    <form id="signup-form" class="space-y-6">
+                        <input type="hidden" id="account-id" value="${accountId}">
+                        <input type="hidden" id="link-id" value="${linkId}">
+
+                        <!-- Dados Pessoais -->
+                        <div class="border-l-4 border-blue-500 pl-4">
+                            <h3 class="text-lg font-semibold text-gray-700 mb-4">
+                                <i class="fas fa-user mr-2"></i>Dados Pessoais
+                            </h3>
+                            
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Nome Completo *
+                                    </label>
+                                    <input type="text" name="name" required
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                                        placeholder="Seu nome completo">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Email *
+                                    </label>
+                                    <input type="email" name="email" required
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                                        placeholder="seu@email.com">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        CPF *
+                                    </label>
+                                    <input type="text" name="cpfCnpj" required maxlength="14"
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                                        placeholder="000.000.000-00">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Data de Nascimento *
+                                    </label>
+                                    <input type="date" name="birthDate" required
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Telefone
+                                    </label>
+                                    <input type="text" name="phone"
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                                        placeholder="(11) 3230-0606">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Celular *
+                                    </label>
+                                    <input type="text" name="mobilePhone" required
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                                        placeholder="(11) 98845-1155">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Endereço -->
+                        <div class="border-l-4 border-green-500 pl-4">
+                            <h3 class="text-lg font-semibold text-gray-700 mb-4">
+                                <i class="fas fa-map-marker-alt mr-2"></i>Endereço
+                            </h3>
+                            
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        CEP *
+                                    </label>
+                                    <input type="text" name="postalCode" required maxlength="9"
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                                        placeholder="00000-000">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Rua *
+                                    </label>
+                                    <input type="text" name="address" required
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                                        placeholder="Nome da rua">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Número *
+                                    </label>
+                                    <input type="text" name="addressNumber" required
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                                        placeholder="123">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Complemento
+                                    </label>
+                                    <input type="text" name="complement"
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                                        placeholder="Apto, sala, etc">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Bairro *
+                                    </label>
+                                    <input type="text" name="province" required
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                                        placeholder="Nome do bairro">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Tipo de Empresa
+                                    </label>
+                                    <select name="companyType"
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition">
+                                        <option value="">Não se aplica</option>
+                                        <option value="MEI">MEI</option>
+                                        <option value="LIMITED">Limitada</option>
+                                        <option value="INDIVIDUAL">Individual</option>
+                                        <option value="ASSOCIATION">Associação</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Terms -->
+                        <div class="bg-gray-50 rounded-lg p-4">
+                            <label class="flex items-start cursor-pointer">
+                                <input type="checkbox" id="terms" required
+                                    class="mt-1 mr-3 w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <span class="text-sm text-gray-700">
+                                    Eu li e aceito os 
+                                    <a href="#" class="text-blue-600 hover:text-blue-700 font-medium">termos de uso</a> 
+                                    e a 
+                                    <a href="#" class="text-blue-600 hover:text-blue-700 font-medium">política de privacidade</a>
+                                </span>
+                            </label>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <div class="pt-4">
+                            <button type="submit"
+                                class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-4 rounded-lg font-semibold text-lg hover:from-blue-700 hover:to-indigo-700 transform hover:scale-[1.02] transition-all shadow-lg">
+                                <i class="fas fa-check-circle mr-2"></i>
+                                Completar Cadastro
+                            </button>
+                        </div>
+                    </form>
+
+                    <!-- Result Message -->
+                    <div id="result" class="mt-6 hidden"></div>
+                </div>
+
+                <!-- Footer -->
+                <div class="text-center mt-8 text-gray-600 text-sm">
+                    <p>
+                        <i class="fas fa-lock mr-1"></i>
+                        Seus dados são protegidos e criptografados
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script>
+            // Máscara para CPF
+            document.querySelector('[name="cpfCnpj"]').addEventListener('input', function(e) {
+                let value = e.target.value.replace(/\\D/g, '');
+                if (value.length <= 11) {
+                    value = value.replace(/(\\d{3})(\\d{3})(\\d{3})(\\d{2})/, '$1.$2.$3-$4');
+                } else {
+                    value = value.substring(0, 14);
+                    value = value.replace(/(\\d{2})(\\d{3})(\\d{3})(\\d{4})(\\d{2})/, '$1.$2.$3/$4-$5');
+                }
+                e.target.value = value;
+            });
+
+            // Máscara para CEP
+            document.querySelector('[name="postalCode"]').addEventListener('input', function(e) {
+                let value = e.target.value.replace(/\\D/g, '');
+                value = value.replace(/(\\d{5})(\\d{3})/, '$1-$2');
+                e.target.value = value;
+            });
+
+            // Máscara para telefone
+            document.querySelectorAll('[name="phone"], [name="mobilePhone"]').forEach(input => {
+                input.addEventListener('input', function(e) {
+                    let value = e.target.value.replace(/\\D/g, '');
+                    if (value.length <= 10) {
+                        value = value.replace(/(\\d{2})(\\d{4})(\\d{4})/, '($1) $2-$3');
+                    } else {
+                        value = value.replace(/(\\d{2})(\\d{5})(\\d{4})/, '($1) $2-$3');
+                    }
+                    e.target.value = value;
+                });
+            });
+
+            // Submit form
+            document.getElementById('signup-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const formData = new FormData(e.target);
+                const data = Object.fromEntries(formData.entries());
+                
+                // Remover formatação de CPF, CEP e telefones
+                data.cpfCnpj = data.cpfCnpj.replace(/\\D/g, '');
+                data.postalCode = data.postalCode.replace(/\\D/g, '');
+                if (data.phone) data.phone = data.phone.replace(/\\D/g, '');
+                if (data.mobilePhone) data.mobilePhone = data.mobilePhone.replace(/\\D/g, '');
+                
+                // Remover campos vazios
+                Object.keys(data).forEach(key => {
+                    if (!data[key] || data[key] === '') delete data[key];
+                });
+                
+                const resultDiv = document.getElementById('result');
+                const submitBtn = e.target.querySelector('button[type="submit"]');
+                
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Processando...';
+                
+                resultDiv.innerHTML = \`
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <p class="text-blue-800 text-center">
+                            <i class="fas fa-spinner fa-spin mr-2"></i>
+                            Criando sua conta...
+                        </p>
+                    </div>
+                \`;
+                resultDiv.classList.remove('hidden');
+                
+                try {
+                    const response = await axios.post('/api/accounts', data);
+                    
+                    if (response.data.ok && response.data.data) {
+                        const account = response.data.data;
+                        resultDiv.innerHTML = \`
+                            <div class="bg-green-50 border border-green-200 rounded-lg p-6">
+                                <div class="text-center mb-4">
+                                    <i class="fas fa-check-circle text-green-600 text-5xl mb-3"></i>
+                                    <h3 class="text-2xl font-bold text-green-800 mb-2">Cadastro Concluído!</h3>
+                                    <p class="text-green-700">Sua conta foi criada com sucesso</p>
+                                </div>
+                                <div class="bg-white rounded-lg p-4 space-y-2">
+                                    <p class="text-sm"><strong>Nome:</strong> \${account.name}</p>
+                                    <p class="text-sm"><strong>Email:</strong> \${account.email}</p>
+                                    <p class="text-sm"><strong>ID da Conta:</strong> <code class="bg-gray-100 px-2 py-1 rounded">\${account.id}</code></p>
+                                    \${account.walletId ? \`<p class="text-sm"><strong>Wallet ID:</strong> <code class="bg-gray-100 px-2 py-1 rounded">\${account.walletId}</code></p>\` : ''}
+                                </div>
+                                <div class="mt-4 text-center">
+                                    <p class="text-sm text-gray-600 mb-3">
+                                        <i class="fas fa-envelope mr-2"></i>
+                                        Verifique seu email para definir sua senha de acesso
+                                    </p>
+                                </div>
+                            </div>
+                        \`;
+                        e.target.reset();
+                    } else {
+                        throw new Error(response.data.data?.errors?.[0]?.description || response.data.data?.message || 'Erro ao criar conta');
+                    }
+                } catch (error) {
+                    resultDiv.innerHTML = \`
+                        <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+                            <h3 class="text-lg font-semibold text-red-800 mb-2">
+                                <i class="fas fa-exclamation-circle mr-2"></i>Erro no Cadastro
+                            </h3>
+                            <p class="text-red-700 text-sm">\${error.response?.data?.data?.errors?.[0]?.description || error.message}</p>
+                            <button onclick="document.getElementById('result').classList.add('hidden')" 
+                                class="mt-3 text-sm text-red-600 hover:text-red-700 font-medium">
+                                <i class="fas fa-times mr-1"></i>Tentar novamente
+                            </button>
+                        </div>
+                    \`;
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="fas fa-check-circle mr-2"></i>Completar Cadastro';
+                }
+            });
+        </script>
+    </body>
+    </html>
+  `)
+})
+
 // Homepage
 app.get('/', (c) => {
   return c.html(`
