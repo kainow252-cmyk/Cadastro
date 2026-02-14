@@ -427,6 +427,24 @@ app.get('/cadastro/:linkId', (c) => {
                                         <option value="ASSOCIATION">Associação</option>
                                     </select>
                                 </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Renda/Faturamento Mensal *
+                                    </label>
+                                    <select name="incomeValue" required
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition">
+                                        <option value="">Selecione...</option>
+                                        <option value="500">Até R$ 500</option>
+                                        <option value="1000">R$ 500 a R$ 1.000</option>
+                                        <option value="2000">R$ 1.000 a R$ 2.000</option>
+                                        <option value="5000">R$ 2.000 a R$ 5.000</option>
+                                        <option value="10000">R$ 5.000 a R$ 10.000</option>
+                                        <option value="20000">R$ 10.000 a R$ 20.000</option>
+                                        <option value="50000">R$ 20.000 a R$ 50.000</option>
+                                        <option value="100000">Acima de R$ 50.000</option>
+                                    </select>
+                                </div>
                             </div>
                         </div>
 
@@ -908,6 +926,24 @@ app.get('/', (c) => {
                                     <input type="text" name="postalCode"
                                         placeholder="89223005"
                                         class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Renda/Faturamento Mensal *
+                                    </label>
+                                    <select name="incomeValue" required
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                        <option value="">Selecione...</option>
+                                        <option value="500">Até R$ 500</option>
+                                        <option value="1000">R$ 500 a R$ 1.000</option>
+                                        <option value="2000">R$ 1.000 a R$ 2.000</option>
+                                        <option value="5000">R$ 2.000 a R$ 5.000</option>
+                                        <option value="10000">R$ 5.000 a R$ 10.000</option>
+                                        <option value="20000">R$ 10.000 a R$ 20.000</option>
+                                        <option value="50000">R$ 20.000 a R$ 50.000</option>
+                                        <option value="100000">Acima de R$ 50.000</option>
+                                    </select>
                                 </div>
                             </div>
                             
