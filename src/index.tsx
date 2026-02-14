@@ -29,7 +29,8 @@ async function asaasRequest(
     method,
     headers: {
       'Content-Type': 'application/json',
-      'access_token': apiKey
+      'access_token': apiKey,
+      'User-Agent': 'AsaasManager/1.0'
     }
   }
   
@@ -37,13 +38,29 @@ async function asaasRequest(
     options.body = JSON.stringify(body)
   }
   
-  const response = await fetch(`${apiUrl}${endpoint}`, options)
-  const data = await response.json()
-  
-  return {
-    ok: response.ok,
-    status: response.status,
-    data
+  try {
+    const response = await fetch(`${apiUrl}${endpoint}`, options)
+    const text = await response.text()
+    
+    let data
+    try {
+      data = JSON.parse(text)
+    } catch (e) {
+      // Se não for JSON, retorna o texto
+      data = { message: text }
+    }
+    
+    return {
+      ok: response.ok,
+      status: response.status,
+      data
+    }
+  } catch (error: any) {
+    return {
+      ok: false,
+      status: 500,
+      data: { error: error.message }
+    }
   }
 }
 
