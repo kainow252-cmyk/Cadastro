@@ -68,9 +68,10 @@ async function authMiddleware(c: any, next: any) {
   await next()
 }
 
-// Apply auth middleware to all /api/* routes except login
+// Apply auth middleware to all /api/* routes except public routes
 app.use('/api/*', async (c, next) => {
-  if (c.req.path === '/api/login' || c.req.path === '/api/check-auth') {
+  const publicRoutes = ['/api/login', '/api/check-auth', '/api/public/signup']
+  if (publicRoutes.includes(c.req.path)) {
     return next()
   }
   return authMiddleware(c, next)
@@ -187,6 +188,17 @@ app.get('/api/check-auth', async (c) => {
     authenticated: true, 
     user: { username: payload.username }
   })
+})
+
+// Public signup route (sem autenticação) - usado pela página pública de cadastro
+app.post('/api/public/signup', async (c) => {
+  try {
+    const body = await c.req.json()
+    const result = await asaasRequest(c, '/accounts', 'POST', body)
+    return c.json(result)
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
 })
 
 // Listar subcontas
@@ -556,7 +568,7 @@ app.get('/cadastro/:linkId', (c) => {
                 resultDiv.classList.remove('hidden');
                 
                 try {
-                    const response = await axios.post('/api/accounts', data);
+                    const response = await axios.post('/api/public/signup', data);
                     
                     if (response.data.ok && response.data.data) {
                         const account = response.data.data;
