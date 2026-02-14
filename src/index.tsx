@@ -412,7 +412,7 @@ app.get('/api/accounts/:id', async (c) => {
 // Gerar link de cadastro (retorna dados formatados)
 app.post('/api/signup-link', async (c) => {
   try {
-    const { accountId, expirationDays = 7 } = await c.req.json()
+    const { accountId, expirationDays = 7, maxUses = null, notes = '' } = await c.req.json()
     
     // Criar data de expiração
     const expirationDate = new Date()
@@ -420,18 +420,176 @@ app.post('/api/signup-link', async (c) => {
     
     // Gerar ID único para o link
     const linkId = `${accountId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    const url = `${c.req.url.split('/api')[0]}/cadastro/${linkId}`
     
-    // Em produção, isso seria salvo em D1 ou KV
+    // Obter usuário autenticado
+    const user = c.get('user')
+    const createdBy = user?.username || 'system'
+    
+    // Salvar no banco D1
+    await c.env.DB.prepare(`
+      INSERT INTO signup_links 
+      (id, account_id, url, expires_at, created_by, max_uses, notes, active)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+    `).bind(
+      linkId,
+      accountId,
+      url,
+      expirationDate.toISOString(),
+      createdBy,
+      maxUses,
+      notes
+    ).run()
+    
     const link = {
       id: linkId,
       accountId,
-      url: `${c.req.url.split('/api')[0]}/cadastro/${linkId}`,
+      url,
       expiresAt: expirationDate.toISOString(),
       createdAt: new Date().toISOString(),
-      active: true
+      active: true,
+      usesCount: 0,
+      maxUses,
+      notes
     }
     
     return c.json({ ok: true, data: link })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Listar todos os links
+app.get('/api/signup-links', async (c) => {
+  try {
+    const { status, search, accountId } = c.req.query()
+    
+    let query = 'SELECT * FROM signup_links WHERE 1=1'
+    const params: any[] = []
+    
+    if (status === 'active') {
+      query += ' AND active = 1 AND datetime(expires_at) > datetime("now")'
+    } else if (status === 'expired') {
+      query += ' AND datetime(expires_at) <= datetime("now")'
+    } else if (status === 'disabled') {
+      query += ' AND active = 0'
+    }
+    
+    if (search) {
+      query += ' AND (id LIKE ? OR account_id LIKE ? OR notes LIKE ?)'
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`)
+    }
+    
+    if (accountId) {
+      query += ' AND account_id = ?'
+      params.push(accountId)
+    }
+    
+    query += ' ORDER BY created_at DESC'
+    
+    const stmt = params.length > 0 
+      ? c.env.DB.prepare(query).bind(...params)
+      : c.env.DB.prepare(query)
+    
+    const result = await stmt.all()
+    
+    return c.json({ ok: true, data: result.results })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Obter detalhes de um link específico
+app.get('/api/signup-links/:id', async (c) => {
+  try {
+    const linkId = c.req.param('id')
+    
+    const link = await c.env.DB.prepare(`
+      SELECT * FROM signup_links WHERE id = ?
+    `).bind(linkId).first()
+    
+    if (!link) {
+      return c.json({ error: 'Link não encontrado' }, 404)
+    }
+    
+    return c.json({ ok: true, data: link })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Atualizar link (ativar/desativar)
+app.patch('/api/signup-links/:id', async (c) => {
+  try {
+    const linkId = c.req.param('id')
+    const { active, notes } = await c.req.json()
+    
+    const updates: string[] = []
+    const params: any[] = []
+    
+    if (typeof active !== 'undefined') {
+      updates.push('active = ?')
+      params.push(active ? 1 : 0)
+    }
+    
+    if (typeof notes !== 'undefined') {
+      updates.push('notes = ?')
+      params.push(notes)
+    }
+    
+    if (updates.length === 0) {
+      return c.json({ error: 'Nenhum campo para atualizar' }, 400)
+    }
+    
+    params.push(linkId)
+    
+    await c.env.DB.prepare(`
+      UPDATE signup_links 
+      SET ${updates.join(', ')}
+      WHERE id = ?
+    `).bind(...params).run()
+    
+    return c.json({ ok: true, message: 'Link atualizado com sucesso' })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Excluir link
+app.delete('/api/signup-links/:id', async (c) => {
+  try {
+    const linkId = c.req.param('id')
+    
+    await c.env.DB.prepare(`
+      DELETE FROM signup_links WHERE id = ?
+    `).bind(linkId).run()
+    
+    return c.json({ ok: true, message: 'Link excluído com sucesso' })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Analytics de um link específico
+app.get('/api/signup-links/:id/analytics', async (c) => {
+  try {
+    const linkId = c.req.param('id')
+    
+    const conversions = await c.env.DB.prepare(`
+      SELECT COUNT(*) as count FROM link_conversions WHERE link_id = ?
+    `).bind(linkId).first()
+    
+    const link = await c.env.DB.prepare(`
+      SELECT uses_count FROM signup_links WHERE id = ?
+    `).bind(linkId).first()
+    
+    const analytics = {
+      views: link?.uses_count || 0,
+      started: Math.floor((link?.uses_count || 0) * 0.6), // Estimativa
+      conversions: conversions?.count || 0
+    }
+    
+    return c.json({ ok: true, data: analytics })
   } catch (error: any) {
     return c.json({ error: error.message }, 500)
   }
