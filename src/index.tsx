@@ -10,6 +10,9 @@ type Bindings = {
   ADMIN_USERNAME: string;
   ADMIN_PASSWORD: string;
   JWT_SECRET: string;
+  MAILERSEND_API_KEY: string;
+  MAILERSEND_FROM_EMAIL: string;
+  MAILERSEND_FROM_NAME: string;
 }
 
 type Variables = {
@@ -76,6 +79,152 @@ app.use('/api/*', async (c, next) => {
   }
   return authMiddleware(c, next)
 })
+
+// Helper function to send welcome email via Mailersend
+async function sendWelcomeEmail(
+  c: any,
+  name: string,
+  email: string,
+  accountId: string,
+  walletId?: string
+) {
+  const apiKey = c.env.MAILERSEND_API_KEY
+  const fromEmail = c.env.MAILERSEND_FROM_EMAIL
+  const fromName = c.env.MAILERSEND_FROM_NAME
+  
+  const emailData = {
+    from: {
+      email: fromEmail,
+      name: fromName
+    },
+    to: [
+      {
+        email: email,
+        name: name
+      }
+    ],
+    subject: "Bem-vindo ao Asaas - Conta Criada com Sucesso! 🎉",
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+          .info-box { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #667eea; }
+          .button { display: inline-block; background: #667eea; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+          .footer { text-align: center; margin-top: 30px; color: #666; font-size: 12px; }
+          h1 { margin: 0; font-size: 28px; }
+          h2 { color: #667eea; }
+          .highlight { background: #fff3cd; padding: 2px 6px; border-radius: 3px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>🎉 Bem-vindo ao Asaas!</h1>
+            <p>Sua conta foi criada com sucesso</p>
+          </div>
+          
+          <div class="content">
+            <h2>Olá, ${name}! 👋</h2>
+            
+            <p>É um prazer tê-lo(a) conosco! Sua conta no Asaas foi criada e está pronta para uso.</p>
+            
+            <div class="info-box">
+              <h3 style="margin-top: 0;">📋 Informações da sua conta:</h3>
+              <p><strong>Nome:</strong> ${name}</p>
+              <p><strong>Email:</strong> ${email}</p>
+              <p><strong>ID da Conta:</strong> <code class="highlight">${accountId}</code></p>
+              ${walletId ? `<p><strong>Wallet ID:</strong> <code class="highlight">${walletId}</code></p>` : ''}
+            </div>
+            
+            <h3>🚀 Próximos Passos:</h3>
+            <ol>
+              <li><strong>Verifique seu email</strong> do Asaas para definir sua senha de acesso</li>
+              <li><strong>Acesse o painel</strong> Asaas com suas credenciais</li>
+              <li><strong>Complete seu perfil</strong> e configure sua conta</li>
+              <li><strong>Comece a usar</strong> todos os recursos disponíveis</li>
+            </ol>
+            
+            <div style="text-align: center;">
+              <a href="https://www.asaas.com" class="button">Acessar Painel Asaas</a>
+            </div>
+            
+            <div class="info-box" style="background: #e7f3ff; border-left-color: #2196F3;">
+              <h3 style="margin-top: 0; color: #2196F3;">💡 Dica:</h3>
+              <p>Guarde suas credenciais em local seguro e nunca as compartilhe com terceiros.</p>
+            </div>
+            
+            <h3>📞 Precisa de Ajuda?</h3>
+            <p>Nossa equipe está sempre disponível para ajudá-lo(a):</p>
+            <ul>
+              <li>📧 Email: suporte@asaas.com</li>
+              <li>📱 Telefone: (11) 4950-2819</li>
+              <li>💬 Chat: Disponível no painel Asaas</li>
+            </ul>
+          </div>
+          
+          <div class="footer">
+            <p>© ${new Date().getFullYear()} Gerenciador Asaas. Todos os direitos reservados.</p>
+            <p>Este é um email automático, por favor não responda.</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+    text: `
+      Bem-vindo ao Asaas, ${name}!
+      
+      Sua conta foi criada com sucesso.
+      
+      Informações da conta:
+      - Nome: ${name}
+      - Email: ${email}
+      - ID da Conta: ${accountId}
+      ${walletId ? `- Wallet ID: ${walletId}` : ''}
+      
+      Próximos passos:
+      1. Verifique seu email do Asaas para definir sua senha
+      2. Acesse o painel Asaas
+      3. Complete seu perfil
+      4. Comece a usar!
+      
+      Precisa de ajuda? Entre em contato:
+      Email: suporte@asaas.com
+      Telefone: (11) 4950-2819
+      
+      Atenciosamente,
+      Equipe Gerenciador Asaas
+    `
+  }
+  
+  try {
+    const response = await fetch('https://api.mailersend.com/v1/email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify(emailData)
+    })
+    
+    return {
+      ok: response.ok,
+      status: response.status
+    }
+  } catch (error) {
+    console.error('Erro ao enviar email:', error)
+    return {
+      ok: false,
+      status: 500
+    }
+  }
+}
 
 // Helper function to make Asaas API calls
 async function asaasRequest(
@@ -195,6 +344,19 @@ app.post('/api/public/signup', async (c) => {
   try {
     const body = await c.req.json()
     const result = await asaasRequest(c, '/accounts', 'POST', body)
+    
+    // Se a conta foi criada com sucesso, enviar email de boas-vindas
+    if (result.ok && result.data && result.data.id) {
+      const account = result.data
+      await sendWelcomeEmail(
+        c,
+        account.name,
+        account.email,
+        account.id,
+        account.walletId
+      )
+    }
+    
     return c.json(result)
   } catch (error: any) {
     return c.json({ error: error.message }, 500)
@@ -216,6 +378,19 @@ app.post('/api/accounts', async (c) => {
   try {
     const body = await c.req.json()
     const result = await asaasRequest(c, '/accounts', 'POST', body)
+    
+    // Se a conta foi criada com sucesso, enviar email de boas-vindas
+    if (result.ok && result.data && result.data.id) {
+      const account = result.data
+      await sendWelcomeEmail(
+        c,
+        account.name,
+        account.email,
+        account.id,
+        account.walletId
+      )
+    }
+    
     return c.json(result)
   } catch (error: any) {
     return c.json({ error: error.message }, 500)
