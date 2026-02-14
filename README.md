@@ -57,6 +57,14 @@ Sistema completo para gerenciamento de contas e subcontas da API Asaas, com gera
 - ✅ Botão de logout no dashboard
 - ✅ Sessão válida por 24 horas
 
+### 7. Email de Boas-Vindas Automático
+- ✅ Envio automático via Mailersend
+- ✅ Template HTML profissional e responsivo
+- ✅ Informações da conta criada
+- ✅ Instruções de próximos passos
+- ✅ Links úteis e contato de suporte
+- ✅ Enviado tanto para cadastro público quanto admin
+
 ## 📡 Endpoints da API
 
 ### Subcontas
@@ -115,6 +123,9 @@ ASAAS_API_URL=https://api-sandbox.asaas.com/v3
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=admin123
 JWT_SECRET=sua-chave-secreta-super-segura-mude-em-producao
+MAILERSEND_API_KEY=seu_token_mailersend
+MAILERSEND_FROM_EMAIL=noreply@seu-dominio.com
+MAILERSEND_FROM_NAME=Gerenciador Asaas
 ```
 
 **IMPORTANTE**: Altere estas credenciais em produção!
