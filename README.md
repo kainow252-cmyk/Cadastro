@@ -39,6 +39,15 @@ Sistema completo para gerenciamento de contas e subcontas da API Asaas, com gera
 - ✅ Visualizar data de criação e expiração
 - ✅ Listar todos os links criados
 
+### 5. Página Pública de Cadastro
+- ✅ Interface moderna e responsiva para cadastro
+- ✅ Formulário completo com validação
+- ✅ Máscaras automáticas para CPF, CEP e telefones
+- ✅ Design intuitivo com gradient e cards
+- ✅ Feedback visual de sucesso/erro
+- ✅ Processamento em tempo real
+- ✅ Aceite de termos de uso
+
 ## 📡 Endpoints da API
 
 ### Subcontas
@@ -49,6 +58,9 @@ Sistema completo para gerenciamento de contas e subcontas da API Asaas, com gera
 ### Links de Cadastro
 - `POST /api/signup-link` - Gerar link de cadastro
   - Body: `{ accountId: string, expirationDays: number }`
+
+### Páginas Públicas
+- `GET /cadastro/:linkId` - Página de cadastro público via link gerado
 
 ## 🏗️ Arquitetura
 
@@ -133,11 +145,23 @@ npm run deploy:prod
 4. Clique em "Gerar Link"
 5. Use o botão "Copiar" para compartilhar o link
 
+### 4. Usar o Link de Cadastro Público
+1. Compartilhe o link gerado com o cliente/parceiro
+2. Eles acessam o link e preenchem o formulário de cadastro
+3. Os dados são validados e máscaras aplicadas automaticamente (CPF, CEP, telefones)
+4. Após submissão, a conta é criada no Asaas
+5. Cliente recebe email de boas-vindas com instruções para definir senha
+
+**Exemplo de link:**
+```
+https://seu-dominio.com/cadastro/62118294-2d2b-4df7-b4a1-af31fa80e065-1771102043405-8dh2tnxbu
+```
+
 ## 🔄 Próximos Passos Recomendados
 
 ### Funcionalidades Pendentes
 - [ ] Persistência de links em banco de dados (D1 ou KV)
-- [ ] Página de cadastro pública usando os links gerados
+- [ ] Validação de expiração de links
 - [ ] Edição de subcontas existentes
 - [ ] Exclusão de subcontas
 - [ ] Webhooks para notificações
