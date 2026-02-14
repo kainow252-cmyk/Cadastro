@@ -1,3 +1,29 @@
+// Check authentication on page load
+async function checkAuth() {
+    try {
+        const response = await axios.get('/api/check-auth');
+        if (!response.data.authenticated) {
+            window.location.href = '/login';
+        }
+        return response.data;
+    } catch (error) {
+        window.location.href = '/login';
+    }
+}
+
+// Logout function
+async function logout() {
+    if (confirm('Deseja realmente sair?')) {
+        try {
+            await axios.post('/api/logout');
+            window.location.href = '/login';
+        } catch (error) {
+            console.error('Erro ao fazer logout:', error);
+            window.location.href = '/login';
+        }
+    }
+}
+
 // Navigation
 function showSection(section) {
     document.querySelectorAll('.section').forEach(s => s.classList.add('hidden'));
@@ -95,7 +121,11 @@ async function loadAccounts() {
 }
 
 // Create Account
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    // Check authentication first
+    await checkAuth();
+    
+    // Then proceed with page initialization
     document.getElementById('create-account-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         

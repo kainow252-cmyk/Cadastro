@@ -1,19 +1,80 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { serveStatic } from 'hono/cloudflare-workers'
+import { getCookie, setCookie } from 'hono/cookie'
+import { SignJWT, jwtVerify } from 'jose'
 
 type Bindings = {
   ASAAS_API_KEY: string;
   ASAAS_API_URL: string;
+  ADMIN_USERNAME: string;
+  ADMIN_PASSWORD: string;
+  JWT_SECRET: string;
 }
 
-const app = new Hono<{ Bindings: Bindings }>()
+type Variables = {
+  user: { username: string };
+}
+
+const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
 // Enable CORS
 app.use('/api/*', cors())
 
 // Serve static files
 app.use('/static/*', serveStatic({ root: './public' }))
+
+// Helper function to create JWT token
+async function createToken(username: string, secret: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const secretKey = encoder.encode(secret)
+  
+  const token = await new SignJWT({ username })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime('24h')
+    .sign(secretKey)
+  
+  return token
+}
+
+// Helper function to verify JWT token
+async function verifyToken(token: string, secret: string): Promise<any> {
+  try {
+    const encoder = new TextEncoder()
+    const secretKey = encoder.encode(secret)
+    const { payload } = await jwtVerify(token, secretKey)
+    return payload
+  } catch (error) {
+    return null
+  }
+}
+
+// Auth middleware for protected routes
+async function authMiddleware(c: any, next: any) {
+  const token = getCookie(c, 'auth_token')
+  
+  if (!token) {
+    return c.json({ error: 'Não autorizado' }, 401)
+  }
+  
+  const payload = await verifyToken(token, c.env.JWT_SECRET)
+  
+  if (!payload) {
+    return c.json({ error: 'Token inválido' }, 401)
+  }
+  
+  c.set('user', payload)
+  await next()
+}
+
+// Apply auth middleware to all /api/* routes except login
+app.use('/api/*', async (c, next) => {
+  if (c.req.path === '/api/login' || c.req.path === '/api/check-auth') {
+    return next()
+  }
+  return authMiddleware(c, next)
+})
 
 // Helper function to make Asaas API calls
 async function asaasRequest(
@@ -65,6 +126,68 @@ async function asaasRequest(
 }
 
 // API Routes
+
+// Login route
+app.post('/api/login', async (c) => {
+  try {
+    const { username, password } = await c.req.json()
+    
+    if (username === c.env.ADMIN_USERNAME && password === c.env.ADMIN_PASSWORD) {
+      const token = await createToken(username, c.env.JWT_SECRET)
+      
+      setCookie(c, 'auth_token', token, {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'Lax',
+        maxAge: 86400 // 24 hours
+      })
+      
+      return c.json({ 
+        ok: true, 
+        data: { username, message: 'Login realizado com sucesso' }
+      })
+    } else {
+      return c.json({ 
+        ok: false, 
+        error: 'Usuário ou senha inválidos' 
+      }, 401)
+    }
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Logout route
+app.post('/api/logout', async (c) => {
+  setCookie(c, 'auth_token', '', {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'Lax',
+    maxAge: 0
+  })
+  
+  return c.json({ ok: true, message: 'Logout realizado com sucesso' })
+})
+
+// Check auth status
+app.get('/api/check-auth', async (c) => {
+  const token = getCookie(c, 'auth_token')
+  
+  if (!token) {
+    return c.json({ authenticated: false }, 401)
+  }
+  
+  const payload = await verifyToken(token, c.env.JWT_SECRET)
+  
+  if (!payload) {
+    return c.json({ authenticated: false }, 401)
+  }
+  
+  return c.json({ 
+    authenticated: true, 
+    user: { username: payload.username }
+  })
+})
 
 // Listar subcontas
 app.get('/api/accounts', async (c) => {
@@ -466,6 +589,125 @@ app.get('/cadastro/:linkId', (c) => {
   `)
 })
 
+// Login page
+app.get('/login', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Login - Gerenciador Asaas</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    </head>
+    <body class="bg-gradient-to-br from-blue-600 to-indigo-700 min-h-screen flex items-center justify-center">
+        <div class="max-w-md w-full mx-4">
+            <!-- Login Card -->
+            <div class="bg-white rounded-2xl shadow-2xl p-8">
+                <!-- Logo/Icon -->
+                <div class="text-center mb-8">
+                    <div class="inline-block bg-blue-100 rounded-full p-4 mb-4">
+                        <i class="fas fa-building text-blue-600 text-5xl"></i>
+                    </div>
+                    <h1 class="text-3xl font-bold text-gray-800 mb-2">Gerenciador Asaas</h1>
+                    <p class="text-gray-600">Faça login para continuar</p>
+                </div>
+
+                <!-- Login Form -->
+                <form id="login-form" class="space-y-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            <i class="fas fa-user mr-2"></i>Usuário
+                        </label>
+                        <input type="text" name="username" required autofocus
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                            placeholder="Digite seu usuário">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            <i class="fas fa-lock mr-2"></i>Senha
+                        </label>
+                        <input type="password" name="password" required
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                            placeholder="Digite sua senha">
+                    </div>
+
+                    <div id="error-message" class="hidden bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                        <i class="fas fa-exclamation-circle mr-2"></i>
+                        <span id="error-text"></span>
+                    </div>
+
+                    <button type="submit"
+                        class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 rounded-lg font-semibold hover:from-blue-700 hover:to-indigo-700 transform hover:scale-[1.02] transition-all shadow-lg">
+                        <i class="fas fa-sign-in-alt mr-2"></i>
+                        Entrar
+                    </button>
+                </form>
+
+                <!-- Info Box -->
+                <div class="mt-6 bg-blue-50 rounded-lg p-4">
+                    <p class="text-sm text-blue-800 text-center">
+                        <i class="fas fa-info-circle mr-2"></i>
+                        Credenciais padrão: admin / admin123
+                    </p>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="text-center mt-6 text-white">
+                <p class="text-sm">
+                    <i class="fas fa-shield-alt mr-2"></i>
+                    Acesso seguro e protegido
+                </p>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script>
+            document.getElementById('login-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const formData = new FormData(e.target);
+                const data = Object.fromEntries(formData.entries());
+                
+                const errorDiv = document.getElementById('error-message');
+                const errorText = document.getElementById('error-text');
+                const submitBtn = e.target.querySelector('button[type="submit"]');
+                
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Entrando...';
+                errorDiv.classList.add('hidden');
+                
+                try {
+                    const response = await axios.post('/api/login', data);
+                    
+                    if (response.data.ok) {
+                        submitBtn.innerHTML = '<i class="fas fa-check-circle mr-2"></i>Sucesso!';
+                        submitBtn.classList.remove('from-blue-600', 'to-indigo-600');
+                        submitBtn.classList.add('from-green-600', 'to-green-700');
+                        
+                        setTimeout(() => {
+                            window.location.href = '/';
+                        }, 500);
+                    } else {
+                        throw new Error(response.data.error || 'Erro ao fazer login');
+                    }
+                } catch (error) {
+                    errorText.textContent = error.response?.data?.error || error.message || 'Usuário ou senha inválidos';
+                    errorDiv.classList.remove('hidden');
+                    
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="fas fa-sign-in-alt mr-2"></i>Entrar';
+                }
+            });
+        </script>
+    </body>
+    </html>
+  `)
+})
+
 // Homepage
 app.get('/', (c) => {
   return c.html(`
@@ -499,6 +741,10 @@ app.get('/', (c) => {
                         </button>
                         <button onclick="showSection('links')" class="nav-btn text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md">
                             <i class="fas fa-link mr-2"></i>Links
+                        </button>
+                        <div class="border-l border-gray-300 h-8 mx-2"></div>
+                        <button onclick="logout()" class="text-red-600 hover:text-red-700 px-3 py-2 rounded-md hover:bg-red-50 transition">
+                            <i class="fas fa-sign-out-alt mr-2"></i>Sair
                         </button>
                     </div>
                 </div>
