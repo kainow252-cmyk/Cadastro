@@ -48,6 +48,15 @@ Sistema completo para gerenciamento de contas e subcontas da API Asaas, com gera
 - ✅ Processamento em tempo real
 - ✅ Aceite de termos de uso
 
+### 6. Sistema de Autenticação
+- ✅ Login com usuário e senha
+- ✅ Autenticação via JWT (JSON Web Tokens)
+- ✅ Cookies HttpOnly seguros
+- ✅ Proteção de todas as rotas administrativas
+- ✅ Redirecionamento automático para login
+- ✅ Botão de logout no dashboard
+- ✅ Sessão válida por 24 horas
+
 ## 📡 Endpoints da API
 
 ### Subcontas
@@ -60,7 +69,14 @@ Sistema completo para gerenciamento de contas e subcontas da API Asaas, com gera
   - Body: `{ accountId: string, expirationDays: number }`
 
 ### Páginas Públicas
+- `GET /login` - Página de login do sistema
 - `GET /cadastro/:linkId` - Página de cadastro público via link gerado
+
+### Autenticação
+- `POST /api/login` - Realizar login
+  - Body: `{ username: string, password: string }`
+- `POST /api/logout` - Realizar logout
+- `GET /api/check-auth` - Verificar status de autenticação
 
 ## 🏗️ Arquitetura
 
@@ -90,13 +106,18 @@ webapp/
 └── package.json
 ```
 
-## 🔐 Configuração
+## 🔐 Segurança e Configuração
 
 ### Variáveis de Ambiente (.dev.vars)
 ```bash
 ASAAS_API_KEY=sua_chave_api_aqui
 ASAAS_API_URL=https://api-sandbox.asaas.com/v3
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=admin123
+JWT_SECRET=sua-chave-secreta-super-segura-mude-em-producao
 ```
+
+**IMPORTANTE**: Altere estas credenciais em produção!
 
 ### Instalação
 ```bash
@@ -125,6 +146,20 @@ npm run deploy:prod
 ```
 
 ## 📝 Guia de Uso
+
+### 0. Fazer Login no Sistema
+1. Acesse a URL do sistema
+2. Você será redirecionado para `/login`
+3. Use as credenciais padrão:
+   - **Usuário**: `admin`
+   - **Senha**: `admin123`
+4. Clique em "Entrar"
+5. Você será redirecionado para o dashboard
+
+**IMPORTANTE**: Em produção, altere estas credenciais nas variáveis de ambiente:
+- `ADMIN_USERNAME`
+- `ADMIN_PASSWORD`
+- `JWT_SECRET`
 
 ### 1. Criar uma Subconta
 1. Clique em "Nova Conta" no menu
