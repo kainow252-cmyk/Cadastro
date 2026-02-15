@@ -74,7 +74,12 @@ async function authMiddleware(c: any, next: any) {
 
 // Apply auth middleware to all /api/* routes except public routes
 app.use('/api/*', async (c, next) => {
-  const publicRoutes = ['/api/login', '/api/check-auth', '/api/public/signup']
+  const publicRoutes = [
+    '/api/login', 
+    '/api/check-auth', 
+    '/api/public/signup',
+    '/api/proxy/payments' // Rota pública para subcontas
+  ]
   if (publicRoutes.includes(c.req.path)) {
     return next()
   }
@@ -895,6 +900,142 @@ app.get('/api/payments/:id/pix-qrcode', async (c) => {
 
   } catch (error: any) {
     return c.json({ error: error.message }, 500)
+  }
+})
+
+// ======================
+// ENDPOINT PROXY COM SPLIT 20/80
+// ======================
+
+// Endpoint especial para subcontas criarem cobranças com split automático 20/80
+// A subconta envia sua API Key no header e recebe 20%, conta principal fica com 80%
+app.post('/api/proxy/payments', async (c) => {
+  try {
+    // Obter API Key da subconta do header
+    const subaccountApiKey = c.req.header('x-subaccount-api-key') || c.req.header('access_token')
+    
+    if (!subaccountApiKey) {
+      return c.json({ 
+        error: 'API Key da subconta não fornecida',
+        message: 'Envie a API Key da subconta no header "x-subaccount-api-key" ou "access_token"'
+      }, 401)
+    }
+
+    // Obter dados da cobrança
+    const paymentData = await c.req.json()
+
+    // Validações
+    if (!paymentData.customer || !paymentData.value) {
+      return c.json({ 
+        error: 'Parâmetros obrigatórios: customer, value' 
+      }, 400)
+    }
+
+    // Passo 1: Obter informações da subconta usando a API Key dela
+    const accountInfoResponse = await fetch(`${c.env.ASAAS_API_URL}/myAccount`, {
+      headers: {
+        'access_token': subaccountApiKey,
+        'User-Agent': 'AsaasManager/1.0'
+      }
+    })
+
+    if (!accountInfoResponse.ok) {
+      return c.json({ 
+        error: 'API Key da subconta inválida ou expirada',
+        details: await accountInfoResponse.json()
+      }, 401)
+    }
+
+    const accountInfo = await accountInfoResponse.json()
+    const subaccountWalletId = accountInfo.walletId
+
+    if (!subaccountWalletId) {
+      return c.json({ 
+        error: 'Subconta não possui Wallet ID',
+        message: 'Apenas subcontas podem usar este endpoint'
+      }, 400)
+    }
+
+    // Passo 2: Criar a cobrança usando a API Key da CONTA PRINCIPAL
+    // Isso permite configurar o split
+    const mainAccountApiKey = c.env.ASAAS_API_KEY
+
+    // Preparar dados da cobrança com split 20/80
+    const chargeData: any = {
+      ...paymentData,
+      billingType: paymentData.billingType || 'PIX',
+      dueDate: paymentData.dueDate || new Date().toISOString().split('T')[0],
+      
+      // Configurar split: 20% para subconta (quem está criando)
+      split: [
+        {
+          walletId: subaccountWalletId,
+          percentualValue: 20.00 // Subconta recebe 20%
+        }
+        // 80% fica automaticamente com a conta principal
+      ]
+    }
+
+    // Criar cobrança pela conta principal
+    const createResponse = await fetch(`${c.env.ASAAS_API_URL}/payments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'access_token': mainAccountApiKey,
+        'User-Agent': 'AsaasManager/1.0'
+      },
+      body: JSON.stringify(chargeData)
+    })
+
+    const createResult = await createResponse.json()
+
+    if (!createResponse.ok) {
+      return c.json({ 
+        error: 'Erro ao criar cobrança', 
+        details: createResult 
+      }, createResponse.status)
+    }
+
+    // Retornar resultado
+    return c.json({
+      ok: true,
+      data: {
+        id: createResult.id,
+        customer: createResult.customer,
+        value: createResult.value,
+        netValue: createResult.netValue,
+        description: createResult.description,
+        billingType: createResult.billingType,
+        status: createResult.status,
+        dueDate: createResult.dueDate,
+        invoiceUrl: createResult.invoiceUrl,
+        bankSlipUrl: createResult.bankSlipUrl,
+        pixQrCode: createResult.pixQrCodeId ? {
+          qrCodeId: createResult.pixQrCodeId,
+          payload: createResult.pixQrCodePayload,
+          expirationDate: createResult.pixQrCodeExpirationDate
+        } : null,
+        split: createResult.split || [],
+        splitInfo: {
+          subaccount: {
+            walletId: subaccountWalletId,
+            percentage: 20,
+            estimatedAmount: (createResult.netValue || createResult.value) * 0.20
+          },
+          mainAccount: {
+            percentage: 80,
+            estimatedAmount: (createResult.netValue || createResult.value) * 0.80
+          }
+        }
+      },
+      message: '✅ Cobrança criada com split 20/80 aplicado automaticamente'
+    })
+
+  } catch (error: any) {
+    return c.json({ 
+      error: 'Erro interno ao processar cobrança', 
+      details: error.message 
+    }, 500)
   }
 })
 
