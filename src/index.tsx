@@ -595,6 +595,200 @@ app.get('/api/signup-links/:id/analytics', async (c) => {
   }
 })
 
+// ======================
+// ROTAS DE PAGAMENTO PIX
+// ======================
+
+// Criar cobrança PIX com split (20% subconta, 80% conta principal)
+app.post('/api/payments', async (c) => {
+  try {
+    const { 
+      customer, // { name, email, cpfCnpj, phone? }
+      value,
+      description,
+      dueDate, // Data de vencimento (formato: YYYY-MM-DD)
+      subAccountId, // ID da subconta que receberá 20%
+      subAccountWalletId // Wallet ID da subconta
+    } = await c.req.json()
+
+    // Validações
+    if (!customer || !value || !subAccountWalletId) {
+      return c.json({ 
+        error: 'Parâmetros obrigatórios: customer, value, subAccountWalletId' 
+      }, 400)
+    }
+
+    if (value <= 0) {
+      return c.json({ error: 'Valor deve ser maior que zero' }, 400)
+    }
+
+    // Preparar dados da cobrança
+    const paymentData: any = {
+      customer: customer.cpfCnpj, // Pode ser o CPF/CNPJ ou ID do cliente
+      billingType: 'PIX',
+      value: value,
+      dueDate: dueDate || new Date().toISOString().split('T')[0],
+      description: description || 'Pagamento via PIX',
+      
+      // Configurar split: 20% para subconta, 80% fica com conta principal
+      split: [
+        {
+          walletId: subAccountWalletId,
+          percentualValue: 20.00 // 20% para subconta
+        }
+        // 80% fica automaticamente com a conta principal (emissor da cobrança)
+      ]
+    }
+
+    // Se o customer não existir, criar automaticamente
+    if (!customer.id) {
+      paymentData.customer = customer.cpfCnpj
+      paymentData.externalReference = `customer-${customer.cpfCnpj}`
+      
+      // Dados adicionais do cliente
+      if (customer.name) paymentData.customerName = customer.name
+      if (customer.email) paymentData.customerEmail = customer.email
+      if (customer.phone) paymentData.customerPhone = customer.phone
+    }
+
+    // Criar cobrança na API do Asaas
+    const result = await asaasRequest(c, '/payments', 'POST', paymentData)
+
+    if (!result.ok) {
+      return c.json({ 
+        error: 'Erro ao criar cobrança', 
+        details: result.data 
+      }, result.status)
+    }
+
+    // Retornar dados da cobrança incluindo QR Code PIX
+    return c.json({
+      ok: true,
+      data: {
+        id: result.data.id,
+        customer: result.data.customer,
+        value: result.data.value,
+        netValue: result.data.netValue,
+        description: result.data.description,
+        billingType: result.data.billingType,
+        status: result.data.status,
+        dueDate: result.data.dueDate,
+        invoiceUrl: result.data.invoiceUrl,
+        bankSlipUrl: result.data.bankSlipUrl,
+        pixQrCode: result.data.pixQrCodeId ? {
+          qrCodeId: result.data.pixQrCodeId,
+          payload: result.data.pixQrCodePayload,
+          expirationDate: result.data.pixQrCodeExpirationDate
+        } : null,
+        split: result.data.split || []
+      }
+    })
+
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Consultar status de uma cobrança
+app.get('/api/payments/:id', async (c) => {
+  try {
+    const paymentId = c.req.param('id')
+    const result = await asaasRequest(c, `/payments/${paymentId}`)
+
+    if (!result.ok) {
+      return c.json({ 
+        error: 'Erro ao consultar cobrança', 
+        details: result.data 
+      }, result.status)
+    }
+
+    return c.json({
+      ok: true,
+      data: {
+        id: result.data.id,
+        customer: result.data.customer,
+        value: result.data.value,
+        netValue: result.data.netValue,
+        description: result.data.description,
+        billingType: result.data.billingType,
+        status: result.data.status,
+        dueDate: result.data.dueDate,
+        paymentDate: result.data.paymentDate,
+        invoiceUrl: result.data.invoiceUrl,
+        pixQrCode: result.data.pixQrCodeId ? {
+          qrCodeId: result.data.pixQrCodeId,
+          payload: result.data.pixQrCodePayload,
+          expirationDate: result.data.pixQrCodeExpirationDate
+        } : null,
+        split: result.data.split || []
+      }
+    })
+
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Listar cobranças com filtros
+app.get('/api/payments', async (c) => {
+  try {
+    const { status, customer, dateFrom, dateTo, offset = 0, limit = 20 } = c.req.query()
+    
+    let endpoint = `/payments?offset=${offset}&limit=${limit}`
+    
+    if (status) endpoint += `&status=${status}`
+    if (customer) endpoint += `&customer=${customer}`
+    if (dateFrom) endpoint += `&dateCreated[ge]=${dateFrom}`
+    if (dateTo) endpoint += `&dateCreated[le]=${dateTo}`
+
+    const result = await asaasRequest(c, endpoint)
+
+    if (!result.ok) {
+      return c.json({ 
+        error: 'Erro ao listar cobranças', 
+        details: result.data 
+      }, result.status)
+    }
+
+    return c.json({
+      ok: true,
+      data: result.data.data || [],
+      totalCount: result.data.totalCount || 0,
+      hasMore: result.data.hasMore || false
+    })
+
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Obter QR Code PIX de uma cobrança
+app.get('/api/payments/:id/pix-qrcode', async (c) => {
+  try {
+    const paymentId = c.req.param('id')
+    const result = await asaasRequest(c, `/payments/${paymentId}/pixQrCode`)
+
+    if (!result.ok) {
+      return c.json({ 
+        error: 'Erro ao obter QR Code PIX', 
+        details: result.data 
+      }, result.status)
+    }
+
+    return c.json({
+      ok: true,
+      data: {
+        encodedImage: result.data.encodedImage, // Base64 da imagem do QR Code
+        payload: result.data.payload, // Código PIX Copia e Cola
+        expirationDate: result.data.expirationDate
+      }
+    })
+
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 // Página de cadastro público
 app.get('/cadastro/:linkId', (c) => {
   const linkId = c.req.param('linkId')
@@ -1107,6 +1301,9 @@ app.get('/', (c) => {
                         <button onclick="showSection('links')" class="nav-btn text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md">
                             <i class="fas fa-link mr-2"></i>Links
                         </button>
+                        <button onclick="showSection('pix')" class="nav-btn text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md">
+                            <i class="fas fa-qrcode mr-2"></i>PIX
+                        </button>
                         <div class="border-l border-gray-300 h-8 mx-2"></div>
                         <button onclick="logout()" class="text-red-600 hover:text-red-700 px-3 py-2 rounded-md hover:bg-red-50 transition">
                             <i class="fas fa-sign-out-alt mr-2"></i>Sair
@@ -1387,6 +1584,150 @@ app.get('/', (c) => {
                         
                         <div id="links-list" class="space-y-4">
                             <p class="text-gray-500 text-center py-8">Nenhum link criado ainda</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PIX Section -->
+            <div id="pix-section" class="section hidden">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Gerar Cobrança PIX -->
+                    <div class="bg-white rounded-lg shadow">
+                        <div class="p-6 border-b border-gray-200">
+                            <h2 class="text-xl font-bold text-gray-800">
+                                <i class="fas fa-qrcode mr-2 text-green-600"></i>
+                                Gerar Cobrança PIX
+                            </h2>
+                            <p class="text-sm text-gray-500 mt-1">Split automático: 20% para subconta, 80% para conta principal</p>
+                        </div>
+                        <div class="p-6">
+                            <form id="pix-form" class="space-y-4">
+                                <!-- Subconta -->
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Subconta <span class="text-red-500">*</span>
+                                    </label>
+                                    <div class="flex gap-2">
+                                        <select id="pix-subaccount" required
+                                            class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent">
+                                            <option value="">Selecione a subconta...</option>
+                                        </select>
+                                        <button type="button" onclick="loadSubaccountsForPix()" 
+                                            class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+                                            <i class="fas fa-sync-alt"></i>
+                                        </button>
+                                    </div>
+                                    <p class="text-xs text-gray-500 mt-1">A subconta receberá 20% do valor líquido</p>
+                                </div>
+
+                                <!-- Dados do Cliente -->
+                                <div class="border-t pt-4 mt-4">
+                                    <h3 class="text-sm font-semibold text-gray-700 mb-3">Dados do Pagador</h3>
+                                    <div class="space-y-3">
+                                        <div>
+                                            <input type="text" id="pix-customer-name" placeholder="Nome do Cliente" required
+                                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent">
+                                        </div>
+                                        <div>
+                                            <input type="email" id="pix-customer-email" placeholder="Email do Cliente" required
+                                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent">
+                                        </div>
+                                        <div>
+                                            <input type="text" id="pix-customer-cpf" placeholder="CPF/CNPJ" required
+                                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent">
+                                        </div>
+                                        <div>
+                                            <input type="tel" id="pix-customer-phone" placeholder="Telefone (opcional)"
+                                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Dados da Cobrança -->
+                                <div class="border-t pt-4 mt-4">
+                                    <h3 class="text-sm font-semibold text-gray-700 mb-3">Dados da Cobrança</h3>
+                                    <div class="space-y-3">
+                                        <div>
+                                            <input type="number" id="pix-value" placeholder="Valor (R$)" step="0.01" min="0.01" required
+                                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent">
+                                        </div>
+                                        <div>
+                                            <textarea id="pix-description" placeholder="Descrição da cobrança" rows="2"
+                                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"></textarea>
+                                        </div>
+                                        <div>
+                                            <input type="date" id="pix-due-date"
+                                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent">
+                                            <p class="text-xs text-gray-500 mt-1">Deixe em branco para data atual</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Botões -->
+                                <div class="flex gap-2 pt-4">
+                                    <button type="submit"
+                                        class="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold">
+                                        <i class="fas fa-qrcode mr-2"></i>Gerar PIX
+                                    </button>
+                                    <button type="button" onclick="document.getElementById('pix-form').reset()"
+                                        class="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">
+                                        Limpar
+                                    </button>
+                                </div>
+                            </form>
+
+                            <!-- Resultado -->
+                            <div id="pix-result" class="hidden mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+                                <h3 class="font-semibold text-green-800 mb-2">
+                                    <i class="fas fa-check-circle mr-2"></i>PIX Gerado com Sucesso!
+                                </h3>
+                                <div id="pix-result-content"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- QR Code e Histórico -->
+                    <div class="space-y-6">
+                        <!-- QR Code Display -->
+                        <div id="qrcode-display" class="bg-white rounded-lg shadow p-6 hidden">
+                            <h3 class="text-lg font-bold text-gray-800 mb-4">
+                                <i class="fas fa-qrcode mr-2 text-green-600"></i>
+                                QR Code PIX
+                            </h3>
+                            <div id="qrcode-container" class="text-center">
+                                <!-- QR Code será inserido aqui -->
+                            </div>
+                            <div class="mt-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-2">PIX Copia e Cola</label>
+                                <div class="flex gap-2">
+                                    <input type="text" id="pix-payload" readonly
+                                        class="flex-1 px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm">
+                                    <button onclick="copyPixPayload()"
+                                        class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+                                        <i class="fas fa-copy"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Histórico de Cobranças -->
+                        <div class="bg-white rounded-lg shadow">
+                            <div class="p-6 border-b border-gray-200">
+                                <div class="flex items-center justify-between">
+                                    <h3 class="text-lg font-bold text-gray-800">
+                                        <i class="fas fa-history mr-2 text-blue-600"></i>
+                                        Cobranças Recentes
+                                    </h3>
+                                    <button onclick="loadRecentPayments()"
+                                        class="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200">
+                                        <i class="fas fa-sync-alt mr-1"></i>Atualizar
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="payments-list" class="p-6">
+                                <p class="text-gray-500 text-center py-4">Nenhuma cobrança ainda</p>
+                            </div>
                         </div>
                     </div>
                 </div>

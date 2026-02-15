@@ -33,6 +33,9 @@ function showSection(section) {
         loadAccounts();
     } else if (section === 'dashboard') {
         loadDashboard();
+    } else if (section === 'pix') {
+        loadSubaccountsForPix();
+        loadRecentPayments();
     }
 }
 
@@ -259,4 +262,317 @@ function copyLink(url) {
     navigator.clipboard.writeText(url).then(() => {
         alert('Link copiado para a área de transferência!');
     });
+}
+
+// =====================================
+// FUNÇÕES PIX
+// =====================================
+
+// Carregar subcontas para o select de PIX
+async function loadSubaccountsForPix() {
+    try {
+        const response = await axios.get('/api/accounts');
+        
+        if (response.data.ok && response.data.data) {
+            const accounts = response.data.data.data || [];
+            const select = document.getElementById('pix-subaccount');
+            
+            select.innerHTML = '<option value="">Selecione a subconta...</option>';
+            
+            accounts.forEach(account => {
+                const option = document.createElement('option');
+                option.value = JSON.stringify({
+                    id: account.id,
+                    walletId: account.walletId,
+                    name: account.name
+                });
+                option.textContent = `${account.name} - ${account.email}`;
+                select.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('Erro ao carregar subcontas:', error);
+        alert('Erro ao carregar subcontas. Verifique sua conexão.');
+    }
+}
+
+// Formatar CPF/CNPJ no campo PIX
+document.addEventListener('DOMContentLoaded', function() {
+    const cpfInput = document.getElementById('pix-customer-cpf');
+    if (cpfInput) {
+        cpfInput.addEventListener('input', function(e) {
+            let value = e.target.value.replace(/\D/g, '');
+            
+            if (value.length <= 11) {
+                // CPF: 000.000.000-00
+                value = value.replace(/(\d{3})(\d)/, '$1.$2');
+                value = value.replace(/(\d{3})(\d)/, '$1.$2');
+                value = value.replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+            } else {
+                // CNPJ: 00.000.000/0000-00
+                value = value.substring(0, 14);
+                value = value.replace(/^(\d{2})(\d)/, '$1.$2');
+                value = value.replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3');
+                value = value.replace(/\.(\d{3})(\d)/, '.$1/$2');
+                value = value.replace(/(\d{4})(\d)/, '$1-$2');
+            }
+            
+            e.target.value = value;
+        });
+    }
+
+    // Máscara de telefone
+    const phoneInput = document.getElementById('pix-customer-phone');
+    if (phoneInput) {
+        phoneInput.addEventListener('input', function(e) {
+            let value = e.target.value.replace(/\D/g, '');
+            
+            if (value.length <= 10) {
+                // (00) 0000-0000
+                value = value.replace(/^(\d{2})(\d)/, '($1) $2');
+                value = value.replace(/(\d{4})(\d)/, '$1-$2');
+            } else {
+                // (00) 00000-0000
+                value = value.substring(0, 11);
+                value = value.replace(/^(\d{2})(\d)/, '($1) $2');
+                value = value.replace(/(\d{5})(\d)/, '$1-$2');
+            }
+            
+            e.target.value = value;
+        });
+    }
+});
+
+// Enviar formulário de cobrança PIX
+document.getElementById('pix-form')?.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    const originalText = submitBtn.innerHTML;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Gerando PIX...';
+    
+    try {
+        // Obter dados da subconta selecionada
+        const subaccountData = JSON.parse(document.getElementById('pix-subaccount').value);
+        
+        // Preparar dados do cliente
+        const customer = {
+            name: document.getElementById('pix-customer-name').value,
+            email: document.getElementById('pix-customer-email').value,
+            cpfCnpj: document.getElementById('pix-customer-cpf').value.replace(/\D/g, ''),
+            phone: document.getElementById('pix-customer-phone').value.replace(/\D/g, '') || undefined
+        };
+        
+        // Preparar dados da cobrança
+        const paymentData = {
+            customer,
+            value: parseFloat(document.getElementById('pix-value').value),
+            description: document.getElementById('pix-description').value || 'Pagamento via PIX',
+            dueDate: document.getElementById('pix-due-date').value || undefined,
+            subAccountId: subaccountData.id,
+            subAccountWalletId: subaccountData.walletId
+        };
+        
+        // Criar cobrança
+        const response = await axios.post('/api/payments', paymentData);
+        
+        if (response.data.ok) {
+            const payment = response.data.data;
+            
+            // Mostrar resultado
+            const resultDiv = document.getElementById('pix-result');
+            const contentDiv = document.getElementById('pix-result-content');
+            
+            contentDiv.innerHTML = `
+                <div class="space-y-2 text-sm">
+                    <p><strong>ID da Cobrança:</strong> ${payment.id}</p>
+                    <p><strong>Valor:</strong> R$ ${payment.value.toFixed(2)}</p>
+                    <p><strong>Valor Líquido:</strong> R$ ${payment.netValue.toFixed(2)}</p>
+                    <p><strong>Status:</strong> <span class="px-2 py-1 bg-yellow-100 text-yellow-800 rounded">${payment.status}</span></p>
+                    <p><strong>Split Configurado:</strong> 20% para ${subaccountData.name}, 80% para conta principal</p>
+                    ${payment.invoiceUrl ? `<p><a href="${payment.invoiceUrl}" target="_blank" class="text-blue-600 hover:underline">Ver Fatura</a></p>` : ''}
+                </div>
+            `;
+            
+            resultDiv.classList.remove('hidden');
+            
+            // Carregar e mostrar QR Code se disponível
+            if (payment.pixQrCode) {
+                await loadPixQrCode(payment.id);
+            }
+            
+            // Atualizar histórico
+            loadRecentPayments();
+            
+            // Limpar formulário
+            document.getElementById('pix-form').reset();
+            
+            // Scroll para o resultado
+            resultDiv.scrollIntoView({ behavior: 'smooth' });
+        } else {
+            alert('Erro ao gerar PIX: ' + (response.data.error || 'Erro desconhecido'));
+        }
+        
+    } catch (error) {
+        console.error('Erro ao gerar PIX:', error);
+        alert('Erro ao gerar PIX: ' + (error.response?.data?.error || error.message));
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+    }
+});
+
+// Carregar QR Code PIX
+async function loadPixQrCode(paymentId) {
+    try {
+        const response = await axios.get(`/api/payments/${paymentId}/pix-qrcode`);
+        
+        if (response.data.ok) {
+            const qrData = response.data.data;
+            
+            const qrcodeContainer = document.getElementById('qrcode-container');
+            qrcodeContainer.innerHTML = `
+                <img src="data:image/png;base64,${qrData.encodedImage}" 
+                     alt="QR Code PIX" 
+                     class="mx-auto w-64 h-64 border-4 border-green-500 rounded-lg">
+                <p class="text-sm text-gray-600 mt-2">Expira em: ${new Date(qrData.expirationDate).toLocaleString('pt-BR')}</p>
+            `;
+            
+            document.getElementById('pix-payload').value = qrData.payload;
+            document.getElementById('qrcode-display').classList.remove('hidden');
+        }
+    } catch (error) {
+        console.error('Erro ao carregar QR Code:', error);
+    }
+}
+
+// Copiar payload PIX
+function copyPixPayload() {
+    const payload = document.getElementById('pix-payload').value;
+    navigator.clipboard.writeText(payload).then(() => {
+        alert('Código PIX copiado para a área de transferência!');
+    }).catch(err => {
+        console.error('Erro ao copiar:', err);
+        alert('Erro ao copiar o código PIX');
+    });
+}
+
+// Carregar cobranças recentes
+async function loadRecentPayments() {
+    try {
+        const response = await axios.get('/api/payments?limit=10');
+        
+        if (response.data.ok) {
+            const payments = response.data.data;
+            const listDiv = document.getElementById('payments-list');
+            
+            if (payments.length === 0) {
+                listDiv.innerHTML = '<p class="text-gray-500 text-center py-4">Nenhuma cobrança ainda</p>';
+                return;
+            }
+            
+            listDiv.innerHTML = `
+                <div class="space-y-3">
+                    ${payments.map(p => `
+                        <div class="border border-gray-200 rounded-lg p-3 hover:bg-gray-50">
+                            <div class="flex items-center justify-between">
+                                <div class="flex-1">
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-semibold text-gray-800">R$ ${p.value.toFixed(2)}</span>
+                                        <span class="px-2 py-1 text-xs rounded ${getStatusClass(p.status)}">${getStatusText(p.status)}</span>
+                                    </div>
+                                    <p class="text-sm text-gray-600 mt-1">${p.description || 'Sem descrição'}</p>
+                                    <p class="text-xs text-gray-500 mt-1">
+                                        ${new Date(p.dueDate).toLocaleDateString('pt-BR')}
+                                        ${p.paymentDate ? ` • Pago em ${new Date(p.paymentDate).toLocaleDateString('pt-BR')}` : ''}
+                                    </p>
+                                </div>
+                                <button onclick="viewPayment('${p.id}')" 
+                                    class="px-3 py-2 text-blue-600 hover:bg-blue-50 rounded-lg">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Erro ao carregar cobranças:', error);
+    }
+}
+
+// Visualizar detalhes do pagamento
+async function viewPayment(paymentId) {
+    try {
+        const response = await axios.get(`/api/payments/${paymentId}`);
+        
+        if (response.data.ok) {
+            const p = response.data.data;
+            
+            const details = `
+ID: ${p.id}
+Cliente: ${p.customer}
+Valor: R$ ${p.value.toFixed(2)}
+Valor Líquido: R$ ${p.netValue.toFixed(2)}
+Status: ${getStatusText(p.status)}
+Vencimento: ${new Date(p.dueDate).toLocaleDateString('pt-BR')}
+${p.paymentDate ? `Data Pagamento: ${new Date(p.paymentDate).toLocaleDateString('pt-BR')}` : ''}
+${p.description ? `Descrição: ${p.description}` : ''}
+${p.invoiceUrl ? `\nFatura: ${p.invoiceUrl}` : ''}
+            `;
+            
+            alert(details);
+            
+            // Se tiver QR Code e status for pendente, carregar
+            if (p.pixQrCode && p.status === 'PENDING') {
+                loadPixQrCode(p.id);
+                document.getElementById('qrcode-display').scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+    } catch (error) {
+        console.error('Erro ao visualizar pagamento:', error);
+        alert('Erro ao carregar detalhes do pagamento');
+    }
+}
+
+// Helper: classe CSS para status
+function getStatusClass(status) {
+    const classes = {
+        'PENDING': 'bg-yellow-100 text-yellow-800',
+        'RECEIVED': 'bg-green-100 text-green-800',
+        'CONFIRMED': 'bg-blue-100 text-blue-800',
+        'OVERDUE': 'bg-red-100 text-red-800',
+        'REFUNDED': 'bg-gray-100 text-gray-800',
+        'RECEIVED_IN_CASH': 'bg-green-100 text-green-800',
+        'REFUND_REQUESTED': 'bg-orange-100 text-orange-800',
+        'CHARGEBACK_REQUESTED': 'bg-red-100 text-red-800',
+        'CHARGEBACK_DISPUTE': 'bg-red-100 text-red-800',
+        'AWAITING_CHARGEBACK_REVERSAL': 'bg-orange-100 text-orange-800',
+        'DUNNING_REQUESTED': 'bg-purple-100 text-purple-800',
+        'DUNNING_RECEIVED': 'bg-purple-100 text-purple-800',
+        'AWAITING_RISK_ANALYSIS': 'bg-yellow-100 text-yellow-800'
+    };
+    return classes[status] || 'bg-gray-100 text-gray-800';
+}
+
+// Helper: texto do status
+function getStatusText(status) {
+    const texts = {
+        'PENDING': 'Pendente',
+        'RECEIVED': 'Recebido',
+        'CONFIRMED': 'Confirmado',
+        'OVERDUE': 'Vencido',
+        'REFUNDED': 'Estornado',
+        'RECEIVED_IN_CASH': 'Recebido',
+        'REFUND_REQUESTED': 'Estorno Solicitado',
+        'CHARGEBACK_REQUESTED': 'Chargeback Solicitado',
+        'CHARGEBACK_DISPUTE': 'Disputa Chargeback',
+        'AWAITING_CHARGEBACK_REVERSAL': 'Aguardando Reversão',
+        'DUNNING_REQUESTED': 'Cobrança Solicitada',
+        'DUNNING_RECEIVED': 'Cobrança Recebida',
+        'AWAITING_RISK_ANALYSIS': 'Análise de Risco'
+    };
+    return texts[status] || status;
 }
