@@ -300,6 +300,7 @@ app.post('/api/login', async (c) => {
       
       return c.json({ 
         ok: true, 
+        token,
         data: { username, message: 'Login realizado com sucesso' }
       })
     } else {
@@ -493,18 +494,30 @@ app.post('/api/customers', async (c) => {
 // Gerar QR Code PIX estático reutilizável
 app.post('/api/pix/static', async (c) => {
   try {
-    const { walletId, accountId } = await c.req.json()
+    // Verificar autenticação
+    const token = getCookie(c, 'auth_token')
+    if (!token) {
+      return c.json({ error: 'Não autorizado' }, 401)
+    }
+    
+    try {
+      await verifyToken(token, c.env.JWT_SECRET)
+    } catch {
+      return c.json({ error: 'Token inválido' }, 401)
+    }
+    
+    const { walletId, accountId, value, description } = await c.req.json()
     
     if (!walletId) {
       return c.json({ error: 'walletId é obrigatório' }, 400)
     }
     
-    // Criar uma chave PIX estática usando addressKey
-    // Formato: Gerar um addressKey único baseado no walletId
-    const addressKey = `pix-${walletId.substring(0, 20)}`
+    if (!value || value <= 0) {
+      return c.json({ error: 'Valor deve ser maior que zero' }, 400)
+    }
     
     // Gerar payload PIX manualmente (EMV format)
-    const payload = generateStaticPixPayload(walletId, addressKey)
+    const payload = generateStaticPixPayload(walletId, value, description || '')
     
     // Gerar QR Code em base64
     const qrCodeBase64 = await generateQRCodeBase64(payload)
@@ -514,11 +527,11 @@ app.post('/api/pix/static', async (c) => {
       data: {
         walletId,
         accountId,
-        addressKey,
+        value,
+        description,
         payload,
         qrCodeBase64,
         type: 'STATIC',
-        description: 'QR Code PIX Estático - Reutilizável com Split 20/80',
         splitConfig: {
           subAccount: 20,
           mainAccount: 80
@@ -531,12 +544,12 @@ app.post('/api/pix/static', async (c) => {
 })
 
 // Função para gerar payload PIX estático (EMV format simplificado)
-function generateStaticPixPayload(walletId: string, addressKey: string): string {
-  // Formato EMV para PIX estático
-  // Este é um payload simplificado - em produção usar biblioteca oficial
+function generateStaticPixPayload(walletId: string, value: number, description: string): string {
+  // Formato EMV para PIX estático com valor fixo
   const merchantName = 'ASAAS PAGAMENTOS'
   const merchantCity = 'SAO PAULO'
   const pixKey = walletId
+  const valueStr = value.toFixed(2)
   
   // Construir payload EMV
   let payload = '00020126'  // Payload Format Indicator
@@ -544,8 +557,16 @@ function generateStaticPixPayload(walletId: string, addressKey: string): string 
   payload += `01${pixKey.length.toString().padStart(2, '0')}${pixKey}`  // Chave PIX
   payload += '52040000'  // Merchant Category Code
   payload += '5303986'   // Transaction Currency (BRL)
+  payload += `54${valueStr.length.toString().padStart(2, '0')}${valueStr}`  // Transaction Amount
   payload += `59${merchantName.length.toString().padStart(2, '0')}${merchantName}`
   payload += `60${merchantCity.length.toString().padStart(2, '0')}${merchantCity}`
+  
+  // Adicionar descrição se fornecida
+  if (description) {
+    const descClean = description.substring(0, 25) // Máximo 25 caracteres
+    payload += `62${(descClean.length + 4).toString().padStart(2, '0')}05${descClean.length.toString().padStart(2, '0')}${descClean}`
+  }
+  
   payload += '6304'  // CRC placeholder
   
   // Calcular CRC16

@@ -79,21 +79,31 @@ async function loadAccounts() {
                 
                 const pixFormHtml = account.walletId ? `
                     <div class="mt-4 border-t border-gray-200 pt-4">
-                        <div class="flex items-center justify-between mb-3">
-                            <h4 class="text-sm font-semibold text-gray-700">
-                                <i class="fas fa-qrcode mr-2 text-green-600"></i>
-                                QR Code PIX Reutilizável (Split 20/80)
-                            </h4>
-                            <button onclick="loadStaticPixForAccount('${account.id}', '${account.walletId}')" 
-                                class="px-3 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700">
-                                <i class="fas fa-sync-alt mr-1"></i>Atualizar
-                            </button>
+                        <h4 class="text-sm font-semibold text-gray-700 mb-3">
+                            <i class="fas fa-qrcode mr-2 text-green-600"></i>
+                            QR Code PIX com Valor Fixo (Split 20/80)
+                        </h4>
+                        <div id="pix-form-${account.id}">
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <input type="number" 
+                                    id="pix-value-${account.id}" 
+                                    placeholder="Valor fixo (R$)" 
+                                    step="0.01" 
+                                    min="1"
+                                    required
+                                    class="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-green-500">
+                                <input type="text" 
+                                    id="pix-desc-${account.id}" 
+                                    placeholder="Descrição (opcional)" 
+                                    value=""
+                                    class="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-green-500">
+                                <button onclick="generateStaticPix('${account.id}', '${account.walletId}')" 
+                                    class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 font-semibold">
+                                    <i class="fas fa-qrcode mr-2"></i>Gerar QR Code
+                                </button>
+                            </div>
                         </div>
-                        <div id="pix-static-${account.id}" class="text-center">
-                            <p class="text-gray-500 text-sm py-4">
-                                <i class="fas fa-spinner fa-spin mr-2"></i>Carregando QR Code...
-                            </p>
-                        </div>
+                        <div id="pix-static-${account.id}" class="hidden mt-4"></div>
                     </div>
                 ` : '';
                 
@@ -1074,14 +1084,25 @@ document.addEventListener('DOMContentLoaded', function() {
     }, 1000);
 });
 
-async function loadStaticPixForAccount(accountId, walletId) {
+async function generateStaticPix(accountId, walletId) {
+    const valueInput = document.getElementById(`pix-value-${accountId}`);
+    const descInput = document.getElementById(`pix-desc-${accountId}`);
     const pixDiv = document.getElementById(`pix-static-${accountId}`);
+    const formDiv = document.getElementById(`pix-form-${accountId}`);
     
-    if (!pixDiv) return;
+    const value = parseFloat(valueInput.value);
+    const description = descInput.value || 'Pagamento via PIX';
     
+    if (!value || value <= 0) {
+        alert('⚠️ Por favor, informe um valor válido maior que zero');
+        valueInput.focus();
+        return;
+    }
+    
+    pixDiv.classList.remove('hidden');
     pixDiv.innerHTML = `
         <p class="text-gray-500 text-sm py-4">
-            <i class="fas fa-spinner fa-spin mr-2"></i>Gerando QR Code permanente...
+            <i class="fas fa-spinner fa-spin mr-2"></i>Gerando QR Code com valor R$ ${value.toFixed(2)}...
         </p>
     `;
     
@@ -1089,36 +1110,49 @@ async function loadStaticPixForAccount(accountId, walletId) {
         // Gerar chave PIX estática via endpoint
         const response = await axios.post('/api/pix/static', {
             walletId: walletId,
-            accountId: accountId
+            accountId: accountId,
+            value: value,
+            description: description
         });
         
         if (response.data.ok && response.data.data) {
             const pixData = response.data.data;
+            const splitValue20 = (value * 0.20).toFixed(2);
+            const splitValue80 = (value * 0.80).toFixed(2);
+            
+            // Ocultar formulário
+            formDiv.style.display = 'none';
             
             pixDiv.innerHTML = `
                 <div class="bg-gradient-to-br from-green-50 to-blue-50 border-2 border-green-300 rounded-lg p-4">
+                    <div class="flex justify-between items-center mb-3">
+                        <h5 class="font-bold text-gray-800">
+                            <i class="fas fa-check-circle text-green-600 mr-2"></i>
+                            QR Code Gerado com Sucesso!
+                        </h5>
+                        <button onclick="resetPixForm('${accountId}')" 
+                            class="px-3 py-1 text-xs bg-gray-600 text-white rounded hover:bg-gray-700">
+                            <i class="fas fa-plus mr-1"></i>Gerar Outro
+                        </button>
+                    </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div class="text-center">
                             <div class="bg-white p-4 rounded-lg inline-block shadow-md">
-                                <img src="${pixData.qrCodeBase64}" alt="QR Code PIX Estático" class="mx-auto" style="width: 220px; height: 220px;">
+                                <img src="${pixData.qrCodeBase64}" alt="QR Code PIX" class="mx-auto" style="width: 220px; height: 220px;">
                             </div>
                             <p class="text-xs text-gray-700 mt-3 font-semibold">
                                 <i class="fas fa-infinity mr-1 text-green-600"></i>
-                                QR Code Permanente - Use quantas vezes quiser!
+                                Use quantas vezes quiser!
                             </p>
                         </div>
                         <div class="space-y-3">
                             <div class="bg-white rounded-lg p-3 shadow-sm">
                                 <h5 class="text-sm font-bold text-gray-800 mb-2">
-                                    <i class="fas fa-info-circle mr-2 text-blue-600"></i>
-                                    Como funciona:
+                                    <i class="fas fa-money-bill-wave mr-2 text-green-600"></i>
+                                    Valor Fixo:
                                 </h5>
-                                <ul class="text-xs text-gray-700 space-y-1">
-                                    <li>✓ <strong>Reutilizável:</strong> Use infinitas vezes</li>
-                                    <li>✓ <strong>Qualquer valor:</strong> Cliente define ao pagar</li>
-                                    <li>✓ <strong>Split automático:</strong> 20% você, 80% principal</li>
-                                    <li>✓ <strong>Sem vencimento:</strong> Nunca expira</li>
-                                </ul>
+                                <div class="text-2xl font-bold text-green-700 mb-2">R$ ${value.toFixed(2)}</div>
+                                <p class="text-xs text-gray-600">${description}</p>
                             </div>
                             <div class="bg-white rounded-lg p-3 shadow-sm">
                                 <label class="block text-xs font-semibold text-gray-700 mb-2">
@@ -1137,18 +1171,18 @@ async function loadStaticPixForAccount(accountId, walletId) {
                                 </div>
                             </div>
                             <div class="bg-gradient-to-r from-green-100 to-blue-100 rounded-lg p-3 border border-green-300">
-                                <p class="text-xs font-bold text-gray-800 text-center">
-                                    💰 Todo pagamento será dividido automaticamente:
+                                <p class="text-xs font-bold text-gray-800 text-center mb-2">
+                                    💰 Split Automático de R$ ${value.toFixed(2)}:
                                 </p>
-                                <div class="flex justify-around mt-2 text-xs">
+                                <div class="flex justify-around text-xs">
                                     <div class="text-center">
-                                        <div class="font-bold text-green-700">20%</div>
-                                        <div class="text-gray-600">Para você</div>
+                                        <div class="font-bold text-green-700 text-lg">R$ ${splitValue20}</div>
+                                        <div class="text-gray-600">Para você (20%)</div>
                                     </div>
                                     <div class="text-center text-2xl text-gray-400">+</div>
                                     <div class="text-center">
-                                        <div class="font-bold text-blue-700">80%</div>
-                                        <div class="text-gray-600">Conta principal</div>
+                                        <div class="font-bold text-blue-700 text-lg">R$ ${splitValue80}</div>
+                                        <div class="text-gray-600">Principal (80%)</div>
                                     </div>
                                 </div>
                             </div>
@@ -1192,6 +1226,25 @@ function copyPixPayload(accountId) {
         btn.classList.remove('bg-green-600');
         btn.classList.add('bg-blue-600', 'hover:bg-blue-700');
     }, 2000);
+}
+
+function resetPixForm(accountId) {
+    const formDiv = document.getElementById(`pix-form-${accountId}`);
+    const pixDiv = document.getElementById(`pix-static-${accountId}`);
+    const valueInput = document.getElementById(`pix-value-${accountId}`);
+    const descInput = document.getElementById(`pix-desc-${accountId}`);
+    
+    // Mostrar formulário novamente
+    formDiv.style.display = 'block';
+    
+    // Ocultar resultado
+    pixDiv.classList.add('hidden');
+    pixDiv.innerHTML = '';
+    
+    // Limpar campos
+    valueInput.value = '';
+    descInput.value = '';
+    valueInput.focus();
 }
 
 // Exibir erro ao carregar API Keys
