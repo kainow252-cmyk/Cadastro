@@ -308,17 +308,34 @@ async function generateApiKeyForSubaccount() {
     try {
         const subaccountData = JSON.parse(select.value);
         
+        // Obter valor de expiração selecionado
+        const expirationDays = document.getElementById('api-key-expiration')?.value;
+        let expiresAt = null;
+        
+        if (expirationDays) {
+            const expirationDate = new Date();
+            expirationDate.setDate(expirationDate.getDate() + parseInt(expirationDays));
+            expiresAt = expirationDate.toISOString().split('T')[0]; // Formato: YYYY-MM-DD
+        }
+        
         // Mostrar loading
         const originalText = event.target.innerHTML;
         event.target.disabled = true;
         event.target.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
         
+        // Preparar dados para API
+        const apiKeyData = {
+            name: `API Key - ${subaccountData.name} - ${new Date().toLocaleDateString('pt-BR')}`
+        };
+        
+        if (expiresAt) {
+            apiKeyData.expiresAt = expiresAt;
+        }
+        
         // Gerar API Key diretamente
         const response = await axios.post(
             `/api/accounts/${subaccountData.id}/api-key`,
-            {
-                name: `API Key - ${subaccountData.name} - ${new Date().toLocaleDateString('pt-BR')}`
-            }
+            apiKeyData
         );
         
         if (response.data.ok) {

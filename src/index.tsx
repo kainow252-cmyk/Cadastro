@@ -1829,6 +1829,27 @@ app.get('/', (c) => {
                                     </p>
                                 </div>
                                 
+                                <!-- API Key Validade Selector -->
+                                <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i class="fas fa-clock mr-1"></i>
+                                        Validade da API Key
+                                    </label>
+                                    <select id="api-key-expiration" 
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm">
+                                        <option value="30">30 dias</option>
+                                        <option value="60">60 dias</option>
+                                        <option value="90" selected>90 dias (padrão)</option>
+                                        <option value="180">180 dias (6 meses)</option>
+                                        <option value="365">365 dias (1 ano)</option>
+                                        <option value="">Sem expiração</option>
+                                    </select>
+                                    <p class="text-xs text-gray-500 mt-1">
+                                        <i class="fas fa-info-circle"></i>
+                                        Recomendado: 90 dias para segurança
+                                    </p>
+                                </div>
+                                
                                 <!-- API Key Display -->
                                 <div id="api-key-result" class="hidden p-4 bg-blue-50 border border-blue-200 rounded-lg">
                                     <div class="flex items-start justify-between mb-2">
