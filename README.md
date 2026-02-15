@@ -65,6 +65,19 @@ Sistema completo para gerenciamento de contas e subcontas da API Asaas, com gera
 - ✅ Links úteis e contato de suporte
 - ✅ Enviado tanto para cadastro público quanto admin
 
+### 8. Sistema de Cobranças PIX com Split de Pagamento
+- ✅ Criar cobranças PIX com split automático (20% subconta, 80% conta principal)
+- ✅ Interface intuitiva para gerar cobranças
+- ✅ Seleção de subconta beneficiária
+- ✅ Formulário completo de dados do pagador
+- ✅ Configuração de valor, descrição e vencimento
+- ✅ Geração automática de QR Code PIX
+- ✅ Código PIX Copia e Cola
+- ✅ Visualização de status de pagamento
+- ✅ Histórico de cobranças recentes
+- ✅ Consulta de detalhes da cobrança
+- ✅ Máscaras automáticas para CPF/CNPJ e telefone
+
 ## 📡 Endpoints da API
 
 ### Subcontas
@@ -85,6 +98,29 @@ Sistema completo para gerenciamento de contas e subcontas da API Asaas, com gera
   - Body: `{ username: string, password: string }`
 - `POST /api/logout` - Realizar logout
 - `GET /api/check-auth` - Verificar status de autenticação
+
+### Pagamentos PIX
+- `POST /api/payments` - Criar cobrança PIX com split
+  - Body: 
+    ```json
+    {
+      "customer": {
+        "name": "Nome do Cliente",
+        "email": "cliente@email.com",
+        "cpfCnpj": "12345678900",
+        "phone": "11999999999"
+      },
+      "value": 100.00,
+      "description": "Descrição do pagamento",
+      "dueDate": "2026-02-20",
+      "subAccountId": "id-da-subconta",
+      "subAccountWalletId": "wallet-id-da-subconta"
+    }
+    ```
+- `GET /api/payments/:id` - Consultar status de uma cobrança
+- `GET /api/payments` - Listar cobranças com filtros
+  - Query params: `status`, `customer`, `dateFrom`, `dateTo`, `offset`, `limit`
+- `GET /api/payments/:id/pix-qrcode` - Obter QR Code PIX de uma cobrança
 
 ## 🏗️ Arquitetura
 
@@ -263,3 +299,105 @@ Para dúvidas sobre a API Asaas, consulte a [documentação oficial](https://doc
 ---
 
 **Nota**: Este projeto está configurado para usar o ambiente Sandbox da API Asaas. Para uso em produção, atualize as credenciais e URLs nas variáveis de ambiente.
+
+## 💰 Usando o Sistema de PIX
+
+### Como Funciona o Split de Pagamento
+
+Quando você cria uma cobrança PIX, o sistema automaticamente divide o valor recebido:
+- **20%** vai para a subconta selecionada
+- **80%** fica com a conta principal (emissor)
+
+**Exemplo**: 
+- Cobrança de R$ 100,00
+- Subconta recebe: R$ 20,00 (20%)
+- Conta principal recebe: R$ 80,00 (80%)
+
+### Dados Necessários
+
+**Para gerar uma cobrança, você precisa:**
+1. **Subconta**: Selecione qual subconta receberá os 20%
+2. **Cliente**: Nome, email, CPF/CNPJ do pagador
+3. **Valor**: Quanto será cobrado
+4. **Descrição**: Motivo da cobrança (opcional)
+5. **Vencimento**: Data limite para pagamento (opcional)
+
+### Exemplo de Uso Real
+
+**Cenário**: Gelci José da Silva precisa gerar uma cobrança PIX
+
+1. **Login**: Entre com admin/admin123
+2. **PIX**: Clique no menu PIX
+3. **Subconta**: Selecione "Gelci jose da silva - gelci.jose.grouptrig@gmail.com"
+4. **Pagador**:
+   - Nome: "João da Silva"
+   - Email: "joao@email.com"
+   - CPF: "123.456.789-00"
+   - Telefone: "(11) 98765-4321"
+5. **Cobrança**:
+   - Valor: R$ 500,00
+   - Descrição: "Pagamento de serviço"
+   - Vencimento: 20/02/2026
+6. **Gerar**: Clique em "Gerar PIX"
+
+**Resultado**:
+- ✅ Cobrança criada
+- ✅ QR Code gerado
+- ✅ Código Copia e Cola disponível
+- ✅ Split configurado: R$ 100 para Gelci, R$ 400 para conta principal
+- ✅ Aparece no histórico
+
+### Status de Cobranças
+
+- 🟡 **Pendente**: Aguardando pagamento
+- 🟢 **Recebido**: Pagamento confirmado
+- 🔴 **Vencido**: Prazo expirado
+- ⚪ **Estornado**: Pagamento devolvido
+
+## 🔗 Exemplo Prático Completo
+
+```bash
+# Dados da subconta (do exemplo fornecido)
+Nome: Gelci jose da silva
+Email: gelci.jose.grouptrig@gmail.com
+CPF: 11013430794
+ID: 62118294-2d2b-4df7-b4a1-af31fa80e065
+Wallet: cb64c741-2c86-4466-ad31-7ba58cd698c0
+
+# Criar cobrança PIX via API
+curl -X POST http://localhost:3000/api/payments \
+  -H "Content-Type: application/json" \
+  -d '{
+    "customer": {
+      "name": "Cliente Teste",
+      "email": "cliente@teste.com",
+      "cpfCnpj": "12345678900"
+    },
+    "value": 100.00,
+    "description": "Pagamento teste",
+    "subAccountId": "62118294-2d2b-4df7-b4a1-af31fa80e065",
+    "subAccountWalletId": "cb64c741-2c86-4466-ad31-7ba58cd698c0"
+  }'
+
+# Resposta esperada:
+{
+  "ok": true,
+  "data": {
+    "id": "pay_abc123",
+    "value": 100.00,
+    "netValue": 98.50,
+    "status": "PENDING",
+    "pixQrCode": {
+      "qrCodeId": "qr_xyz789",
+      "payload": "00020126580014br.gov.bcb.pix...",
+      "expirationDate": "2026-02-15T23:59:59"
+    },
+    "split": [
+      {
+        "walletId": "cb64c741-2c86-4466-ad31-7ba58cd698c0",
+        "percentualValue": 20.00
+      }
+    ]
+  }
+}
+```
