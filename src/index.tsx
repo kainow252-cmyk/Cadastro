@@ -349,21 +349,86 @@ app.get('/api/check-auth', async (c) => {
 app.post('/api/public/signup', async (c) => {
   try {
     const body = await c.req.json()
+    
+    // 1. Criar subconta no Asaas
     const result = await asaasRequest(c, '/accounts', 'POST', body)
     
-    // Se a conta foi criada com sucesso, enviar email de boas-vindas
-    if (result.ok && result.data && result.data.id) {
-      const account = result.data
-      await sendWelcomeEmail(
-        c,
-        account.name,
-        account.email,
-        account.id,
-        account.walletId
-      )
+    if (!result.ok) {
+      return c.json(result)
     }
     
-    return c.json(result)
+    const account = result.data
+    
+    // 2. Criar cliente (customer) no Asaas usando os mesmos dados
+    const customerData = {
+      name: body.name,
+      email: body.email,
+      cpfCnpj: body.cpfCnpj,
+      mobilePhone: body.mobilePhone,
+      phone: body.phone,
+      postalCode: body.postalCode,
+      address: body.address,
+      addressNumber: body.addressNumber,
+      complement: body.complement,
+      province: body.province,
+      notificationDisabled: false
+    }
+    
+    const customerResult = await asaasRequest(c, '/customers', 'POST', customerData)
+    
+    let customerId = null
+    if (customerResult.ok && customerResult.data && customerResult.data.id) {
+      customerId = customerResult.data.id
+    }
+    
+    // 3. Gerar cobrança PIX automática de R$ 50,00 (taxa de cadastro)
+    if (customerId && account.walletId) {
+      const paymentData = {
+        customer: customerId,
+        billingType: 'PIX',
+        value: 50.00, // Taxa de cadastro
+        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 7 dias
+        description: 'Taxa de cadastro e ativação da conta',
+        
+        // Split 20/80
+        split: [{
+          walletId: account.walletId,
+          percentualValue: 20.00 // 20% para a subconta
+        }]
+      }
+      
+      const paymentResult = await asaasRequest(c, '/payments', 'POST', paymentData)
+      
+      // Adicionar dados da cobrança ao retorno
+      if (paymentResult.ok && paymentResult.data) {
+        account.payment = {
+          id: paymentResult.data.id,
+          value: paymentResult.data.value,
+          status: paymentResult.data.status,
+          dueDate: paymentResult.data.dueDate,
+          invoiceUrl: paymentResult.data.invoiceUrl,
+          pixQrCode: {
+            qrCodeId: paymentResult.data.pixQrCodeId,
+            payload: paymentResult.data.pixQrCodePayload,
+            expirationDate: paymentResult.data.pixQrCodeExpirationDate
+          }
+        }
+      }
+    }
+    
+    // 4. Enviar email de boas-vindas
+    await sendWelcomeEmail(
+      c,
+      account.name,
+      account.email,
+      account.id,
+      account.walletId
+    )
+    
+    return c.json({
+      ok: true,
+      data: account
+    })
   } catch (error: any) {
     return c.json({ error: error.message }, 500)
   }
@@ -1354,6 +1419,57 @@ app.get('/cadastro/:linkId', (c) => {
                     
                     if (response.data.ok && response.data.data) {
                         const account = response.data.data;
+                        
+                        let pixHtml = '';
+                        if (account.payment && account.payment.pixQrCode && account.payment.pixQrCode.qrCodeId) {
+                            // Buscar QR Code da cobrança
+                            const qrResponse = await axios.get(\`/api/payments/\${account.payment.id}/pix-qrcode\`);
+                            
+                            if (qrResponse.data.ok && qrResponse.data.data) {
+                                const qrData = qrResponse.data.data;
+                                pixHtml = \`
+                                    <div class="mt-6 border-t border-green-300 pt-6">
+                                        <h4 class="text-lg font-bold text-green-800 mb-3 text-center">
+                                            <i class="fas fa-qrcode mr-2"></i>
+                                            Pague a Taxa de Cadastro (R$ 50,00)
+                                        </h4>
+                                        <div class="bg-white rounded-lg p-4">
+                                            <div class="text-center mb-4">
+                                                <img src="\${qrData.qrCodeBase64}" alt="QR Code PIX" class="mx-auto" style="max-width: 256px;">
+                                            </div>
+                                            <div class="space-y-2">
+                                                <p class="text-sm text-gray-700">
+                                                    <strong>Valor:</strong> R$ \${account.payment.value.toFixed(2)}
+                                                </p>
+                                                <p class="text-sm text-gray-700">
+                                                    <strong>Split:</strong> R$ \${(account.payment.value * 0.20).toFixed(2)} (20%) para sua conta, 
+                                                    R$ \${(account.payment.value * 0.80).toFixed(2)} (80%) para conta principal
+                                                </p>
+                                                <p class="text-sm text-gray-700">
+                                                    <strong>Vencimento:</strong> \${new Date(account.payment.dueDate).toLocaleDateString('pt-BR')}
+                                                </p>
+                                            </div>
+                                            <div class="mt-4">
+                                                <label class="block text-sm font-medium text-gray-700 mb-2">PIX Copia e Cola:</label>
+                                                <div class="flex gap-2">
+                                                    <input type="text" readonly value="\${qrData.payload}" 
+                                                        class="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded text-xs">
+                                                    <button onclick="navigator.clipboard.writeText('\${qrData.payload}'); this.innerHTML='<i class=\\'fas fa-check\\'></i> Copiado!'; setTimeout(() => this.innerHTML='<i class=\\'fas fa-copy\\'></i>', 2000)"
+                                                        class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                                                        <i class="fas fa-copy"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div class="mt-4 text-center text-sm text-gray-600">
+                                                <i class="fas fa-info-circle mr-1"></i>
+                                                Após o pagamento, sua conta será ativada automaticamente
+                                            </div>
+                                        </div>
+                                    </div>
+                                \`;
+                            }
+                        }
+                        
                         resultDiv.innerHTML = \`
                             <div class="bg-green-50 border border-green-200 rounded-lg p-6">
                                 <div class="text-center mb-4">
@@ -1373,9 +1489,13 @@ app.get('/cadastro/:linkId', (c) => {
                                         Verifique seu email para definir sua senha de acesso
                                     </p>
                                 </div>
+                                \${pixHtml}
                             </div>
                         \`;
                         e.target.reset();
+                        
+                        // Scroll para o resultado
+                        resultDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     } else {
                         throw new Error(response.data.data?.errors?.[0]?.description || response.data.data?.message || 'Erro ao criar conta');
                     }
