@@ -62,8 +62,9 @@ async function loadAccounts() {
     try {
         const response = await axios.get('/api/accounts');
         
-        if (response.data.ok && response.data.data) {
-            const accounts = response.data.data.data || [];
+        // Nova estrutura de resposta: {accounts: [...], totalCount: N}
+        if (response.data && response.data.accounts) {
+            const accounts = response.data.accounts || [];
             
             // Salvar accounts globalmente para filtros
             saveAccountsData(accounts);
@@ -79,21 +80,40 @@ async function loadAccounts() {
             // Atualizar contador
             const resultsDiv = document.getElementById('search-results');
             if (resultsDiv) {
-                resultsDiv.textContent = `Total: ${accounts.length} subconta(s)`;
+                resultsDiv.textContent = `Mostrando ${accounts.length} de ${accounts.length} subcontas`;
             }
             return;
 
-        } else {
+        } else if (response.data && response.data.error) {
+            // Caso de erro retornado pela API
             listDiv.innerHTML = `
                 <div class="bg-red-50 border border-red-200 rounded-lg p-4">
-                    <p class="text-red-800">Erro ao carregar subcontas: ${response.data.data?.message || 'Erro desconhecido'}</p>
+                    <p class="text-red-800">Erro ao carregar subcontas: ${response.data.error}</p>
+                    <button onclick="loadAccounts()" class="mt-2 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 text-sm">
+                        <i class="fas fa-redo mr-2"></i>Tentar Novamente
+                    </button>
+                </div>
+            `;
+        } else {
+            // Formato de resposta inesperado
+            console.error('Formato de resposta inesperado:', response.data);
+            listDiv.innerHTML = `
+                <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <p class="text-red-800">Erro ao carregar subcontas: Formato de resposta inesperado</p>
+                    <button onclick="loadAccounts()" class="mt-2 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 text-sm">
+                        <i class="fas fa-redo mr-2"></i>Tentar Novamente
+                    </button>
                 </div>
             `;
         }
     } catch (error) {
+        console.error('Erro ao carregar subcontas:', error);
         listDiv.innerHTML = `
             <div class="bg-red-50 border border-red-200 rounded-lg p-4">
                 <p class="text-red-800">Erro: ${error.message}</p>
+                <button onclick="loadAccounts()" class="mt-2 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 text-sm">
+                    <i class="fas fa-redo mr-2"></i>Tentar Novamente
+                </button>
             </div>
         `;
     }
