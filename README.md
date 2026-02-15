@@ -32,14 +32,7 @@ Sistema completo para gerenciamento de contas e subcontas da API Asaas, com gera
   - Endereço completo (CEP, Rua, Número, Complemento, Bairro)
 - ✅ Retorno da API Key e Wallet ID após criação
 
-### 4. Gerenciamento de Links de Cadastro
-- ✅ Gerar links personalizados por subconta
-- ✅ Definir prazo de expiração (7, 15, 30, 60 dias)
-- ✅ Copiar link para área de transferência
-- ✅ Visualizar data de criação e expiração
-- ✅ Listar todos os links criados
-
-### 5. Página Pública de Cadastro
+### 4. Página Pública de Cadastro
 - ✅ Interface moderna e responsiva para cadastro
 - ✅ Formulário completo com validação
 - ✅ Máscaras automáticas para CPF, CEP e telefones
@@ -48,7 +41,7 @@ Sistema completo para gerenciamento de contas e subcontas da API Asaas, com gera
 - ✅ Processamento em tempo real
 - ✅ Aceite de termos de uso
 
-### 6. Sistema de Autenticação
+### 5. Sistema de Autenticação
 - ✅ Login com usuário e senha
 - ✅ Autenticação via JWT (JSON Web Tokens)
 - ✅ Cookies HttpOnly seguros
