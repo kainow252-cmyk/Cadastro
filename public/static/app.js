@@ -308,26 +308,12 @@ async function generateApiKeyForSubaccount() {
     try {
         const subaccountData = JSON.parse(select.value);
         
-        // Confirmar ação
-        const confirm = window.confirm(
-            `Gerar nova API Key para:\n\n` +
-            `Subconta: ${subaccountData.name}\n` +
-            `ID: ${subaccountData.id}\n\n` +
-            `⚠️ ATENÇÃO:\n` +
-            `- Esta operação requer que o "Gerenciamento de API Keys" esteja habilitado na conta principal\n` +
-            `- A habilitação dura apenas 2 horas\n` +
-            `- A API Key só será exibida uma vez\n\n` +
-            `Deseja continuar?`
-        );
-        
-        if (!confirm) return;
-        
         // Mostrar loading
         const originalText = event.target.innerHTML;
         event.target.disabled = true;
         event.target.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
         
-        // Gerar API Key
+        // Gerar API Key diretamente
         const response = await axios.post(
             `/api/accounts/${subaccountData.id}/api-key`,
             {
