@@ -1548,9 +1548,6 @@ app.get('/', (c) => {
                         <button onclick="showSection('create')" class="nav-btn text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md">
                             <i class="fas fa-plus-circle mr-2"></i>Nova Conta
                         </button>
-                        <button onclick="showSection('links')" class="nav-btn text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md">
-                            <i class="fas fa-link mr-2"></i>Links
-                        </button>
                         <button onclick="showSection('pix')" class="nav-btn text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md">
                             <i class="fas fa-qrcode mr-2"></i>PIX
                         </button>
@@ -1566,7 +1563,7 @@ app.get('/', (c) => {
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             <!-- Dashboard Section -->
             <div id="dashboard-section" class="section">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                     <div class="bg-white rounded-lg shadow p-6">
                         <div class="flex items-center justify-between">
                             <div>
@@ -1582,23 +1579,11 @@ app.get('/', (c) => {
                     <div class="bg-white rounded-lg shadow p-6">
                         <div class="flex items-center justify-between">
                             <div>
-                                <p class="text-gray-500 text-sm">Links Ativos</p>
-                                <p class="text-3xl font-bold text-gray-800" id="active-links">0</p>
+                                <p class="text-gray-500 text-sm">Cobranças PIX</p>
+                                <p class="text-3xl font-bold text-gray-800" id="total-payments">0</p>
                             </div>
                             <div class="bg-green-100 rounded-full p-3">
-                                <i class="fas fa-link text-green-600 text-2xl"></i>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="bg-white rounded-lg shadow p-6">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <p class="text-gray-500 text-sm">Cadastros Hoje</p>
-                                <p class="text-3xl font-bold text-gray-800" id="today-signups">0</p>
-                            </div>
-                            <div class="bg-purple-100 rounded-full p-3">
-                                <i class="fas fa-user-plus text-purple-600 text-2xl"></i>
+                                <i class="fas fa-qrcode text-green-600 text-2xl"></i>
                             </div>
                         </div>
                     </div>
@@ -1795,46 +1780,6 @@ app.get('/', (c) => {
                         </form>
                         
                         <div id="create-result" class="mt-6 hidden"></div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Links Section -->
-            <div id="links-section" class="section hidden">
-                <div class="bg-white rounded-lg shadow">
-                    <div class="p-6 border-b border-gray-200">
-                        <h2 class="text-xl font-bold text-gray-800">
-                            <i class="fas fa-link mr-2 text-purple-600"></i>
-                            Gerenciar Links de Cadastro
-                        </h2>
-                    </div>
-                    <div class="p-6">
-                        <div class="mb-6">
-                            <h3 class="text-lg font-semibold text-gray-800 mb-4">Criar Novo Link</h3>
-                            <form id="create-link-form" class="flex gap-4">
-                                <div class="flex-1">
-                                    <input type="text" id="link-account-id" placeholder="ID da Subconta"
-                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                                </div>
-                                <div class="w-48">
-                                    <select id="link-expiration" 
-                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                                        <option value="7">7 dias</option>
-                                        <option value="15">15 dias</option>
-                                        <option value="30">30 dias</option>
-                                        <option value="60">60 dias</option>
-                                    </select>
-                                </div>
-                                <button type="submit"
-                                    class="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
-                                    <i class="fas fa-plus mr-2"></i>Gerar Link
-                                </button>
-                            </form>
-                        </div>
-                        
-                        <div id="links-list" class="space-y-4">
-                            <p class="text-gray-500 text-center py-8">Nenhum link criado ainda</p>
-                        </div>
                     </div>
                 </div>
             </div>
