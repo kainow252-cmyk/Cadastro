@@ -865,13 +865,17 @@ async function loadAllApiKeys() {
     try {
         // Se um filtro foi selecionado, carregar apenas dessa subconta
         if (accountId) {
-            const response = await axios.get(`/api/accounts/${accountId}/api-keys`);
-            
-            if (response.data.ok) {
-                const keys = response.data.data.data || [];
-                displayApiKeysList(keys, accountId, container);
-            } else {
-                container.innerHTML = '<p class="text-red-500 text-center py-4">Erro ao carregar API Keys</p>';
+            try {
+                const response = await axios.get(`/api/accounts/${accountId}/api-keys`);
+                
+                if (response.data.ok) {
+                    const keys = response.data.data || [];
+                    displayApiKeysList(keys, accountId, container);
+                } else {
+                    showApiKeysError(container, response.data);
+                }
+            } catch (error) {
+                showApiKeysError(container, error.response?.data);
             }
         } else {
             // Carregar todas as subcontas e suas API Keys
@@ -889,7 +893,7 @@ async function loadAllApiKeys() {
                 try {
                     const keysResponse = await axios.get(`/api/accounts/${account.id}/api-keys`);
                     if (keysResponse.data.ok) {
-                        const keys = keysResponse.data.data.data || [];
+                        const keys = keysResponse.data.data || [];
                         keys.forEach(key => {
                             allKeys.push({
                                 ...key,
@@ -1027,4 +1031,42 @@ async function deleteApiKeyConfirm(accountId, keyId) {
     if (confirm('⚠️ Deseja realmente EXCLUIR esta API Key?\n\nEsta ação não pode ser desfeita e a chave será permanentemente removida.')) {
         await deleteApiKey(accountId, keyId);
     }
+}
+
+// Exibir erro ao carregar API Keys
+function showApiKeysError(container, errorData) {
+    const message = errorData?.message || errorData?.error || 'Erro ao carregar API Keys';
+    const help = errorData?.help || '';
+    
+    container.innerHTML = `
+        <div class="bg-red-50 border border-red-200 rounded-lg p-6">
+            <div class="flex items-start gap-3">
+                <i class="fas fa-exclamation-triangle text-red-600 text-2xl"></i>
+                <div class="flex-1">
+                    <h4 class="font-semibold text-red-800 mb-2">❌ ${message}</h4>
+                    ${help ? `
+                        <div class="text-sm text-red-700 bg-white border border-red-200 rounded p-3 mb-3">
+                            <p class="font-semibold mb-2">📋 Como resolver:</p>
+                            <ol class="list-decimal list-inside space-y-1">
+                                <li>Acesse <strong>https://www.asaas.com</strong></li>
+                                <li>Faça login com a conta principal</li>
+                                <li>Vá em <strong>Integrações → Chaves de API</strong></li>
+                                <li>Procure por <strong>"Gerenciamento de Chaves de API de Subcontas"</strong></li>
+                                <li>Clique em <strong>"Habilitar acesso"</strong></li>
+                                <li>Configure o whitelist de IPs (se necessário)</li>
+                                <li>Aguarde alguns segundos e tente novamente</li>
+                            </ol>
+                            <p class="mt-3 text-xs text-gray-600">
+                                ⏰ O acesso habilitado expira após 2 horas
+                            </p>
+                        </div>
+                    ` : ''}
+                    <button onclick="loadAllApiKeys()" 
+                        class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 text-sm">
+                        <i class="fas fa-redo mr-2"></i>Tentar Novamente
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
 }

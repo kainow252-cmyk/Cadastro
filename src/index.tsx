@@ -663,16 +663,20 @@ app.get('/api/accounts/:id/api-keys', async (c) => {
     const result = await asaasRequest(c, `/accounts/${accountId}/accessTokens`)
 
     if (!result.ok) {
+      // Extrair mensagem de erro específica
+      const errorMessage = result.data?.errors?.[0]?.description || 'Erro desconhecido'
+      
       return c.json({ 
         error: 'Erro ao listar API Keys', 
         details: result.data,
-        message: 'Verifique se o gerenciamento de API Keys está habilitado'
+        message: errorMessage,
+        help: 'Acesse Asaas → Integrações → Chaves de API → Gerenciamento de Chaves de API de Subcontas → Habilitar acesso'
       }, result.status)
     }
 
     return c.json({
       ok: true,
-      data: result.data.data || []
+      data: result.data
     })
 
   } catch (error: any) {
