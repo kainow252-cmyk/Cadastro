@@ -2007,9 +2007,14 @@ app.get('/', (c) => {
                                 <i class="fas fa-users mr-2 text-blue-600"></i>
                                 Subcontas Cadastradas
                             </h2>
-                            <button onclick="loadAccounts()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
-                                <i class="fas fa-sync-alt mr-2"></i>Atualizar
-                            </button>
+                            <div class="flex gap-3">
+                                <button onclick="openLinkModal()" class="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-4 py-2 rounded-lg hover:from-purple-600 hover:to-pink-600 font-semibold shadow-md transition">
+                                    <i class="fas fa-link mr-2"></i>Gerar Link de Cadastro
+                                </button>
+                                <button onclick="loadAccounts()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+                                    <i class="fas fa-sync-alt mr-2"></i>Atualizar
+                                </button>
+                            </div>
                         </div>
                     </div>
                     
@@ -2474,8 +2479,141 @@ app.get('/', (c) => {
             </div>
         </div>
 
+        <!-- Modal de Link de Cadastro -->
+        <div id="link-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                <!-- Header -->
+                <div class="bg-gradient-to-r from-purple-500 to-pink-500 p-6 rounded-t-2xl">
+                    <div class="flex justify-between items-center">
+                        <h3 class="text-2xl font-bold text-white">
+                            <i class="fas fa-link mr-2"></i>
+                            Link de Cadastro Gerado
+                        </h3>
+                        <button onclick="closeLinkModal()" class="text-white hover:text-gray-200 text-2xl">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <p class="text-purple-100 text-sm mt-2">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        Compartilhe este link para que pessoas possam se cadastrar
+                    </p>
+                </div>
+
+                <!-- Body -->
+                <div class="p-6 space-y-6">
+                    <!-- Loading State -->
+                    <div id="link-loading" class="text-center py-8">
+                        <i class="fas fa-spinner fa-spin text-4xl text-purple-500 mb-4"></i>
+                        <p class="text-gray-600">Gerando link único...</p>
+                    </div>
+
+                    <!-- Success State -->
+                    <div id="link-content" class="hidden space-y-6">
+                        <!-- Link Display -->
+                        <div class="bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg p-4 border-2 border-purple-200">
+                            <label class="block text-sm font-bold text-gray-700 mb-2">
+                                <i class="fas fa-link mr-1"></i>
+                                Link de Cadastro:
+                            </label>
+                            <div class="flex gap-2">
+                                <input type="text" 
+                                    id="generated-link" 
+                                    readonly
+                                    class="flex-1 px-4 py-3 bg-white border border-gray-300 rounded-lg text-sm font-mono">
+                                <button onclick="copyLink()" 
+                                    id="copy-link-btn"
+                                    class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Link Info -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                                <p class="text-xs font-semibold text-blue-900 mb-1">
+                                    <i class="fas fa-clock mr-1"></i>Validade
+                                </p>
+                                <p class="text-lg font-bold text-blue-700" id="link-expires"></p>
+                            </div>
+                            <div class="bg-green-50 rounded-lg p-4 border border-green-200">
+                                <p class="text-xs font-semibold text-green-900 mb-1">
+                                    <i class="fas fa-infinity mr-1"></i>Usos
+                                </p>
+                                <p class="text-lg font-bold text-green-700">Ilimitado</p>
+                            </div>
+                        </div>
+
+                        <!-- QR Code -->
+                        <div class="text-center bg-white p-6 rounded-lg border-2 border-gray-200">
+                            <p class="text-sm font-semibold text-gray-700 mb-3">
+                                <i class="fas fa-qrcode mr-1"></i>QR Code do Link
+                            </p>
+                            <div id="qr-code-container" class="inline-block">
+                                <!-- QR Code will be inserted here -->
+                            </div>
+                            <p class="text-xs text-gray-500 mt-3">Escaneie este QR Code para acessar o link de cadastro</p>
+                        </div>
+
+                        <!-- Share Options -->
+                        <div class="space-y-3">
+                            <p class="text-sm font-bold text-gray-700">
+                                <i class="fas fa-share-alt mr-1"></i>Compartilhar via:
+                            </p>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <button onclick="shareWhatsApp()" 
+                                    class="w-full px-4 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 font-semibold flex items-center justify-center gap-2">
+                                    <i class="fab fa-whatsapp text-xl"></i>
+                                    WhatsApp
+                                </button>
+                                <button onclick="shareEmail()" 
+                                    class="w-full px-4 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 font-semibold flex items-center justify-center gap-2">
+                                    <i class="fas fa-envelope text-xl"></i>
+                                    Email
+                                </button>
+                                <button onclick="shareTelegram()" 
+                                    class="w-full px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 font-semibold flex items-center justify-center gap-2">
+                                    <i class="fab fa-telegram text-xl"></i>
+                                    Telegram
+                                </button>
+                                <button onclick="downloadQRCode()" 
+                                    class="w-full px-4 py-3 bg-purple-500 text-white rounded-lg hover:bg-purple-600 font-semibold flex items-center justify-center gap-2">
+                                    <i class="fas fa-download text-xl"></i>
+                                    Baixar QR Code
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Instructions -->
+                        <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded">
+                            <div class="flex">
+                                <i class="fas fa-lightbulb text-yellow-600 text-xl mr-3 mt-1"></i>
+                                <div>
+                                    <p class="text-sm font-semibold text-yellow-800 mb-1">Como usar este link:</p>
+                                    <ol class="text-xs text-yellow-700 space-y-1 ml-4 list-decimal">
+                                        <li>Copie o link ou compartilhe via WhatsApp/Email</li>
+                                        <li>A pessoa acessa o link e preenche o formulário</li>
+                                        <li>Sistema cria a subconta automaticamente</li>
+                                        <li>Email de confirmação é enviado</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer -->
+                <div class="bg-gray-50 px-6 py-4 rounded-b-2xl flex justify-end gap-3">
+                    <button onclick="closeLinkModal()" 
+                        class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-semibold">
+                        Fechar
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-        <script src="/static/app.js?v=2.5"></script>
+        <script src="/static/app.js?v=2.6"></script>
     </body>
     </html>
   `)

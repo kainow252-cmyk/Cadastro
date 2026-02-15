@@ -1657,3 +1657,138 @@ function displayAccounts(accounts) {
         `;
     }).join('');
 }
+
+// ============================================
+// FUNÇÕES DE LINK DE CADASTRO
+// ============================================
+
+let currentGeneratedLink = '';
+
+// Abrir modal e gerar link
+async function openLinkModal() {
+    const modal = document.getElementById('link-modal');
+    const loading = document.getElementById('link-loading');
+    const content = document.getElementById('link-content');
+    
+    // Mostrar modal e loading
+    modal.classList.remove('hidden');
+    loading.classList.remove('hidden');
+    content.classList.add('hidden');
+    
+    try {
+        // Gerar link via API
+        const response = await axios.post('/api/signup-link', {
+            accountId: 'new', // Link genérico para novo cadastro
+            expirationDays: 30,
+            maxUses: null,
+            notes: 'Link gerado via dashboard admin'
+        });
+        
+        if (response.data.ok) {
+            const linkData = response.data.data;
+            currentGeneratedLink = linkData.url;
+            
+            // Preencher informações do link
+            document.getElementById('generated-link').value = linkData.url;
+            
+            // Formatar data de expiração
+            const expiresDate = new Date(linkData.expiresAt);
+            const expiresFormatted = expiresDate.toLocaleDateString('pt-BR', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric'
+            });
+            document.getElementById('link-expires').textContent = expiresFormatted;
+            
+            // Gerar QR Code
+            const qrContainer = document.getElementById('qr-code-container');
+            const qrSize = 200;
+            const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${qrSize}x${qrSize}&data=${encodeURIComponent(linkData.url)}`;
+            qrContainer.innerHTML = `<img src="${qrUrl}" alt="QR Code" class="mx-auto border-2 border-gray-300 rounded-lg" style="width: ${qrSize}px; height: ${qrSize}px;">`;
+            
+            // Mostrar conteúdo
+            loading.classList.add('hidden');
+            content.classList.remove('hidden');
+        } else {
+            throw new Error(response.data.error || 'Erro ao gerar link');
+        }
+    } catch (error) {
+        console.error('Erro ao gerar link:', error);
+        alert('❌ Erro ao gerar link de cadastro: ' + error.message);
+        closeLinkModal();
+    }
+}
+
+// Fechar modal
+function closeLinkModal() {
+    const modal = document.getElementById('link-modal');
+    modal.classList.add('hidden');
+    currentGeneratedLink = '';
+}
+
+// Copiar link
+function copyLink() {
+    const input = document.getElementById('generated-link');
+    const btn = document.getElementById('copy-link-btn');
+    
+    input.select();
+    document.execCommand('copy');
+    
+    // Feedback visual
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-check"></i>';
+    btn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+    btn.classList.add('bg-green-600');
+    
+    setTimeout(() => {
+        btn.innerHTML = originalHtml;
+        btn.classList.remove('bg-green-600');
+        btn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+    }, 2000);
+}
+
+// Compartilhar no WhatsApp
+function shareWhatsApp() {
+    const message = encodeURIComponent(`🎉 Olá! Você foi convidado para criar sua conta.\n\nClique no link abaixo para completar seu cadastro:\n\n${currentGeneratedLink}\n\n✅ Cadastro rápido e seguro!`);
+    window.open(`https://wa.me/?text=${message}`, '_blank');
+}
+
+// Compartilhar por Email
+function shareEmail() {
+    const subject = encodeURIComponent('Convite para Cadastro');
+    const body = encodeURIComponent(`Olá!
+
+Você foi convidado para criar sua conta.
+
+Clique no link abaixo para completar seu cadastro:
+
+${currentGeneratedLink}
+
+✅ Cadastro rápido e seguro!
+
+Atenciosamente,
+Equipe Asaas`);
+    
+    window.location.href = `mailto:?subject=${subject}&body=${body}`;
+}
+
+// Compartilhar no Telegram
+function shareTelegram() {
+    const message = encodeURIComponent(`🎉 Você foi convidado para criar sua conta!\n\nClique no link abaixo:\n${currentGeneratedLink}\n\n✅ Cadastro rápido e seguro!`);
+    window.open(`https://t.me/share/url?url=${encodeURIComponent(currentGeneratedLink)}&text=${message}`, '_blank');
+}
+
+// Baixar QR Code
+function downloadQRCode() {
+    const qrContainer = document.getElementById('qr-code-container');
+    const img = qrContainer.querySelector('img');
+    
+    if (img) {
+        const link = document.createElement('a');
+        link.href = img.src;
+        link.download = 'qrcode-cadastro.png';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+}
