@@ -71,16 +71,36 @@ Sistema completo para gerenciamento de contas e subcontas da API Asaas, com gera
 - ✅ Consulta de detalhes da cobrança
 - ✅ Máscaras automáticas para CPF/CNPJ e telefone
 
-### 9. Geração de API Keys para Subcontas
-- ✅ Gerar API Keys diretamente pela interface
-- ✅ Botão dedicado na seção PIX
-- ✅ Validações e confirmações de segurança
-- ✅ Exibição única da API Key gerada
-- ✅ Informações detalhadas (ID, data, expiração, status)
-- ✅ Função de copiar para área de transferência
-- ✅ Avisos de segurança e boas práticas
-- ✅ API endpoints para gerenciar API Keys
-- ✅ Listar, criar e excluir API Keys de subcontas
+### 9. Geração e Gerenciamento de API Keys
+- ✅ **Geração de API Keys**
+  - Gerar API Keys diretamente pela interface (seção PIX)
+  - Botão dedicado ao lado do seletor de subcontas
+  - Validações e avisos de segurança
+  - Exibição única da API Key gerada (não pode ser recuperada depois)
+  - API Keys geradas **sem expiração** (tempo indeterminado)
+  - Informações detalhadas (ID, data de criação, status)
+  - Função de copiar para área de transferência
+  
+- ✅ **Dashboard de Gerenciamento**
+  - Nova seção "API Keys" no menu principal
+  - Visualização de todas as API Keys de todas as subcontas
+  - Filtro por subconta específica
+  - Status visual (ativa/desativada)
+  - Botões de ação para cada chave:
+    - ✅ Desativar/Ativar API Key
+    - ✅ Excluir permanentemente
+  - Informações completas de cada chave:
+    - Nome da subconta proprietária
+    - Email da subconta
+    - Status (ativa/inativa)
+    - Data de criação
+    - Validade (sem expiração)
+    - ID da chave
+  
+- ✅ **API Endpoints**
+  - `POST /api/accounts/:id/api-key` - Criar nova API Key
+  - `GET /api/accounts/:id/api-keys` - Listar API Keys da subconta
+  - `DELETE /api/accounts/:id/api-keys/:keyId` - Excluir API Key
 
 ## 📡 Endpoints da API
 
@@ -238,7 +258,34 @@ npm run deploy:prod
 4. Clique em "Gerar Link"
 5. Use o botão "Copiar" para compartilhar o link
 
-### 4. Usar o Link de Cadastro Público
+### 4. Gerar API Key para Subconta
+1. Acesse a seção "PIX" no menu
+2. Selecione a subconta desejada no dropdown
+3. Clique no botão 🔑 "Gerar API Key" ao lado do dropdown
+4. Aguarde 2-3 segundos (carregamento automático)
+5. **IMPORTANTE**: Copie a API Key imediatamente - ela só é exibida uma vez!
+6. Guarde a chave em local seguro (.env, gerenciador de senhas)
+
+**Observações:**
+- API Keys são geradas **sem expiração** (tempo indeterminado)
+- Só podem ser desativadas/excluídas pelo administrador no dashboard
+- O gerenciamento de API Keys no Asaas precisa estar habilitado (dura 2h)
+
+### 5. Gerenciar API Keys (Dashboard)
+1. Clique em "API Keys" no menu principal
+2. **Visualizar todas**: Clique em "Buscar" sem filtro para ver todas as chaves
+3. **Filtrar por subconta**: Selecione uma subconta e clique em "Buscar"
+4. **Desativar chave**: Clique no botão "Desativar" (amarelo) ao lado da chave
+5. **Excluir chave**: Clique no botão "Excluir" (vermelho) para remover permanentemente
+
+**Informações exibidas:**
+- Nome e email da subconta proprietária
+- Status da chave (ativa/desativada)
+- Data de criação
+- Validade (sem expiração)
+- ID da chave
+
+### 6. Usar o Link de Cadastro Público
 1. Compartilhe o link gerado com o cliente/parceiro
 2. Eles acessam o link e preenchem o formulário de cadastro
 3. Os dados são validados e máscaras aplicadas automaticamente (CPF, CEP, telefones)
