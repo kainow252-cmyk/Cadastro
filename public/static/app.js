@@ -1190,71 +1190,40 @@ async function generateStaticPix(accountId, walletId) {
                     </div>
                     
                     <!-- Opções de Uso -->
-                    <div class="mt-4 border-t border-gray-300 pt-4">
-                        <h5 class="text-sm font-bold text-gray-800 mb-3">
-                            <i class="fas fa-share-alt mr-2 text-purple-600"></i>
-                            Como Usar Este QR Code:
+                    <div class="mt-3 border-t-2 border-purple-300 pt-3 bg-purple-50 rounded-lg p-3">
+                        <h5 class="text-xs font-bold text-purple-900 mb-2 text-center">
+                            <i class="fas fa-share-alt mr-1"></i>
+                            COMPARTILHAR QR CODE
                         </h5>
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div class="grid grid-cols-3 gap-2">
                             <!-- Opção 1: Baixar Imagem -->
-                            <div class="bg-white rounded-lg p-3 shadow-sm border border-gray-200">
-                                <div class="text-center mb-2">
-                                    <i class="fas fa-download text-3xl text-blue-600"></i>
-                                </div>
-                                <h6 class="text-sm font-bold text-gray-800 text-center mb-2">Baixar Imagem</h6>
-                                <p class="text-xs text-gray-600 text-center mb-3">
-                                    Para banner, flyer, site ou impressão
-                                </p>
-                                <button onclick="downloadQRCode('${accountId}', '${pixData.qrCodeBase64}')" 
-                                    class="w-full px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-semibold">
-                                    <i class="fas fa-download mr-2"></i>Baixar PNG
-                                </button>
-                            </div>
+                            <button onclick="downloadQRCode('${accountId}', '${pixData.qrCodeBase64}')" 
+                                class="bg-blue-600 text-white rounded-lg p-2 hover:bg-blue-700 text-center flex flex-col items-center gap-1 shadow-md">
+                                <i class="fas fa-download text-2xl"></i>
+                                <span class="text-xs font-bold">Baixar<br>PNG</span>
+                            </button>
                             
                             <!-- Opção 2: Código HTML -->
-                            <div class="bg-white rounded-lg p-3 shadow-sm border border-gray-200">
-                                <div class="text-center mb-2">
-                                    <i class="fas fa-code text-3xl text-green-600"></i>
-                                </div>
-                                <h6 class="text-sm font-bold text-gray-800 text-center mb-2">Código HTML</h6>
-                                <p class="text-xs text-gray-600 text-center mb-3">
-                                    Cole no seu site ou loja virtual
-                                </p>
-                                <button onclick="copyHtmlCode('${accountId}', '${pixData.qrCodeBase64}', '${value}', '${description}')" 
-                                    class="w-full px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm font-semibold">
-                                    <i class="fas fa-code mr-2"></i>Copiar HTML
-                                </button>
-                            </div>
+                            <button onclick="copyHtmlCode('${accountId}', '${pixData.qrCodeBase64}', '${value}', '${description}')" 
+                                class="bg-green-600 text-white rounded-lg p-2 hover:bg-green-700 text-center flex flex-col items-center gap-1 shadow-md">
+                                <i class="fas fa-code text-2xl"></i>
+                                <span class="text-xs font-bold">Copiar<br>HTML</span>
+                            </button>
                             
                             <!-- Opção 3: Link Direto -->
-                            <div class="bg-white rounded-lg p-3 shadow-sm border border-gray-200">
-                                <div class="text-center mb-2">
-                                    <i class="fas fa-link text-3xl text-purple-600"></i>
-                                </div>
-                                <h6 class="text-sm font-bold text-gray-800 text-center mb-2">Link Direto</h6>
-                                <p class="text-xs text-gray-600 text-center mb-3">
-                                    Compartilhe em WhatsApp ou redes sociais
-                                </p>
-                                <button onclick="copyPixLink('${accountId}', '${pixData.payload}')" 
-                                    class="w-full px-3 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 text-sm font-semibold">
-                                    <i class="fas fa-share-alt mr-2"></i>Copiar Link
-                                </button>
-                            </div>
+                            <button onclick="copyPixLink('${accountId}', '${pixData.payload}')" 
+                                class="bg-purple-600 text-white rounded-lg p-2 hover:bg-purple-700 text-center flex flex-col items-center gap-1 shadow-md">
+                                <i class="fas fa-share-alt text-2xl"></i>
+                                <span class="text-xs font-bold">Copiar<br>Chave</span>
+                            </button>
                         </div>
                         
-                        <!-- Exemplos de Uso -->
-                        <div class="mt-3 bg-blue-50 rounded-lg p-3 border border-blue-200">
-                            <h6 class="text-xs font-bold text-blue-900 mb-2">
-                                <i class="fas fa-lightbulb mr-1"></i>
-                                Exemplos de Uso:
-                            </h6>
-                            <ul class="text-xs text-blue-800 space-y-1">
-                                <li><i class="fas fa-check text-green-600 mr-2"></i>Banner no seu site ou loja virtual</li>
-                                <li><i class="fas fa-check text-green-600 mr-2"></i>Instagram/Facebook Stories ou Posts</li>
-                                <li><i class="fas fa-check text-green-600 mr-2"></i>WhatsApp Business (status ou mensagens)</li>
-                                <li><i class="fas fa-check text-green-600 mr-2"></i>Flyers impressos ou cardápios</li>
-                                <li><i class="fas fa-check text-green-600 mr-2"></i>Email marketing ou newsletters</li>
-                            </ul>
+                        <!-- Dica -->
+                        <div class="mt-2 text-center">
+                            <p class="text-xs text-gray-600">
+                                <i class="fas fa-lightbulb text-yellow-500 mr-1"></i>
+                                Use em: site, banner, WhatsApp, Stories
+                            </p>
                         </div>
                     </div>
                 </div>
