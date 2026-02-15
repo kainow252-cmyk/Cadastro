@@ -2013,33 +2013,53 @@ app.get('/', (c) => {
                         </div>
                     </div>
                     
-                    <!-- Campo de Pesquisa -->
-                    <div class="px-6 pb-4 border-b border-gray-200">
-                        <div class="flex gap-3">
-                            <div class="flex-1">
+                    <!-- Filtros e Pesquisa -->
+                    <div class="px-6 pb-4 border-b border-gray-200 bg-gray-50">
+                        <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
+                            <!-- Campo de Pesquisa (maior destaque) -->
+                            <div class="md:col-span-6">
+                                <label class="block text-xs font-semibold text-gray-700 mb-1">
+                                    <i class="fas fa-search mr-1"></i>Pesquisar
+                                </label>
                                 <input type="text" 
                                     id="search-accounts" 
-                                    placeholder="🔍 Buscar por nome, email, CPF/CNPJ, ID..."
-                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                    placeholder="Digite nome, CPF/CNPJ, email ou ID..."
+                                    class="w-full px-4 py-2.5 border-2 border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                     onkeyup="filterAccounts()">
                             </div>
-                            <select id="filter-status" 
-                                class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                onchange="filterAccounts()">
-                                <option value="">Todos os Status</option>
-                                <option value="approved">✅ Aprovados</option>
-                                <option value="pending">⏰ Pendentes</option>
-                            </select>
-                            <select id="sort-accounts" 
-                                class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                                onchange="sortAccounts()">
-                                <option value="name-asc">Nome A-Z</option>
-                                <option value="name-desc">Nome Z-A</option>
-                                <option value="date-desc">Mais Recentes</option>
-                                <option value="date-asc">Mais Antigos</option>
-                            </select>
+                            
+                            <!-- Filtro de Status -->
+                            <div class="md:col-span-3">
+                                <label class="block text-xs font-semibold text-gray-700 mb-1">
+                                    <i class="fas fa-filter mr-1"></i>Status
+                                </label>
+                                <select id="filter-status" 
+                                    class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                    onchange="filterAccounts()">
+                                    <option value="">Todos os Status</option>
+                                    <option value="approved">✅ Aprovados</option>
+                                    <option value="pending">⏰ Pendentes</option>
+                                </select>
+                            </div>
+                            
+                            <!-- Ordenação -->
+                            <div class="md:col-span-3">
+                                <label class="block text-xs font-semibold text-gray-700 mb-1">
+                                    <i class="fas fa-sort mr-1"></i>Ordenar por
+                                </label>
+                                <select id="sort-accounts" 
+                                    class="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                    onchange="sortAccounts()">
+                                    <option value="name-asc">Nome A-Z</option>
+                                    <option value="name-desc">Nome Z-A</option>
+                                    <option value="date-desc">Mais Recentes</option>
+                                    <option value="date-asc">Mais Antigos</option>
+                                </select>
+                            </div>
                         </div>
-                        <div id="search-results" class="mt-2 text-sm text-gray-600"></div>
+                        
+                        <!-- Contador de Resultados -->
+                        <div id="search-results" class="mt-3 text-sm font-medium text-gray-700"></div>
                     </div>
                     
                     <div class="p-6">
@@ -2455,7 +2475,7 @@ app.get('/', (c) => {
         </div>
 
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-        <script src="/static/app.js?v=2.3"></script>
+        <script src="/static/app.js?v=2.4"></script>
     </body>
     </html>
   `)
