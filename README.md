@@ -78,6 +78,17 @@ Sistema completo para gerenciamento de contas e subcontas da API Asaas, com gera
 - ✅ Consulta de detalhes da cobrança
 - ✅ Máscaras automáticas para CPF/CNPJ e telefone
 
+### 9. Geração de API Keys para Subcontas
+- ✅ Gerar API Keys diretamente pela interface
+- ✅ Botão dedicado na seção PIX
+- ✅ Validações e confirmações de segurança
+- ✅ Exibição única da API Key gerada
+- ✅ Informações detalhadas (ID, data, expiração, status)
+- ✅ Função de copiar para área de transferência
+- ✅ Avisos de segurança e boas práticas
+- ✅ API endpoints para gerenciar API Keys
+- ✅ Listar, criar e excluir API Keys de subcontas
+
 ## 📡 Endpoints da API
 
 ### Subcontas
@@ -98,6 +109,13 @@ Sistema completo para gerenciamento de contas e subcontas da API Asaas, com gera
   - Body: `{ username: string, password: string }`
 - `POST /api/logout` - Realizar logout
 - `GET /api/check-auth` - Verificar status de autenticação
+
+### Gerenciamento de API Keys
+- `POST /api/accounts/:id/api-key` - Gerar API Key para subconta
+  - Body: `{ "name": "Nome da chave", "expiresAt": "2026-12-31" }`
+  - Retorna a API Key (única vez)
+- `GET /api/accounts/:id/api-keys` - Listar API Keys de uma subconta
+- `DELETE /api/accounts/:id/api-keys/:keyId` - Excluir API Key
 
 ### Pagamentos PIX
 - `POST /api/payments` - Criar cobrança PIX com split
@@ -401,3 +419,46 @@ curl -X POST http://localhost:3000/api/payments \
   }
 }
 ```
+
+## 🔑 Gerando API Keys para Subcontas
+
+### ⚠️ Configuração Necessária ANTES de Usar
+
+**IMPORTANTE**: Antes de gerar API Keys, você DEVE habilitar o gerenciamento no Asaas:
+
+1. Acesse https://www.asaas.com (conta principal)
+2. Vá em **Integrações** → **Chaves de API**
+3. Localize **"Gerenciamento de Chaves de API de Subcontas"**
+4. Clique em **"Habilitar acesso"**
+
+**Nota**: A habilitação dura **apenas 2 horas** e expira automaticamente por segurança.
+
+### Como Gerar pela Interface
+
+1. **Acesse a seção PIX** no dashboard
+2. **Selecione a subconta** no dropdown
+3. **Clique no botão azul com ícone de chave** (🔑)
+4. **Confirme** a operação
+5. **Copie a API Key** exibida (única vez!)
+6. **Guarde em local seguro**
+
+### Detalhes Exibidos
+
+- ✅ API Key completa (formato: `$aact_...`)
+- ✅ Nome da chave
+- ✅ ID único
+- ✅ Data de criação
+- ✅ Data de expiração (se houver)
+- ✅ Status (Ativa/Inativa)
+- ✅ Botão de copiar
+
+### Avisos de Segurança
+
+⚠️ **A API Key só é exibida UMA VEZ**  
+⚠️ **Não é possível recuperar depois**  
+⚠️ **Gere uma nova se perder**
+
+### Para Mais Informações
+
+Consulte o guia completo: [`GUIA_API_KEY.md`](./GUIA_API_KEY.md)
+
