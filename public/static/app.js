@@ -1104,9 +1104,10 @@ async function generateStaticPix(accountId, walletId) {
             const splitValue20 = (value * 0.20).toFixed(2);
             const splitValue80 = (value * 0.80).toFixed(2);
             
-            // Ocultar formulário (se existir)
-            if (formDiv) {
-                formDiv.style.display = 'none';
+            // Ocultar formulário
+            const formElement = document.getElementById(`qr-form-${accountId}`);
+            if (formElement) {
+                formElement.classList.add('hidden');
             }
             
             pixDiv.innerHTML = `
@@ -1253,7 +1254,7 @@ function copyPixPayload(accountId) {
 }
 
 function resetPixForm(accountId) {
-    const formDiv = document.getElementById(`pix-form-${accountId}`);
+    const formDiv = document.getElementById(`qr-form-${accountId}`);
     const pixDiv = document.getElementById(`pix-static-${accountId}`);
     const valueInput = document.getElementById(`pix-value-${accountId}`);
     const descInput = document.getElementById(`pix-desc-${accountId}`);
@@ -1265,7 +1266,7 @@ function resetPixForm(accountId) {
     }
     
     // Mostrar formulário novamente
-    formDiv.style.display = 'block';
+    formDiv.classList.remove('hidden');
     
     // Ocultar resultado
     pixDiv.classList.add('hidden');
@@ -1273,8 +1274,54 @@ function resetPixForm(accountId) {
     
     // Limpar campos
     valueInput.value = '';
-    descInput.value = '';
+    descInput.value = 'Pagamento via PIX';
     valueInput.focus();
+}
+
+// Abre o iframe do PIX dentro do card da subconta
+function togglePixForm(accountId, walletId) {
+    const frame = document.getElementById(`pix-frame-${accountId}`);
+    const btn = document.getElementById(`btn-toggle-${accountId}`);
+    
+    if (!frame) {
+        console.error('Frame PIX não encontrado:', accountId);
+        return;
+    }
+    
+    // Toggle visibility
+    if (frame.classList.contains('hidden')) {
+        frame.classList.remove('hidden');
+        btn.innerHTML = '<i class="fas fa-times mr-2"></i>Fechar QR Code';
+        btn.classList.remove('from-green-500', 'to-blue-500');
+        btn.classList.add('from-gray-500', 'to-gray-600');
+        
+        // Focar no input de valor
+        setTimeout(() => {
+            const valueInput = document.getElementById(`pix-value-${accountId}`);
+            if (valueInput) valueInput.focus();
+        }, 100);
+    } else {
+        closePixFrame(accountId);
+    }
+}
+
+// Fecha o iframe e reseta
+function closePixFrame(accountId) {
+    const frame = document.getElementById(`pix-frame-${accountId}`);
+    const btn = document.getElementById(`btn-toggle-${accountId}`);
+    
+    if (frame) {
+        frame.classList.add('hidden');
+    }
+    
+    if (btn) {
+        btn.innerHTML = '<i class="fas fa-qrcode mr-2"></i>Gerar QR Code PIX com Valor Fixo (Split 20/80)';
+        btn.classList.remove('from-gray-500', 'to-gray-600');
+        btn.classList.add('from-green-500', 'to-blue-500');
+    }
+    
+    // Resetar formulário
+    resetPixForm(accountId);
 }
 
 // Exibir erro ao carregar API Keys
@@ -1529,32 +1576,50 @@ function displayAccounts(accounts) {
         
         // Seção de PIX (só para aprovados)
         const pixSection = hasWallet ? `
-            <div class="mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
-                <h4 class="text-sm font-bold text-green-900 mb-3">
-                    <i class="fas fa-qrcode mr-2"></i>
-                    QR Code PIX com Valor Fixo (Split 20/80)
-                </h4>
-                <div id="qr-form-${account.id}">
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                        <input type="number" 
-                            id="pix-value-${account.id}" 
-                            placeholder="Valor fixo (R$)" 
-                            step="0.01" 
-                            min="1"
-                            required
-                            class="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-green-500">
-                        <input type="text" 
-                            id="pix-desc-${account.id}" 
-                            placeholder="Descrição (opcional)" 
-                            value="Pagamento via PIX"
-                            class="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-green-500">
-                        <button onclick="generateStaticPix('${account.id}', '${account.walletId}')" 
-                            class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 font-semibold">
-                            <i class="fas fa-qrcode mr-2"></i>Gerar QR Code
+            <div class="mt-4">
+                <button onclick="togglePixForm('${account.id}', '${account.walletId}')" 
+                    id="btn-toggle-${account.id}"
+                    class="w-full px-4 py-3 bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-lg hover:from-green-600 hover:to-blue-600 font-semibold shadow-md transition">
+                    <i class="fas fa-qrcode mr-2"></i>Gerar QR Code PIX com Valor Fixo (Split 20/80)
+                </button>
+                
+                <!-- Iframe embutido (inicialmente escondido) -->
+                <div id="pix-frame-${account.id}" class="hidden mt-4 border-2 border-green-300 rounded-lg overflow-hidden shadow-lg">
+                    <div class="bg-gradient-to-r from-green-500 to-blue-500 p-3 flex justify-between items-center">
+                        <h4 class="text-white font-bold">
+                            <i class="fas fa-qrcode mr-2"></i>QR Code PIX
+                        </h4>
+                        <button onclick="closePixFrame('${account.id}')" 
+                            class="text-white hover:text-gray-200 font-bold text-xl">
+                            <i class="fas fa-times"></i>
                         </button>
                     </div>
+                    
+                    <!-- Formulário -->
+                    <div id="qr-form-${account.id}" class="p-4 bg-white">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <input type="number" 
+                                id="pix-value-${account.id}" 
+                                placeholder="Valor fixo (R$)" 
+                                step="0.01" 
+                                min="1"
+                                required
+                                class="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-green-500">
+                            <input type="text" 
+                                id="pix-desc-${account.id}" 
+                                placeholder="Descrição (opcional)" 
+                                value="Pagamento via PIX"
+                                class="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-green-500">
+                            <button onclick="generateStaticPix('${account.id}', '${account.walletId}')" 
+                                class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 font-semibold">
+                                <i class="fas fa-qrcode mr-2"></i>Gerar QR Code
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Resultado do QR Code -->
+                    <div id="pix-static-${account.id}" class="hidden p-4 bg-gray-50"></div>
                 </div>
-                <div id="pix-static-${account.id}" class="hidden mt-4"></div>
             </div>
         ` : '';
         
