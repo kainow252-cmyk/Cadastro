@@ -109,7 +109,7 @@ async function sendWelcomeEmail(
         name: name
       }
     ],
-    subject: "Bem-vindo ao Asaas - Conta Criada com Sucesso! 🎉",
+    subject: "⚠️ AÇÃO NECESSÁRIA - Finalize sua Conta Asaas em 24h",
     html: `
       <!DOCTYPE html>
       <html>
@@ -119,65 +119,116 @@ async function sendWelcomeEmail(
         <style>
           body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
           .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .header { background: linear-gradient(135deg, #f44336 0%, #e91e63 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
           .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
-          .info-box { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #667eea; }
-          .button { display: inline-block; background: #667eea; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+          .info-box { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #f44336; }
+          .warning-box { background: #fff3cd; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107; }
+          .button { display: inline-block; background: #f44336; color: white; padding: 15px 40px; text-decoration: none; border-radius: 5px; margin: 20px 0; font-size: 18px; font-weight: bold; }
+          .button:hover { background: #d32f2f; }
           .footer { text-align: center; margin-top: 30px; color: #666; font-size: 12px; }
           h1 { margin: 0; font-size: 28px; }
-          h2 { color: #667eea; }
-          .highlight { background: #fff3cd; padding: 2px 6px; border-radius: 3px; }
+          h2 { color: #f44336; }
+          .highlight { background: #ffeb3b; padding: 3px 8px; border-radius: 3px; font-weight: bold; }
+          .step { background: white; padding: 15px; margin: 10px 0; border-radius: 5px; border-left: 3px solid #4caf50; }
+          .step-number { display: inline-block; width: 30px; height: 30px; background: #4caf50; color: white; border-radius: 50%; text-align: center; line-height: 30px; font-weight: bold; margin-right: 10px; }
         </style>
       </head>
       <body>
         <div class="container">
           <div class="header">
-            <h1>🎉 Bem-vindo ao Asaas!</h1>
-            <p>Sua conta foi criada com sucesso</p>
+            <h1>⚠️ Sua Conta Asaas foi Criada!</h1>
+            <p style="font-size: 18px; margin: 10px 0 0 0;">FINALIZE O CADASTRO EM ATÉ 24 HORAS</p>
           </div>
           
           <div class="content">
             <h2>Olá, ${name}! 👋</h2>
             
-            <p>É um prazer tê-lo(a) conosco! Sua conta no Asaas foi criada e está pronta para uso.</p>
+            <div class="warning-box">
+              <h3 style="margin-top: 0; color: #f57c00;">⏰ ATENÇÃO: Prazo de 24 horas!</h3>
+              <p style="margin: 0;">Você recebeu um email do <strong>Asaas</strong> (noreply@asaas.com). Verifique sua caixa de entrada e SPAM para finalizar sua conta!</p>
+            </div>
             
             <div class="info-box">
-              <h3 style="margin-top: 0;">📋 Informações da sua conta:</h3>
+              <h3 style="margin-top: 0;">📋 Dados da sua Subconta:</h3>
               <p><strong>Nome:</strong> ${name}</p>
-              <p><strong>Email:</strong> ${email}</p>
-              <p><strong>ID da Conta:</strong> <code class="highlight">${accountId}</code></p>
-              ${walletId ? `<p><strong>Wallet ID:</strong> <code class="highlight">${walletId}</code></p>` : ''}
+              <p><strong>Email:</strong> <span class="highlight">${email}</span></p>
+              <p><strong>ID da Conta:</strong> <code>${accountId}</code></p>
+              ${walletId ? `<p><strong>Wallet ID:</strong> <code>${walletId}</code></p>` : '<p style="color: #ff9800;">⏳ <strong>Wallet ID será gerado após aprovação do Asaas</strong></p>'}
             </div>
             
-            <h3>🚀 Próximos Passos:</h3>
+            <h3 style="color: #4caf50;">✅ PASSO A PASSO PARA FINALIZAR:</h3>
+            
+            <div class="step">
+              <span class="step-number">1</span>
+              <strong>Verifique seu Email</strong><br>
+              <small>Procure por email do <strong>noreply@asaas.com</strong> ou <strong>contato@asaas.com</strong><br>
+              ⚠️ Se não encontrar na caixa de entrada, <strong>verifique a pasta SPAM/Lixo Eletrônico</strong></small>
+            </div>
+            
+            <div class="step">
+              <span class="step-number">2</span>
+              <strong>Clique no Link de Ativação</strong><br>
+              <small>O email contém um link para <strong>definir sua senha</strong> e ativar a conta</small>
+            </div>
+            
+            <div class="step">
+              <span class="step-number">3</span>
+              <strong>Crie uma Senha Forte</strong><br>
+              <small>Use letras maiúsculas, minúsculas, números e caracteres especiais</small>
+            </div>
+            
+            <div class="step">
+              <span class="step-number">4</span>
+              <strong>Complete seu Perfil</strong><br>
+              <small>Preencha as informações solicitadas pelo Asaas (CPF, endereço, telefone, etc.)</small>
+            </div>
+            
+            <div class="step">
+              <span class="step-number">5</span>
+              <strong>Aguarde Aprovação</strong><br>
+              <small>O Asaas analisa a documentação (pode levar de 1 a 3 dias úteis)</small>
+            </div>
+            
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="https://www.asaas.com/login" class="button">🚀 ACESSAR PAINEL ASAAS</a>
+            </div>
+            
+            <div class="warning-box">
+              <h3 style="margin-top: 0; color: #d32f2f;">🚨 IMPORTANTE:</h3>
+              <ul style="margin: 10px 0;">
+                <li>O link de ativação <strong>expira em 24 horas</strong></li>
+                <li>Sem a ativação, sua conta será <strong>suspensa</strong></li>
+                <li>Você <strong>NÃO poderá receber pagamentos</strong> sem finalizar o cadastro</li>
+              </ul>
+            </div>
+            
+            <div class="info-box" style="background: #e8f5e9; border-left-color: #4caf50;">
+              <h3 style="margin-top: 0; color: #4caf50;">💡 Dica de Segurança:</h3>
+              <p style="margin: 0;">✓ Nunca compartilhe sua senha<br>
+              ✓ Guarde suas credenciais em local seguro<br>
+              ✓ Ative a autenticação de dois fatores (2FA)</p>
+            </div>
+            
+            <h3>❓ Não recebeu o email?</h3>
             <ol>
-              <li><strong>Verifique seu email</strong> do Asaas para definir sua senha de acesso</li>
-              <li><strong>Acesse o painel</strong> Asaas com suas credenciais</li>
-              <li><strong>Complete seu perfil</strong> e configure sua conta</li>
-              <li><strong>Comece a usar</strong> todos os recursos disponíveis</li>
+              <li>Verifique a pasta <strong>SPAM/Lixo Eletrônico</strong></li>
+              <li>Aguarde até 15 minutos (pode haver atraso)</li>
+              <li>Entre em contato com o suporte Asaas: <strong>(11) 4950-2819</strong></li>
             </ol>
             
-            <div style="text-align: center;">
-              <a href="https://www.asaas.com" class="button">Acessar Painel Asaas</a>
-            </div>
-            
-            <div class="info-box" style="background: #e7f3ff; border-left-color: #2196F3;">
-              <h3 style="margin-top: 0; color: #2196F3;">💡 Dica:</h3>
-              <p>Guarde suas credenciais em local seguro e nunca as compartilhe com terceiros.</p>
-            </div>
-            
-            <h3>📞 Precisa de Ajuda?</h3>
-            <p>Nossa equipe está sempre disponível para ajudá-lo(a):</p>
+            <h3>📞 Suporte Asaas:</h3>
             <ul>
-              <li>📧 Email: suporte@asaas.com</li>
-              <li>📱 Telefone: (11) 4950-2819</li>
-              <li>💬 Chat: Disponível no painel Asaas</li>
+              <li>📧 Email: <strong>contato@asaas.com</strong></li>
+              <li>📱 Telefone: <strong>(11) 4950-2819</strong></li>
+              <li>💬 WhatsApp: <strong>(11) 4950-2819</strong></li>
+              <li>🌐 Site: <a href="https://www.asaas.com">www.asaas.com</a></li>
             </ul>
           </div>
           
           <div class="footer">
             <p>© ${new Date().getFullYear()} Gerenciador Asaas. Todos os direitos reservados.</p>
             <p>Este é um email automático, por favor não responda.</p>
+            <p style="color: #f44336; font-weight: bold;">⚠️ Você tem 24 horas para finalizar seu cadastro no Asaas!</p>
           </div>
         </div>
       </body>
