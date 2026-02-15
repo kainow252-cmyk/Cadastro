@@ -479,6 +479,17 @@ app.get('/api/accounts/:id', async (c) => {
   }
 })
 
+// Criar cliente (customer) no Asaas
+app.post('/api/customers', async (c) => {
+  try {
+    const body = await c.req.json()
+    const result = await asaasRequest(c, '/customers', 'POST', body)
+    return c.json(result)
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 // Gerar link de cadastro (retorna dados formatados)
 app.post('/api/signup-link', async (c) => {
   try {
@@ -1663,20 +1674,8 @@ app.get('/', (c) => {
                         <span class="text-xl font-bold text-gray-800">Gerenciador Asaas</span>
                     </div>
                     <div class="flex items-center space-x-4">
-                        <button onclick="showSection('dashboard')" class="nav-btn text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md">
-                            <i class="fas fa-home mr-2"></i>Dashboard
-                        </button>
-                        <button onclick="showSection('accounts')" class="nav-btn text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md">
+                        <button onclick="showSection('accounts')" class="nav-btn text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-md font-semibold">
                             <i class="fas fa-users mr-2"></i>Subcontas
-                        </button>
-                        <button onclick="showSection('create')" class="nav-btn text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md">
-                            <i class="fas fa-plus-circle mr-2"></i>Nova Conta
-                        </button>
-                        <button onclick="showSection('pix')" class="nav-btn text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md">
-                            <i class="fas fa-qrcode mr-2"></i>PIX
-                        </button>
-                        <button onclick="showSection('api-keys')" class="nav-btn text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md">
-                            <i class="fas fa-key mr-2"></i>API Keys
                         </button>
                         <div class="border-l border-gray-300 h-8 mx-2"></div>
                         <button onclick="logout()" class="text-red-600 hover:text-red-700 px-3 py-2 rounded-md hover:bg-red-50 transition">
@@ -1689,7 +1688,7 @@ app.get('/', (c) => {
 
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             <!-- Dashboard Section -->
-            <div id="dashboard-section" class="section">
+            <div id="dashboard-section" class="section hidden">
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                     <div class="bg-white rounded-lg shadow p-6">
                         <div class="flex items-center justify-between">
@@ -1727,13 +1726,58 @@ app.get('/', (c) => {
             </div>
 
             <!-- Accounts Section -->
-            <div id="accounts-section" class="section hidden">
+            <div id="accounts-section" class="section">
+                <!-- Formulário de Nova Subconta -->
+                <div class="bg-white rounded-lg shadow mb-6">
+                    <div class="p-6 border-b border-gray-200">
+                        <h2 class="text-xl font-bold text-gray-800">
+                            <i class="fas fa-user-plus mr-2 text-green-600"></i>
+                            Nova Subconta
+                        </h2>
+                    </div>
+                    <div class="p-6">
+                        <form id="create-account-form" class="space-y-4">
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Nome Completo *
+                                    </label>
+                                    <input type="text" name="name" required
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Email *
+                                    </label>
+                                    <input type="email" name="email" required
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        CPF/CNPJ *
+                                    </label>
+                                    <input type="text" name="cpfCnpj" required
+                                        placeholder="Apenas números"
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                </div>
+                            </div>
+                            <div class="flex justify-end">
+                                <button type="submit" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 font-semibold">
+                                    <i class="fas fa-check mr-2"></i>Criar Subconta
+                                </button>
+                            </div>
+                            <div id="create-result" class="hidden"></div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Lista de Subcontas -->
                 <div class="bg-white rounded-lg shadow">
                     <div class="p-6 border-b border-gray-200">
                         <div class="flex justify-between items-center">
                             <h2 class="text-xl font-bold text-gray-800">
                                 <i class="fas fa-users mr-2 text-blue-600"></i>
-                                Subcontas Criadas
+                                Subcontas Cadastradas
                             </h2>
                             <button onclick="loadAccounts()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
                                 <i class="fas fa-sync-alt mr-2"></i>Atualizar
@@ -1748,8 +1792,8 @@ app.get('/', (c) => {
                 </div>
             </div>
 
-            <!-- Create Account Section -->
-            <div id="create-section" class="section hidden">
+            <!-- Create Account Section (HIDDEN) -->
+            <div id="create-section" class="section hidden" style="display: none;">
                 <div class="bg-white rounded-lg shadow">
                     <div class="p-6 border-b border-gray-200">
                         <h2 class="text-xl font-bold text-gray-800">
@@ -1911,8 +1955,8 @@ app.get('/', (c) => {
                 </div>
             </div>
 
-            <!-- PIX Section -->
-            <div id="pix-section" class="section hidden">
+            <!-- PIX Section (HIDDEN) -->
+            <div id="pix-section" class="section hidden" style="display: none;">
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <!-- Gerar Cobrança PIX -->
                     <div class="bg-white rounded-lg shadow">
@@ -2117,8 +2161,8 @@ app.get('/', (c) => {
                 </div>
             </div>
 
-            <!-- API Keys Section -->
-            <div id="api-keys-section" class="section hidden">
+            <!-- API Keys Section (HIDDEN) -->
+            <div id="api-keys-section" class="section hidden" style="display: none;">
                 <div class="bg-white rounded-lg shadow mb-6">
                     <div class="p-6 border-b border-gray-200">
                         <h2 class="text-2xl font-bold text-gray-800">

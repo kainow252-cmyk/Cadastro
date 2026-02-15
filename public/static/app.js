@@ -66,20 +66,51 @@ async function loadAccounts() {
             const accounts = response.data.data.data || [];
             
             if (accounts.length === 0) {
-                listDiv.innerHTML = '<p class="text-gray-500 text-center py-8">Nenhuma subconta encontrada</p>';
+                listDiv.innerHTML = '<p class="text-gray-500 text-center py-8">Nenhuma subconta encontrada. Crie uma nova subconta acima.</p>';
                 return;
             }
             
             listDiv.innerHTML = accounts.map(account => {
                 const walletHtml = account.walletId ? `
-                    <span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
-                        Wallet: ${account.walletId}
+                    <span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded font-mono">
+                        ✓ Wallet: ${account.walletId.substring(0, 20)}...
                     </span>
+                ` : '<span class="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">⏳ Aguardando aprovação</span>';
+                
+                const pixFormHtml = account.walletId ? `
+                    <div class="mt-4 border-t border-gray-200 pt-4">
+                        <h4 class="text-sm font-semibold text-gray-700 mb-3">
+                            <i class="fas fa-qrcode mr-2 text-green-600"></i>
+                            Gerar Cobrança PIX (Split 20/80)
+                        </h4>
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                            <input type="number" 
+                                id="pix-value-${account.id}" 
+                                placeholder="Valor (R$)" 
+                                step="0.01" 
+                                min="1"
+                                class="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-green-500">
+                            <input type="text" 
+                                id="pix-desc-${account.id}" 
+                                placeholder="Descrição" 
+                                value="Pagamento via PIX"
+                                class="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-green-500">
+                            <input type="date" 
+                                id="pix-due-${account.id}" 
+                                value="${new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}"
+                                class="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-green-500">
+                            <button onclick="generatePixForAccount('${account.id}', '${account.walletId}')" 
+                                class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 font-semibold">
+                                <i class="fas fa-qrcode mr-2"></i>Gerar PIX
+                            </button>
+                        </div>
+                        <div id="pix-result-${account.id}" class="hidden mt-3"></div>
+                    </div>
                 ` : '';
                 
                 return `
-                    <div class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition">
-                        <div class="flex justify-between items-start">
+                    <div class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition bg-white">
+                        <div class="flex justify-between items-start mb-3">
                             <div class="flex-1">
                                 <h3 class="text-lg font-semibold text-gray-800">${account.name}</h3>
                                 <p class="text-sm text-gray-600 mt-1">
@@ -88,24 +119,15 @@ async function loadAccounts() {
                                 <p class="text-sm text-gray-600">
                                     <i class="fas fa-id-card mr-2"></i>${account.cpfCnpj}
                                 </p>
-                                <div class="flex gap-4 mt-2">
-                                    <span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                                        ID: ${account.id}
+                                <div class="flex gap-2 mt-2">
+                                    <span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded font-mono">
+                                        ID: ${account.id.substring(0, 8)}...
                                     </span>
                                     ${walletHtml}
                                 </div>
                             </div>
-                            <div class="flex gap-2">
-                                <button onclick="createLinkForAccount('${account.id}')" 
-                                    class="px-3 py-1 bg-purple-600 text-white rounded hover:bg-purple-700 text-sm">
-                                    <i class="fas fa-link mr-1"></i>Link
-                                </button>
-                                <button onclick="viewAccount('${account.id}')" 
-                                    class="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">
-                                    <i class="fas fa-eye mr-1"></i>Ver
-                                </button>
-                            </div>
                         </div>
+                        ${pixFormHtml}
                     </div>
                 `;
             }).join('');
@@ -1030,6 +1052,136 @@ async function toggleApiKeyStatus(accountId, keyId, currentStatus) {
 async function deleteApiKeyConfirm(accountId, keyId) {
     if (confirm('⚠️ Deseja realmente EXCLUIR esta API Key?\n\nEsta ação não pode ser desfeita e a chave será permanentemente removida.')) {
         await deleteApiKey(accountId, keyId);
+    }
+}
+
+// ============================================
+// SEÇÃO: Geração de PIX Simplificada
+// ============================================
+
+async function generatePixForAccount(accountId, walletId) {
+    const valueInput = document.getElementById(`pix-value-${accountId}`);
+    const descInput = document.getElementById(`pix-desc-${accountId}`);
+    const dueInput = document.getElementById(`pix-due-${accountId}`);
+    const resultDiv = document.getElementById(`pix-result-${accountId}`);
+    
+    const value = parseFloat(valueInput.value);
+    const description = descInput.value || 'Pagamento via PIX';
+    const dueDate = dueInput.value;
+    
+    if (!value || value <= 0) {
+        alert('⚠️ Por favor, informe um valor válido maior que zero');
+        valueInput.focus();
+        return;
+    }
+    
+    resultDiv.classList.remove('hidden');
+    resultDiv.innerHTML = `
+        <div class="bg-blue-50 border border-blue-200 rounded p-3 text-center">
+            <i class="fas fa-spinner fa-spin mr-2"></i>
+            <span class="text-blue-800">Gerando cobrança PIX...</span>
+        </div>
+    `;
+    
+    try {
+        // Criar cliente genérico
+        const customerData = {
+            name: `Cliente - ${new Date().toISOString()}`,
+            email: `cliente${Date.now()}@example.com`,
+            cpfCnpj: `${Math.floor(10000000000 + Math.random() * 90000000000)}`
+        };
+        
+        const customerResponse = await axios.post('/api/customers', customerData);
+        let customerId = null;
+        
+        if (customerResponse.data.ok && customerResponse.data.data && customerResponse.data.data.id) {
+            customerId = customerResponse.data.data.id;
+        } else {
+            // Se falhar, tentar usar CPF direto
+            customerId = customerData.cpfCnpj;
+        }
+        
+        // Criar cobrança PIX com split
+        const paymentData = {
+            customer: {
+                cpfCnpj: customerData.cpfCnpj,
+                name: customerData.name,
+                email: customerData.email
+            },
+            value: value,
+            description: description,
+            dueDate: dueDate,
+            subAccountId: accountId,
+            subAccountWalletId: walletId
+        };
+        
+        const paymentResponse = await axios.post('/api/payments', paymentData);
+        
+        if (paymentResponse.data.ok && paymentResponse.data.data) {
+            const payment = paymentResponse.data.data;
+            
+            // Buscar QR Code
+            const qrResponse = await axios.get(`/api/payments/${payment.id}/pix-qrcode`);
+            
+            if (qrResponse.data.ok && qrResponse.data.data) {
+                const qrData = qrResponse.data.data;
+                const splitValue = (value * 0.20).toFixed(2);
+                const mainValue = (value * 0.80).toFixed(2);
+                
+                resultDiv.innerHTML = `
+                    <div class="bg-green-50 border border-green-200 rounded p-4">
+                        <h5 class="font-semibold text-green-800 mb-3 text-center">
+                            ✅ PIX Gerado com Sucesso!
+                        </h5>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="text-center">
+                                <img src="${qrData.qrCodeBase64}" alt="QR Code PIX" class="mx-auto mb-2" style="max-width: 200px;">
+                                <p class="text-xs text-gray-600">Escaneie com o app do banco</p>
+                            </div>
+                            <div class="space-y-2 text-sm">
+                                <p><strong>Valor:</strong> R$ ${value.toFixed(2)}</p>
+                                <p><strong>Split 20/80:</strong></p>
+                                <ul class="text-xs ml-4 space-y-1">
+                                    <li>→ Subconta (20%): R$ ${splitValue}</li>
+                                    <li>→ Principal (80%): R$ ${mainValue}</li>
+                                </ul>
+                                <p><strong>Vencimento:</strong> ${new Date(dueDate).toLocaleDateString('pt-BR')}</p>
+                                <p><strong>Status:</strong> <span class="px-2 py-1 bg-yellow-100 text-yellow-800 rounded text-xs">${payment.status}</span></p>
+                                <div class="mt-3">
+                                    <label class="block text-xs font-medium text-gray-700 mb-1">PIX Copia e Cola:</label>
+                                    <div class="flex gap-1">
+                                        <input type="text" readonly value="${qrData.payload}" 
+                                            class="flex-1 px-2 py-1 bg-white border border-gray-300 rounded text-xs font-mono">
+                                        <button onclick="navigator.clipboard.writeText('${qrData.payload}'); this.innerHTML='✓'; setTimeout(() => this.innerHTML='📋', 2000)"
+                                            class="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">
+                                            📋
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // Limpar campos
+                valueInput.value = '';
+                descInput.value = 'Pagamento via PIX';
+            } else {
+                throw new Error('Erro ao buscar QR Code');
+            }
+        } else {
+            throw new Error(paymentResponse.data.error || 'Erro ao criar cobrança');
+        }
+    } catch (error) {
+        console.error('Erro ao gerar PIX:', error);
+        resultDiv.innerHTML = `
+            <div class="bg-red-50 border border-red-200 rounded p-3">
+                <p class="text-red-800 text-sm">
+                    <i class="fas fa-exclamation-circle mr-2"></i>
+                    ${error.response?.data?.error || error.message || 'Erro ao gerar PIX'}
+                </p>
+            </div>
+        `;
     }
 }
 
