@@ -1551,6 +1551,9 @@ app.get('/', (c) => {
                         <button onclick="showSection('pix')" class="nav-btn text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md">
                             <i class="fas fa-qrcode mr-2"></i>PIX
                         </button>
+                        <button onclick="showSection('api-keys')" class="nav-btn text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md">
+                            <i class="fas fa-key mr-2"></i>API Keys
+                        </button>
                         <div class="border-l border-gray-300 h-8 mx-2"></div>
                         <button onclick="logout()" class="text-red-600 hover:text-red-700 px-3 py-2 rounded-md hover:bg-red-50 transition">
                             <i class="fas fa-sign-out-alt mr-2"></i>Sair
@@ -1829,27 +1832,6 @@ app.get('/', (c) => {
                                     </p>
                                 </div>
                                 
-                                <!-- API Key Validade Selector -->
-                                <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                                    <label class="block text-sm font-medium text-gray-700 mb-2">
-                                        <i class="fas fa-clock mr-1"></i>
-                                        Validade da API Key
-                                    </label>
-                                    <select id="api-key-expiration" 
-                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm">
-                                        <option value="30">30 dias</option>
-                                        <option value="60">60 dias</option>
-                                        <option value="90" selected>90 dias (padrão)</option>
-                                        <option value="180">180 dias (6 meses)</option>
-                                        <option value="365">365 dias (1 ano)</option>
-                                        <option value="">Sem expiração</option>
-                                    </select>
-                                    <p class="text-xs text-gray-500 mt-1">
-                                        <i class="fas fa-info-circle"></i>
-                                        Recomendado: 90 dias para segurança
-                                    </p>
-                                </div>
-                                
                                 <!-- API Key Display -->
                                 <div id="api-key-result" class="hidden p-4 bg-blue-50 border border-blue-200 rounded-lg">
                                     <div class="flex items-start justify-between mb-2">
@@ -1987,6 +1969,59 @@ app.get('/', (c) => {
                             <div id="payments-list" class="p-6">
                                 <p class="text-gray-500 text-center py-4">Nenhuma cobrança ainda</p>
                             </div>
+                        </div>
+
+                        <!-- Gerenciar API Keys -->
+                        <div class="bg-white rounded-lg shadow">
+                            <div class="p-6 border-b border-gray-200">
+                                <div class="flex items-center justify-between">
+                                    <h3 class="text-lg font-bold text-gray-800">
+                                        <i class="fas fa-key mr-2 text-purple-600"></i>
+                                        Gerenciar API Keys
+                                    </h3>
+                                    <button onclick="loadApiKeys()"
+                                        class="px-3 py-1 text-sm bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200">
+                                        <i class="fas fa-sync-alt mr-1"></i>Atualizar
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="api-keys-list" class="p-6">
+                                <p class="text-gray-500 text-center py-4">Nenhuma API Key criada ainda</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- API Keys Section -->
+            <div id="api-keys-section" class="section hidden">
+                <div class="bg-white rounded-lg shadow mb-6">
+                    <div class="p-6 border-b border-gray-200">
+                        <h2 class="text-2xl font-bold text-gray-800">
+                            <i class="fas fa-key mr-3 text-purple-600"></i>
+                            Gerenciar API Keys
+                        </h2>
+                        <p class="text-gray-600 mt-2">
+                            Visualize e gerencie todas as API Keys das subcontas
+                        </p>
+                    </div>
+                    <div class="p-6">
+                        <div class="mb-6">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                Filtrar por Subconta
+                            </label>
+                            <div class="flex gap-2">
+                                <select id="filter-subaccount" class="flex-1 px-4 py-2 border border-gray-300 rounded-lg">
+                                    <option value="">Todas as subcontas</option>
+                                </select>
+                                <button onclick="loadAllApiKeys()" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+                                    <i class="fas fa-search mr-2"></i>Buscar
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div id="all-api-keys-list" class="space-y-4">
+                            <p class="text-gray-500 text-center py-8">Selecione uma subconta ou clique em Buscar para ver todas as API Keys</p>
                         </div>
                     </div>
                 </div>

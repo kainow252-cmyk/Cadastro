@@ -36,6 +36,8 @@ function showSection(section) {
     } else if (section === 'pix') {
         loadSubaccountsForPix();
         loadRecentPayments();
+    } else if (section === 'api-keys') {
+        loadSubaccountsFilter();
     }
 }
 
@@ -308,34 +310,18 @@ async function generateApiKeyForSubaccount() {
     try {
         const subaccountData = JSON.parse(select.value);
         
-        // Obter valor de expiração selecionado
-        const expirationDays = document.getElementById('api-key-expiration')?.value;
-        let expiresAt = null;
-        
-        if (expirationDays) {
-            const expirationDate = new Date();
-            expirationDate.setDate(expirationDate.getDate() + parseInt(expirationDays));
-            expiresAt = expirationDate.toISOString().split('T')[0]; // Formato: YYYY-MM-DD
-        }
-        
         // Mostrar loading
         const originalText = event.target.innerHTML;
         event.target.disabled = true;
         event.target.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
         
-        // Preparar dados para API
-        const apiKeyData = {
-            name: `API Key - ${subaccountData.name} - ${new Date().toLocaleDateString('pt-BR')}`
-        };
-        
-        if (expiresAt) {
-            apiKeyData.expiresAt = expiresAt;
-        }
-        
-        // Gerar API Key diretamente
+        // Gerar API Key sem expiração (tempo indeterminado)
         const response = await axios.post(
             `/api/accounts/${subaccountData.id}/api-key`,
-            apiKeyData
+            {
+                name: `API Key - ${subaccountData.name} - ${new Date().toLocaleDateString('pt-BR')}`
+                // Sem expiresAt = tempo indeterminado
+            }
         );
         
         if (response.data.ok) {
@@ -695,4 +681,350 @@ function getStatusText(status) {
         'AWAITING_RISK_ANALYSIS': 'Análise de Risco'
     };
     return texts[status] || status;
+}
+
+// =====================================
+// GERENCIAR API KEYS
+// =====================================
+
+// Carregar lista de API Keys da subconta selecionada
+async function loadApiKeys() {
+    const select = document.getElementById('pix-subaccount');
+    const listDiv = document.getElementById('api-keys-list');
+    
+    if (!select.value) {
+        listDiv.innerHTML = '<p class="text-gray-500 text-center py-4">Selecione uma subconta para ver suas API Keys</p>';
+        return;
+    }
+    
+    try {
+        const subaccountData = JSON.parse(select.value);
+        
+        listDiv.innerHTML = '<p class="text-gray-500 text-center py-4"><i class="fas fa-spinner fa-spin mr-2"></i>Carregando...</p>';
+        
+        const response = await axios.get(`/api/accounts/${subaccountData.id}/api-keys`);
+        
+        if (response.data.ok) {
+            const apiKeys = response.data.data;
+            
+            if (apiKeys.length === 0) {
+                listDiv.innerHTML = `
+                    <div class="text-center py-8">
+                        <i class="fas fa-key text-gray-300 text-4xl mb-3"></i>
+                        <p class="text-gray-500">Nenhuma API Key criada para esta subconta</p>
+                        <p class="text-sm text-gray-400 mt-1">Clique no botão 🔑 acima para gerar</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            listDiv.innerHTML = `
+                <div class="space-y-3">
+                    ${apiKeys.map(key => `
+                        <div class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+                            <div class="flex items-start justify-between">
+                                <div class="flex-1">
+                                    <div class="flex items-center gap-2 mb-2">
+                                        <span class="font-semibold text-gray-800">${key.name || 'API Key'}</span>
+                                        <span class="px-2 py-1 text-xs rounded ${key.active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+                                            ${key.active ? '✅ Ativa' : '❌ Inativa'}
+                                        </span>
+                                    </div>
+                                    <p class="text-xs text-gray-500 mb-1">
+                                        <i class="fas fa-fingerprint mr-1"></i>
+                                        ID: ${key.id}
+                                    </p>
+                                    <p class="text-xs text-gray-500">
+                                        <i class="fas fa-calendar mr-1"></i>
+                                        Criada em: ${new Date(key.dateCreated).toLocaleDateString('pt-BR')}
+                                        ${key.expiresAt ? ` • Expira: ${new Date(key.expiresAt).toLocaleDateString('pt-BR')}` : ' • <strong>Sem expiração</strong>'}
+                                    </p>
+                                </div>
+                                <div class="flex gap-2">
+                                    ${key.active ? `
+                                        <button onclick="toggleApiKey('${subaccountData.id}', '${key.id}', false)" 
+                                            title="Desativar API Key"
+                                            class="px-3 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 text-sm">
+                                            <i class="fas fa-ban"></i>
+                                        </button>
+                                    ` : `
+                                        <button onclick="toggleApiKey('${subaccountData.id}', '${key.id}', true)" 
+                                            title="Ativar API Key"
+                                            class="px-3 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 text-sm">
+                                            <i class="fas fa-check"></i>
+                                        </button>
+                                    `}
+                                    <button onclick="deleteApiKey('${subaccountData.id}', '${key.id}')" 
+                                        title="Excluir API Key"
+                                        class="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Erro ao carregar API Keys:', error);
+        listDiv.innerHTML = '<p class="text-red-500 text-center py-4">Erro ao carregar API Keys. Tente novamente.</p>';
+    }
+}
+
+// Ativar/Desativar API Key
+async function toggleApiKey(accountId, keyId, activate) {
+    const action = activate ? 'ativar' : 'desativar';
+    
+    if (!confirm(`Deseja realmente ${action} esta API Key?`)) {
+        return;
+    }
+    
+    try {
+        // Nota: A API do Asaas não tem endpoint de ativar/desativar direto
+        // Apenas excluir. Então vamos apenas excluir se desativar.
+        if (!activate) {
+            await deleteApiKey(accountId, keyId, true);
+        } else {
+            alert('Para reativar, é necessário gerar uma nova API Key.');
+        }
+    } catch (error) {
+        console.error('Erro ao alternar API Key:', error);
+        alert('Erro ao ' + action + ' API Key');
+    }
+}
+
+// Excluir API Key
+async function deleteApiKey(accountId, keyId, skipConfirm = false) {
+    if (!skipConfirm && !confirm('Deseja realmente EXCLUIR esta API Key?\n\nEsta ação não pode ser desfeita!')) {
+        return;
+    }
+    
+    try {
+        const response = await axios.delete(`/api/accounts/${accountId}/api-keys/${keyId}`);
+        
+        if (response.data.ok) {
+            alert('✅ API Key excluída com sucesso!');
+            loadApiKeys(); // Recarregar lista
+        } else {
+            throw new Error(response.data.error || 'Erro desconhecido');
+        }
+    } catch (error) {
+        console.error('Erro ao excluir API Key:', error);
+        alert('❌ Erro ao excluir API Key: ' + (error.response?.data?.error || error.message));
+    }
+}
+
+// Carregar API Keys quando a seção PIX for aberta ou subconta selecionada
+document.addEventListener('DOMContentLoaded', function() {
+    const select = document.getElementById('pix-subaccount');
+    if (select) {
+        select.addEventListener('change', function() {
+            if (this.value) {
+                loadApiKeys();
+            }
+        });
+    }
+});
+
+// ============================================
+// SEÇÃO: Gerenciamento Global de API Keys
+// ============================================
+
+// Carregar subcontas para o filtro
+async function loadSubaccountsFilter() {
+    try {
+        const response = await axios.get('/api/accounts');
+        if (response.data.ok && response.data.data) {
+            const accounts = response.data.data.data || [];
+            const select = document.getElementById('filter-subaccount');
+            
+            select.innerHTML = '<option value="">Todas as subcontas</option>';
+            accounts.forEach(account => {
+                const option = document.createElement('option');
+                option.value = account.id;
+                option.textContent = `${account.name} - ${account.email}`;
+                select.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('Erro ao carregar subcontas:', error);
+    }
+}
+
+// Carregar todas as API Keys
+async function loadAllApiKeys() {
+    const filterSelect = document.getElementById('filter-subaccount');
+    const accountId = filterSelect?.value;
+    const container = document.getElementById('all-api-keys-list');
+    
+    if (!container) return;
+    
+    container.innerHTML = '<p class="text-gray-500 text-center py-4"><i class="fas fa-spinner fa-spin mr-2"></i>Carregando...</p>';
+    
+    try {
+        // Se um filtro foi selecionado, carregar apenas dessa subconta
+        if (accountId) {
+            const response = await axios.get(`/api/accounts/${accountId}/api-keys`);
+            
+            if (response.data.ok) {
+                const keys = response.data.data.data || [];
+                displayApiKeysList(keys, accountId, container);
+            } else {
+                container.innerHTML = '<p class="text-red-500 text-center py-4">Erro ao carregar API Keys</p>';
+            }
+        } else {
+            // Carregar todas as subcontas e suas API Keys
+            const accountsResponse = await axios.get('/api/accounts');
+            if (!accountsResponse.data.ok) {
+                container.innerHTML = '<p class="text-red-500 text-center py-4">Erro ao carregar subcontas</p>';
+                return;
+            }
+            
+            const accounts = accountsResponse.data.data.data || [];
+            let allKeys = [];
+            
+            // Carregar API Keys de cada subconta
+            for (const account of accounts) {
+                try {
+                    const keysResponse = await axios.get(`/api/accounts/${account.id}/api-keys`);
+                    if (keysResponse.data.ok) {
+                        const keys = keysResponse.data.data.data || [];
+                        keys.forEach(key => {
+                            allKeys.push({
+                                ...key,
+                                accountId: account.id,
+                                accountName: account.name,
+                                accountEmail: account.email
+                            });
+                        });
+                    }
+                } catch (error) {
+                    console.error(`Erro ao carregar keys da conta ${account.id}:`, error);
+                }
+            }
+            
+            if (allKeys.length === 0) {
+                container.innerHTML = '<p class="text-gray-500 text-center py-4">Nenhuma API Key encontrada</p>';
+            } else {
+                displayAllApiKeysList(allKeys, container);
+            }
+        }
+    } catch (error) {
+        console.error('Erro ao carregar API Keys:', error);
+        container.innerHTML = '<p class="text-red-500 text-center py-4">Erro ao carregar API Keys</p>';
+    }
+}
+
+// Exibir lista de API Keys de uma subconta específica
+function displayApiKeysList(keys, accountId, container) {
+    if (keys.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 text-center py-4">Nenhuma API Key encontrada para esta subconta</p>';
+        return;
+    }
+    
+    const html = keys.map(key => `
+        <div class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+            <div class="flex items-start justify-between">
+                <div class="flex-1">
+                    <div class="flex items-center gap-3 mb-2">
+                        <span class="px-2 py-1 text-xs rounded-full ${key.active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+                            ${key.active ? '✓ Ativa' : '✗ Desativada'}
+                        </span>
+                        <span class="text-sm font-mono text-gray-600">${key.name || 'Sem nome'}</span>
+                    </div>
+                    <div class="text-xs text-gray-500 space-y-1">
+                        <div><strong>ID:</strong> ${key.id}</div>
+                        <div><strong>Criada em:</strong> ${new Date(key.dateCreated).toLocaleString('pt-BR')}</div>
+                        ${key.expiresAt ? `<div><strong>Expira em:</strong> ${new Date(key.expiresAt).toLocaleString('pt-BR')}</div>` : '<div><strong>Validade:</strong> Sem expiração</div>'}
+                    </div>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="toggleApiKeyStatus('${accountId}', '${key.id}', ${key.active})" 
+                        class="px-3 py-1 text-sm rounded ${key.active ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}">
+                        <i class="fas fa-${key.active ? 'pause' : 'play'} mr-1"></i>
+                        ${key.active ? 'Desativar' : 'Ativar'}
+                    </button>
+                    <button onclick="deleteApiKeyConfirm('${accountId}', '${key.id}')" 
+                        class="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200">
+                        <i class="fas fa-trash mr-1"></i>
+                        Excluir
+                    </button>
+                </div>
+            </div>
+        </div>
+    `).join('');
+    
+    container.innerHTML = html;
+}
+
+// Exibir lista de todas as API Keys (com informações da subconta)
+function displayAllApiKeysList(keys, container) {
+    const html = keys.map(key => `
+        <div class="border border-gray-200 rounded-lg p-4 hover:bg-gray-50">
+            <div class="flex items-start justify-between">
+                <div class="flex-1">
+                    <div class="flex items-center gap-2 mb-3">
+                        <i class="fas fa-user-circle text-purple-600"></i>
+                        <span class="font-semibold text-gray-800">${key.accountName}</span>
+                        <span class="text-sm text-gray-500">${key.accountEmail}</span>
+                    </div>
+                    <div class="flex items-center gap-3 mb-2">
+                        <span class="px-2 py-1 text-xs rounded-full ${key.active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+                            ${key.active ? '✓ Ativa' : '✗ Desativada'}
+                        </span>
+                        <span class="text-sm font-mono text-gray-600">${key.name || 'Sem nome'}</span>
+                    </div>
+                    <div class="text-xs text-gray-500 space-y-1">
+                        <div><strong>ID:</strong> ${key.id}</div>
+                        <div><strong>Criada em:</strong> ${new Date(key.dateCreated).toLocaleString('pt-BR')}</div>
+                        ${key.expiresAt ? `<div><strong>Expira em:</strong> ${new Date(key.expiresAt).toLocaleString('pt-BR')}</div>` : '<div><strong>Validade:</strong> Sem expiração</div>'}
+                    </div>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="toggleApiKeyStatus('${key.accountId}', '${key.id}', ${key.active})" 
+                        class="px-3 py-1 text-sm rounded ${key.active ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}">
+                        <i class="fas fa-${key.active ? 'pause' : 'play'} mr-1"></i>
+                        ${key.active ? 'Desativar' : 'Ativar'}
+                    </button>
+                    <button onclick="deleteApiKeyConfirm('${key.accountId}', '${key.id}')" 
+                        class="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200">
+                        <i class="fas fa-trash mr-1"></i>
+                        Excluir
+                    </button>
+                </div>
+            </div>
+        </div>
+    `).join('');
+    
+    container.innerHTML = html;
+}
+
+// Ativar/Desativar API Key
+async function toggleApiKeyStatus(accountId, keyId, currentStatus) {
+    const action = currentStatus ? 'desativar' : 'ativar';
+    
+    if (!confirm(`Deseja realmente ${action} esta API Key?`)) {
+        return;
+    }
+    
+    try {
+        // Por enquanto, apenas DELETE está implementado
+        // Para desativar, vamos usar o DELETE
+        if (currentStatus) {
+            await deleteApiKey(accountId, keyId);
+        } else {
+            alert('⚠️ A reativação de API Keys ainda não está implementada. Por favor, gere uma nova API Key.');
+        }
+    } catch (error) {
+        console.error('Erro ao alterar status:', error);
+        alert('❌ Erro ao alterar status da API Key');
+    }
+}
+
+// Confirmar exclusão de API Key
+async function deleteApiKeyConfirm(accountId, keyId) {
+    if (confirm('⚠️ Deseja realmente EXCLUIR esta API Key?\n\nEsta ação não pode ser desfeita e a chave será permanentemente removida.')) {
+        await deleteApiKey(accountId, keyId);
+    }
 }
