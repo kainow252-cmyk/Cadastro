@@ -2003,6 +2003,36 @@ app.get('/', (c) => {
                             </button>
                         </div>
                     </div>
+                    
+                    <!-- Campo de Pesquisa -->
+                    <div class="px-6 pb-4 border-b border-gray-200">
+                        <div class="flex gap-3">
+                            <div class="flex-1">
+                                <input type="text" 
+                                    id="search-accounts" 
+                                    placeholder="🔍 Buscar por nome, email, CPF/CNPJ, ID..."
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                    onkeyup="filterAccounts()">
+                            </div>
+                            <select id="filter-status" 
+                                class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                onchange="filterAccounts()">
+                                <option value="">Todos os Status</option>
+                                <option value="approved">✅ Aprovados</option>
+                                <option value="pending">⏰ Pendentes</option>
+                            </select>
+                            <select id="sort-accounts" 
+                                class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                onchange="sortAccounts()">
+                                <option value="name-asc">Nome A-Z</option>
+                                <option value="name-desc">Nome Z-A</option>
+                                <option value="date-desc">Mais Recentes</option>
+                                <option value="date-asc">Mais Antigos</option>
+                            </select>
+                        </div>
+                        <div id="search-results" class="mt-2 text-sm text-gray-600"></div>
+                    </div>
+                    
                     <div class="p-6">
                         <div id="accounts-list" class="space-y-4">
                             <p class="text-gray-500 text-center py-8">Carregando...</p>
@@ -2416,7 +2446,7 @@ app.get('/', (c) => {
         </div>
 
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-        <script src="/static/app.js?v=2.0"></script>
+        <script src="/static/app.js?v=2.1"></script>
     </body>
     </html>
   `)

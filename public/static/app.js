@@ -65,71 +65,24 @@ async function loadAccounts() {
         if (response.data.ok && response.data.data) {
             const accounts = response.data.data.data || [];
             
+            // Salvar accounts globalmente para filtros
+            saveAccountsData(accounts);
+            
             if (accounts.length === 0) {
                 listDiv.innerHTML = '<p class="text-gray-500 text-center py-8">Nenhuma subconta encontrada. Crie uma nova subconta acima.</p>';
                 return;
             }
             
-            listDiv.innerHTML = accounts.map(account => {
-                const walletHtml = account.walletId ? `
-                    <span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded font-mono">
-                        ✓ Wallet: ${account.walletId.substring(0, 20)}...
-                    </span>
-                ` : '<span class="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">⏳ Aguardando aprovação</span>';
-                
-                const pixFormHtml = account.walletId ? `
-                    <div class="mt-4 border-t border-gray-200 pt-4">
-                        <h4 class="text-sm font-semibold text-gray-700 mb-3">
-                            <i class="fas fa-qrcode mr-2 text-green-600"></i>
-                            QR Code PIX com Valor Fixo (Split 20/80)
-                        </h4>
-                        <div id="pix-form-${account.id}">
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                <input type="number" 
-                                    id="pix-value-${account.id}" 
-                                    placeholder="Valor fixo (R$)" 
-                                    step="0.01" 
-                                    min="1"
-                                    required
-                                    class="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-green-500">
-                                <input type="text" 
-                                    id="pix-desc-${account.id}" 
-                                    placeholder="Descrição (opcional)" 
-                                    value=""
-                                    class="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-green-500">
-                                <button onclick="generateStaticPix('${account.id}', '${account.walletId}')" 
-                                    class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 font-semibold">
-                                    <i class="fas fa-qrcode mr-2"></i>Gerar QR Code
-                                </button>
-                            </div>
-                        </div>
-                        <div id="pix-static-${account.id}" class="hidden mt-4"></div>
-                    </div>
-                ` : '';
-                
-                return `
-                    <div class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition bg-white">
-                        <div class="flex justify-between items-start mb-3">
-                            <div class="flex-1">
-                                <h3 class="text-lg font-semibold text-gray-800">${account.name}</h3>
-                                <p class="text-sm text-gray-600 mt-1">
-                                    <i class="fas fa-envelope mr-2"></i>${account.email}
-                                </p>
-                                <p class="text-sm text-gray-600">
-                                    <i class="fas fa-id-card mr-2"></i>${account.cpfCnpj}
-                                </p>
-                                <div class="flex gap-2 mt-2">
-                                    <span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded font-mono">
-                                        ID: ${account.id.substring(0, 8)}...
-                                    </span>
-                                    ${walletHtml}
-                                </div>
-                            </div>
-                        </div>
-                        ${pixFormHtml}
-                    </div>
-                `;
-            }).join('');
+            // Usar nova função de exibição
+            displayAccounts(accounts);
+            
+            // Atualizar contador
+            const resultsDiv = document.getElementById('search-results');
+            if (resultsDiv) {
+                resultsDiv.textContent = `Total: ${accounts.length} subconta(s)`;
+            }
+            return;
+
         } else {
             listDiv.innerHTML = `
                 <div class="bg-red-50 border border-red-200 rounded-lg p-4">
@@ -1417,4 +1370,186 @@ function copyPixLink(accountId, payload) {
         console.error('Erro ao copiar link:', error);
         alert('❌ Erro ao copiar link: ' + error.message);
     });
+}
+
+// ========================================
+// FUNÇÕES DE PESQUISA E FILTRO DE SUBCONTAS
+// ========================================
+
+// Variável global para armazenar todas as subcontas
+let allAccounts = [];
+
+// Função para salvar contas na variável global (modificar loadAccounts)
+function saveAccountsData(accounts) {
+    allAccounts = accounts;
+}
+
+// Função para filtrar subcontas
+function filterAccounts() {
+    const searchTerm = document.getElementById('search-accounts').value.toLowerCase();
+    const statusFilter = document.getElementById('filter-status').value;
+    
+    let filteredAccounts = allAccounts.filter(account => {
+        // Filtro de busca por texto
+        const matchesSearch = !searchTerm || 
+            (account.name && account.name.toLowerCase().includes(searchTerm)) ||
+            (account.email && account.email.toLowerCase().includes(searchTerm)) ||
+            (account.cpfCnpj && account.cpfCnpj.includes(searchTerm)) ||
+            (account.id && account.id.toLowerCase().includes(searchTerm));
+        
+        // Filtro por status
+        const hasWallet = account.walletId && account.walletId !== 'null';
+        const matchesStatus = !statusFilter || 
+            (statusFilter === 'approved' && hasWallet) ||
+            (statusFilter === 'pending' && !hasWallet);
+        
+        return matchesSearch && matchesStatus;
+    });
+    
+    // Aplicar ordenação atual
+    const sortOption = document.getElementById('sort-accounts').value;
+    filteredAccounts = applySorting(filteredAccounts, sortOption);
+    
+    // Exibir resultados
+    displayAccounts(filteredAccounts);
+    
+    // Mostrar contador de resultados
+    const resultsDiv = document.getElementById('search-results');
+    const total = allAccounts.length;
+    const shown = filteredAccounts.length;
+    
+    if (searchTerm || statusFilter) {
+        resultsDiv.textContent = `Mostrando ${shown} de ${total} subconta(s)`;
+    } else {
+        resultsDiv.textContent = `Total: ${total} subconta(s)`;
+    }
+}
+
+// Função para ordenar subcontas
+function sortAccounts() {
+    const sortOption = document.getElementById('sort-accounts').value;
+    const searchTerm = document.getElementById('search-accounts').value;
+    
+    // Se há busca ativa, filtrar antes de ordenar
+    if (searchTerm) {
+        filterAccounts();
+    } else {
+        const sortedAccounts = applySorting([...allAccounts], sortOption);
+        displayAccounts(sortedAccounts);
+    }
+}
+
+// Função auxiliar para aplicar ordenação
+function applySorting(accounts, sortOption) {
+    const sorted = [...accounts];
+    
+    switch(sortOption) {
+        case 'name-asc':
+            sorted.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+            break;
+        case 'name-desc':
+            sorted.sort((a, b) => (b.name || '').localeCompare(a.name || ''));
+            break;
+        case 'date-desc':
+            sorted.sort((a, b) => new Date(b.dateCreated || 0) - new Date(a.dateCreated || 0));
+            break;
+        case 'date-asc':
+            sorted.sort((a, b) => new Date(a.dateCreated || 0) - new Date(b.dateCreated || 0));
+            break;
+    }
+    
+    return sorted;
+}
+
+// Função para exibir subcontas
+function displayAccounts(accounts) {
+    const container = document.getElementById('accounts-list');
+    
+    if (accounts.length === 0) {
+        container.innerHTML = `
+            <div class="text-center py-12">
+                <i class="fas fa-search text-6xl text-gray-300 mb-4"></i>
+                <p class="text-gray-500 text-lg">Nenhuma subconta encontrada</p>
+                <p class="text-gray-400 text-sm mt-2">Tente alterar os filtros de busca</p>
+            </div>
+        `;
+        return;
+    }
+    
+    container.innerHTML = accounts.map(account => {
+        const hasWallet = account.walletId && account.walletId !== 'null';
+        const dateCreated = account.dateCreated ? new Date(account.dateCreated).toLocaleDateString('pt-BR') : 'N/A';
+        
+        const walletHtml = hasWallet 
+            ? `<span class="inline-block bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full font-semibold">
+                   <i class="fas fa-check-circle mr-1"></i>Aprovado
+               </span>`
+            : `<span class="inline-block bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded-full font-semibold">
+                   <i class="fas fa-clock mr-1"></i>Aguardando Aprovação
+               </span>`;
+        
+        // Seção de PIX (só para aprovados)
+        const pixSection = hasWallet ? `
+            <div class="mt-4 p-4 bg-green-50 rounded-lg border border-green-200">
+                <h4 class="text-sm font-bold text-green-900 mb-3">
+                    <i class="fas fa-qrcode mr-2"></i>
+                    QR Code PIX com Valor Fixo (Split 20/80)
+                </h4>
+                <div id="qr-form-${account.id}">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <input type="number" 
+                            id="pix-value-${account.id}" 
+                            placeholder="Valor fixo (R$)" 
+                            step="0.01" 
+                            min="1"
+                            required
+                            class="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-green-500">
+                        <input type="text" 
+                            id="pix-desc-${account.id}" 
+                            placeholder="Descrição (opcional)" 
+                            value="Pagamento via PIX"
+                            class="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-green-500">
+                        <button onclick="generateStaticPix('${account.id}', '${account.walletId}')" 
+                            class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 font-semibold">
+                            <i class="fas fa-qrcode mr-2"></i>Gerar QR Code
+                        </button>
+                    </div>
+                </div>
+                <div id="pix-static-${account.id}" class="hidden mt-4"></div>
+            </div>
+        ` : '';
+        
+        return `
+            <div class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition bg-white">
+                <div class="flex justify-between items-start mb-3">
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2 mb-2">
+                            <h3 class="text-lg font-semibold text-gray-800">${account.name}</h3>
+                            ${walletHtml}
+                        </div>
+                        <p class="text-sm text-gray-600 mt-1">
+                            <i class="fas fa-envelope mr-2"></i>${account.email}
+                        </p>
+                        <p class="text-sm text-gray-600">
+                            <i class="fas fa-id-card mr-2"></i>${account.cpfCnpj}
+                        </p>
+                        <p class="text-sm text-gray-500 mt-2">
+                            <i class="fas fa-calendar mr-2"></i>Criado em: ${dateCreated}
+                        </p>
+                        <div class="flex gap-2 mt-2">
+                            <span class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded font-mono">
+                                ID: ${account.id.substring(0, 8)}...
+                            </span>
+                            ${hasWallet ? `
+                                <span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded font-mono">
+                                    <i class="fas fa-wallet mr-1"></i>Wallet: ${account.walletId.substring(0, 8)}...
+                                </span>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+                ${pixSection}
+            </div>
+        `;
+    }).join('');
 }
