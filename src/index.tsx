@@ -490,7 +490,16 @@ app.post('/api/public/signup', async (c) => {
 app.get('/api/accounts', async (c) => {
   try {
     const result = await asaasRequest(c, '/accounts')
-    return c.json(result)
+    
+    // Transformar resposta para formato esperado pelo frontend
+    if (result.ok && result.data && result.data.data) {
+      return c.json({ 
+        accounts: result.data.data,
+        totalCount: result.data.totalCount || 0
+      })
+    }
+    
+    return c.json({ accounts: [], totalCount: 0 })
   } catch (error: any) {
     return c.json({ error: error.message }, 500)
   }
@@ -2446,7 +2455,7 @@ app.get('/', (c) => {
         </div>
 
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-        <script src="/static/app.js?v=2.1"></script>
+        <script src="/static/app.js?v=2.2"></script>
     </body>
     </html>
   `)

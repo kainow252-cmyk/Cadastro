@@ -1043,6 +1043,17 @@ async function generateStaticPix(accountId, walletId) {
     const pixDiv = document.getElementById(`pix-static-${accountId}`);
     const formDiv = document.getElementById(`pix-form-${accountId}`);
     
+    // Verificar se elementos existem
+    if (!valueInput || !descInput || !pixDiv) {
+        console.error('Elementos do formulário não encontrados:', {
+            valueInput: !!valueInput,
+            descInput: !!descInput,
+            pixDiv: !!pixDiv,
+            formDiv: !!formDiv
+        });
+        return;
+    }
+    
     const value = parseFloat(valueInput.value);
     const description = descInput.value || 'Pagamento via PIX';
     
@@ -1073,8 +1084,10 @@ async function generateStaticPix(accountId, walletId) {
             const splitValue20 = (value * 0.20).toFixed(2);
             const splitValue80 = (value * 0.80).toFixed(2);
             
-            // Ocultar formulário
-            formDiv.style.display = 'none';
+            // Ocultar formulário (se existir)
+            if (formDiv) {
+                formDiv.style.display = 'none';
+            }
             
             pixDiv.innerHTML = `
                 <div class="bg-gradient-to-br from-green-50 to-blue-50 border-2 border-green-300 rounded-lg p-4">
@@ -1224,6 +1237,12 @@ function resetPixForm(accountId) {
     const pixDiv = document.getElementById(`pix-static-${accountId}`);
     const valueInput = document.getElementById(`pix-value-${accountId}`);
     const descInput = document.getElementById(`pix-desc-${accountId}`);
+    
+    // Verificar se elementos existem
+    if (!formDiv || !pixDiv || !valueInput || !descInput) {
+        console.error('Elementos não encontrados ao resetar formulário');
+        return;
+    }
     
     // Mostrar formulário novamente
     formDiv.style.display = 'block';
