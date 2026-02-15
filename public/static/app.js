@@ -1188,6 +1188,75 @@ async function generateStaticPix(accountId, walletId) {
                             </div>
                         </div>
                     </div>
+                    
+                    <!-- Opções de Uso -->
+                    <div class="mt-4 border-t border-gray-300 pt-4">
+                        <h5 class="text-sm font-bold text-gray-800 mb-3">
+                            <i class="fas fa-share-alt mr-2 text-purple-600"></i>
+                            Como Usar Este QR Code:
+                        </h5>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <!-- Opção 1: Baixar Imagem -->
+                            <div class="bg-white rounded-lg p-3 shadow-sm border border-gray-200">
+                                <div class="text-center mb-2">
+                                    <i class="fas fa-download text-3xl text-blue-600"></i>
+                                </div>
+                                <h6 class="text-sm font-bold text-gray-800 text-center mb-2">Baixar Imagem</h6>
+                                <p class="text-xs text-gray-600 text-center mb-3">
+                                    Para banner, flyer, site ou impressão
+                                </p>
+                                <button onclick="downloadQRCode('${accountId}', '${pixData.qrCodeBase64}')" 
+                                    class="w-full px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-semibold">
+                                    <i class="fas fa-download mr-2"></i>Baixar PNG
+                                </button>
+                            </div>
+                            
+                            <!-- Opção 2: Código HTML -->
+                            <div class="bg-white rounded-lg p-3 shadow-sm border border-gray-200">
+                                <div class="text-center mb-2">
+                                    <i class="fas fa-code text-3xl text-green-600"></i>
+                                </div>
+                                <h6 class="text-sm font-bold text-gray-800 text-center mb-2">Código HTML</h6>
+                                <p class="text-xs text-gray-600 text-center mb-3">
+                                    Cole no seu site ou loja virtual
+                                </p>
+                                <button onclick="copyHtmlCode('${accountId}', '${pixData.qrCodeBase64}', '${value}', '${description}')" 
+                                    class="w-full px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm font-semibold">
+                                    <i class="fas fa-code mr-2"></i>Copiar HTML
+                                </button>
+                            </div>
+                            
+                            <!-- Opção 3: Link Direto -->
+                            <div class="bg-white rounded-lg p-3 shadow-sm border border-gray-200">
+                                <div class="text-center mb-2">
+                                    <i class="fas fa-link text-3xl text-purple-600"></i>
+                                </div>
+                                <h6 class="text-sm font-bold text-gray-800 text-center mb-2">Link Direto</h6>
+                                <p class="text-xs text-gray-600 text-center mb-3">
+                                    Compartilhe em WhatsApp ou redes sociais
+                                </p>
+                                <button onclick="copyPixLink('${accountId}', '${pixData.payload}')" 
+                                    class="w-full px-3 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 text-sm font-semibold">
+                                    <i class="fas fa-share-alt mr-2"></i>Copiar Link
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Exemplos de Uso -->
+                        <div class="mt-3 bg-blue-50 rounded-lg p-3 border border-blue-200">
+                            <h6 class="text-xs font-bold text-blue-900 mb-2">
+                                <i class="fas fa-lightbulb mr-1"></i>
+                                Exemplos de Uso:
+                            </h6>
+                            <ul class="text-xs text-blue-800 space-y-1">
+                                <li><i class="fas fa-check text-green-600 mr-2"></i>Banner no seu site ou loja virtual</li>
+                                <li><i class="fas fa-check text-green-600 mr-2"></i>Instagram/Facebook Stories ou Posts</li>
+                                <li><i class="fas fa-check text-green-600 mr-2"></i>WhatsApp Business (status ou mensagens)</li>
+                                <li><i class="fas fa-check text-green-600 mr-2"></i>Flyers impressos ou cardápios</li>
+                                <li><i class="fas fa-check text-green-600 mr-2"></i>Email marketing ou newsletters</li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
             `;
         } else {
@@ -1283,4 +1352,100 @@ function showApiKeysError(container, errorData) {
             </div>
         </div>
     `;
+}
+
+// ========================================
+// FUNÇÕES DE COMPARTILHAMENTO DO QR CODE
+// ========================================
+
+// Função para baixar QR Code como imagem PNG
+function downloadQRCode(accountId, base64Image) {
+    try {
+        // Criar link de download
+        const link = document.createElement('a');
+        link.href = base64Image;
+        link.download = `qrcode-pix-${accountId}-${Date.now()}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        alert('✅ QR Code baixado com sucesso!\n\nVocê pode usar esta imagem em:\n• Banner do seu site\n• Stories/Posts\n• Flyers impressos\n• Email marketing');
+    } catch (error) {
+        console.error('Erro ao baixar QR Code:', error);
+        alert('❌ Erro ao baixar QR Code: ' + error.message);
+    }
+}
+
+// Função para copiar código HTML
+function copyHtmlCode(accountId, base64Image, value, description) {
+    const htmlCode = `<!-- QR Code PIX - Valor: R$ ${value} -->
+<div style="text-align: center; padding: 20px; border: 2px solid #10b981; border-radius: 10px; background: #f0fdf4; max-width: 400px; margin: 0 auto;">
+    <h3 style="color: #059669; margin: 0 0 10px 0;">💳 Pagamento via PIX</h3>
+    <img src="${base64Image}" alt="QR Code PIX" style="width: 250px; height: 250px; margin: 10px auto; display: block;">
+    <p style="font-size: 18px; font-weight: bold; color: #047857; margin: 10px 0;">R$ ${value}</p>
+    <p style="font-size: 14px; color: #065f46; margin: 5px 0;">${description}</p>
+    <p style="font-size: 12px; color: #6b7280; margin: 10px 0;">
+        ✓ Escaneie o QR Code com seu app bancário<br>
+        ✓ Pagamento instantâneo e seguro
+    </p>
+</div>
+<!-- Fim QR Code PIX -->`;
+
+    // Copiar para clipboard
+    navigator.clipboard.writeText(htmlCode).then(() => {
+        alert('✅ Código HTML copiado!\n\nCole no seu site/loja virtual:\n1. Abra o editor HTML do seu site\n2. Cole o código (Ctrl+V)\n3. Salve e publique\n\n💡 O QR Code aparecerá formatado e pronto!');
+    }).catch(error => {
+        console.error('Erro ao copiar código:', error);
+        
+        // Fallback: mostrar em textarea
+        const textarea = document.createElement('textarea');
+        textarea.value = htmlCode;
+        textarea.style.position = 'fixed';
+        textarea.style.top = '50%';
+        textarea.style.left = '50%';
+        textarea.style.transform = 'translate(-50%, -50%)';
+        textarea.style.width = '80%';
+        textarea.style.height = '400px';
+        textarea.style.zIndex = '9999';
+        textarea.style.padding = '20px';
+        textarea.style.border = '2px solid #10b981';
+        textarea.style.borderRadius = '10px';
+        textarea.style.fontSize = '12px';
+        textarea.style.fontFamily = 'monospace';
+        document.body.appendChild(textarea);
+        textarea.select();
+        
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = '✖ Fechar';
+        closeBtn.style.position = 'fixed';
+        closeBtn.style.top = 'calc(50% - 220px)';
+        closeBtn.style.right = 'calc(50% - 40% + 10px)';
+        closeBtn.style.zIndex = '10000';
+        closeBtn.style.padding = '5px 15px';
+        closeBtn.style.background = '#ef4444';
+        closeBtn.style.color = 'white';
+        closeBtn.style.border = 'none';
+        closeBtn.style.borderRadius = '5px';
+        closeBtn.style.cursor = 'pointer';
+        closeBtn.onclick = () => {
+            document.body.removeChild(textarea);
+            document.body.removeChild(closeBtn);
+        };
+        document.body.appendChild(closeBtn);
+        
+        alert('📋 Código HTML exibido!\n\nSelecione tudo (Ctrl+A) e copie (Ctrl+C)');
+    });
+}
+
+// Função para copiar link do PIX
+function copyPixLink(accountId, payload) {
+    navigator.clipboard.writeText(payload).then(() => {
+        const valueInput = document.getElementById(`pix-value-${accountId}`);
+        const value = valueInput ? valueInput.value : '0.00';
+        
+        alert('✅ Chave PIX copiada!\n\n📱 Como compartilhar:\n\n1️⃣ WhatsApp:\n   • Cole a chave PIX na mensagem\n   • Cliente copia e cola no app do banco\n\n2️⃣ Redes Sociais:\n   • Poste a imagem do QR Code\n   • Adicione a chave PIX na legenda\n\n3️⃣ Email:\n   • Envie a imagem em anexo\n   • Cole a chave PIX no corpo do email\n\n💡 Dica: Sempre mencione o valor R$ ' + value + '!');
+    }).catch(error => {
+        console.error('Erro ao copiar link:', error);
+        alert('❌ Erro ao copiar link: ' + error.message);
+    });
 }
