@@ -1937,6 +1937,49 @@ app.get('/', (c) => {
                                         class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
                                 </div>
                             </div>
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Data de Nascimento *
+                                    </label>
+                                    <input type="date" name="birthDate" required
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Tipo de Pessoa *
+                                    </label>
+                                    <select name="companyType" required
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                        <option value="">Selecione...</option>
+                                        <option value="INDIVIDUAL">Pessoa Física</option>
+                                        <option value="MEI">MEI</option>
+                                        <option value="LIMITED">Empresa Limitada</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Telefone *
+                                    </label>
+                                    <input type="tel" name="phone" required
+                                        placeholder="11999999999"
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Renda Mensal *
+                                    </label>
+                                    <select name="incomeValue" required
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                        <option value="">Selecione...</option>
+                                        <option value="1000">Até R$ 1.000</option>
+                                        <option value="2000">R$ 1.000 - R$ 2.000</option>
+                                        <option value="5000">R$ 2.000 - R$ 5.000</option>
+                                        <option value="10000">R$ 5.000 - R$ 10.000</option>
+                                        <option value="20000">Acima de R$ 10.000</option>
+                                    </select>
+                                </div>
+                            </div>
                             <div class="flex justify-end">
                                 <button type="submit" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 font-semibold">
                                     <i class="fas fa-check mr-2"></i>Criar Subconta
