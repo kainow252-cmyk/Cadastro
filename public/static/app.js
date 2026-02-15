@@ -296,6 +296,123 @@ async function loadSubaccountsForPix() {
     }
 }
 
+// Gerar API Key para subconta selecionada
+async function generateApiKeyForSubaccount() {
+    const select = document.getElementById('pix-subaccount');
+    
+    if (!select.value) {
+        alert('Por favor, selecione uma subconta primeiro!');
+        return;
+    }
+    
+    try {
+        const subaccountData = JSON.parse(select.value);
+        
+        // Confirmar ação
+        const confirm = window.confirm(
+            `Gerar nova API Key para:\n\n` +
+            `Subconta: ${subaccountData.name}\n` +
+            `ID: ${subaccountData.id}\n\n` +
+            `⚠️ ATENÇÃO:\n` +
+            `- Esta operação requer que o "Gerenciamento de API Keys" esteja habilitado na conta principal\n` +
+            `- A habilitação dura apenas 2 horas\n` +
+            `- A API Key só será exibida uma vez\n\n` +
+            `Deseja continuar?`
+        );
+        
+        if (!confirm) return;
+        
+        // Mostrar loading
+        const originalText = event.target.innerHTML;
+        event.target.disabled = true;
+        event.target.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        
+        // Gerar API Key
+        const response = await axios.post(
+            `/api/accounts/${subaccountData.id}/api-key`,
+            {
+                name: `API Key - ${subaccountData.name} - ${new Date().toLocaleDateString('pt-BR')}`
+            }
+        );
+        
+        if (response.data.ok) {
+            const apiKeyData = response.data.data;
+            
+            // Mostrar resultado
+            document.getElementById('generated-api-key').value = apiKeyData.apiKey;
+            document.getElementById('api-key-details').innerHTML = `
+                <p><strong>Nome:</strong> ${apiKeyData.name}</p>
+                <p><strong>ID:</strong> ${apiKeyData.id}</p>
+                <p><strong>Criada em:</strong> ${new Date(apiKeyData.createdAt).toLocaleString('pt-BR')}</p>
+                ${apiKeyData.expiresAt ? `<p><strong>Expira em:</strong> ${new Date(apiKeyData.expiresAt).toLocaleString('pt-BR')}</p>` : '<p><strong>Validade:</strong> Sem expiração</p>'}
+                <p><strong>Status:</strong> ${apiKeyData.active ? '✅ Ativa' : '❌ Inativa'}</p>
+            `;
+            
+            document.getElementById('api-key-result').classList.remove('hidden');
+            
+            // Scroll para o resultado
+            document.getElementById('api-key-result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            
+            // Mostrar aviso novamente
+            setTimeout(() => {
+                alert(
+                    '✅ API Key gerada com sucesso!\n\n' +
+                    '⚠️ IMPORTANTE: Copie a API Key agora!\n\n' +
+                    'Esta é a única vez que ela será exibida.\n' +
+                    'Não será possível recuperá-la depois.'
+                );
+            }, 500);
+            
+        } else {
+            throw new Error(response.data.error || 'Erro desconhecido');
+        }
+        
+        // Restaurar botão
+        event.target.disabled = false;
+        event.target.innerHTML = originalText;
+        
+    } catch (error) {
+        console.error('Erro ao gerar API Key:', error);
+        
+        let errorMessage = 'Erro ao gerar API Key:\n\n';
+        
+        if (error.response?.status === 403 || error.response?.status === 401) {
+            errorMessage += 
+                '❌ Acesso negado!\n\n' +
+                'Para gerar API Keys de subcontas, você precisa:\n\n' +
+                '1. Acessar a conta principal no Asaas\n' +
+                '2. Ir em Integrações → Chaves de API\n' +
+                '3. Localizar "Gerenciamento de Chaves de API de Subcontas"\n' +
+                '4. Clicar em "Habilitar acesso"\n\n' +
+                '⏰ A habilitação dura 2 horas e depois expira automaticamente.';
+        } else if (error.response?.data?.message) {
+            errorMessage += error.response.data.message;
+        } else {
+            errorMessage += error.message || 'Erro desconhecido';
+        }
+        
+        alert(errorMessage);
+        
+        // Restaurar botão
+        if (event.target) {
+            event.target.disabled = false;
+            event.target.innerHTML = originalText;
+        }
+    }
+}
+
+// Copiar API Key
+function copyApiKey() {
+    const apiKey = document.getElementById('generated-api-key').value;
+    
+    navigator.clipboard.writeText(apiKey).then(() => {
+        alert('✅ API Key copiada para a área de transferência!');
+    }).catch(err => {
+        console.error('Erro ao copiar:', err);
+        alert('❌ Erro ao copiar a API Key. Tente selecionar e copiar manualmente.');
+    });
+}
+
 // Formatar CPF/CNPJ no campo PIX
 document.addEventListener('DOMContentLoaded', function() {
     const cpfInput = document.getElementById('pix-customer-cpf');

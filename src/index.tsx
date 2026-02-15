@@ -596,6 +596,115 @@ app.get('/api/signup-links/:id/analytics', async (c) => {
 })
 
 // ======================
+// GERENCIAMENTO DE API KEYS
+// ======================
+
+// Gerar API Key para uma subconta
+app.post('/api/accounts/:id/api-key', async (c) => {
+  try {
+    const accountId = c.req.param('id')
+    const { name, expiresAt } = await c.req.json()
+
+    // Preparar dados da API Key
+    const apiKeyData: any = {
+      name: name || `API Key - ${new Date().toLocaleDateString('pt-BR')}`,
+    }
+
+    // Adicionar data de expiração se fornecida
+    if (expiresAt) {
+      apiKeyData.expiresAt = expiresAt
+    }
+
+    // Criar API Key na subconta
+    const result = await asaasRequest(
+      c, 
+      `/accounts/${accountId}/accessTokens`, 
+      'POST', 
+      apiKeyData
+    )
+
+    if (!result.ok) {
+      return c.json({ 
+        error: 'Erro ao gerar API Key', 
+        details: result.data,
+        message: 'Verifique se o gerenciamento de API Keys está habilitado nas configurações da conta principal (válido por 2 horas)'
+      }, result.status)
+    }
+
+    // Retornar a API Key gerada
+    return c.json({
+      ok: true,
+      data: {
+        id: result.data.id,
+        apiKey: result.data.accessToken, // A API Key só é retornada nesta chamada!
+        name: result.data.name,
+        expiresAt: result.data.expiresAt,
+        active: result.data.active,
+        createdAt: result.data.dateCreated
+      },
+      warning: '⚠️ IMPORTANTE: Esta é a única vez que a API Key será exibida. Guarde-a em local seguro!'
+    })
+
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Listar API Keys de uma subconta
+app.get('/api/accounts/:id/api-keys', async (c) => {
+  try {
+    const accountId = c.req.param('id')
+    
+    const result = await asaasRequest(c, `/accounts/${accountId}/accessTokens`)
+
+    if (!result.ok) {
+      return c.json({ 
+        error: 'Erro ao listar API Keys', 
+        details: result.data,
+        message: 'Verifique se o gerenciamento de API Keys está habilitado'
+      }, result.status)
+    }
+
+    return c.json({
+      ok: true,
+      data: result.data.data || []
+    })
+
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Excluir API Key de uma subconta
+app.delete('/api/accounts/:id/api-keys/:keyId', async (c) => {
+  try {
+    const accountId = c.req.param('id')
+    const keyId = c.req.param('keyId')
+    
+    const result = await asaasRequest(
+      c, 
+      `/accounts/${accountId}/accessTokens/${keyId}`, 
+      'DELETE'
+    )
+
+    if (!result.ok) {
+      return c.json({ 
+        error: 'Erro ao excluir API Key', 
+        details: result.data 
+      }, result.status)
+    }
+
+    return c.json({
+      ok: true,
+      message: 'API Key excluída com sucesso'
+    })
+
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// ======================
 // ROTAS DE PAGAMENTO PIX
 // ======================
 
@@ -1613,12 +1722,55 @@ app.get('/', (c) => {
                                             class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent">
                                             <option value="">Selecione a subconta...</option>
                                         </select>
+                                        <button type="button" onclick="generateApiKeyForSubaccount()" 
+                                            title="Gerar API Key para a subconta selecionada"
+                                            class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                                            <i class="fas fa-key"></i>
+                                        </button>
                                         <button type="button" onclick="loadSubaccountsForPix()" 
+                                            title="Atualizar lista de subcontas"
                                             class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
                                             <i class="fas fa-sync-alt"></i>
                                         </button>
                                     </div>
-                                    <p class="text-xs text-gray-500 mt-1">A subconta receberá 20% do valor líquido</p>
+                                    <p class="text-xs text-gray-500 mt-1">
+                                        A subconta receberá 20% do valor líquido
+                                        <span class="mx-2">•</span>
+                                        <button type="button" onclick="generateApiKeyForSubaccount()" 
+                                            class="text-blue-600 hover:underline">
+                                            <i class="fas fa-key text-xs"></i> Gerar API Key
+                                        </button>
+                                    </p>
+                                </div>
+                                
+                                <!-- API Key Display -->
+                                <div id="api-key-result" class="hidden p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                    <div class="flex items-start justify-between mb-2">
+                                        <h4 class="font-semibold text-blue-800">
+                                            <i class="fas fa-key mr-2"></i>API Key Gerada
+                                        </h4>
+                                        <button onclick="document.getElementById('api-key-result').classList.add('hidden')" 
+                                            class="text-blue-600 hover:text-blue-800">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                    <div class="space-y-2">
+                                        <div>
+                                            <label class="text-xs font-medium text-gray-700">API Key:</label>
+                                            <div class="flex gap-2 mt-1">
+                                                <input type="text" id="generated-api-key" readonly
+                                                    class="flex-1 px-3 py-2 bg-white border border-blue-300 rounded text-sm font-mono">
+                                                <button onclick="copyApiKey()" 
+                                                    class="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                                                    <i class="fas fa-copy"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div id="api-key-details" class="text-xs text-gray-600"></div>
+                                        <p class="text-xs text-red-600 font-semibold">
+                                            ⚠️ ATENÇÃO: Esta é a única vez que a API Key será exibida. Copie e guarde em local seguro!
+                                        </p>
+                                    </div>
                                 </div>
 
                                 <!-- Dados do Cliente -->
