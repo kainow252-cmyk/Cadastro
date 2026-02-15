@@ -1186,16 +1186,14 @@ async function generateStaticPix(accountId, walletId) {
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Opções de Uso -->
-                    <div class="mt-3 border-t-2 border-purple-300 pt-3 bg-purple-50 rounded-lg p-3">
-                        <h5 class="text-xs font-bold text-purple-900 mb-2 text-center">
-                            <i class="fas fa-share-alt mr-1"></i>
-                            COMPARTILHAR QR CODE
-                        </h5>
-                        <div class="grid grid-cols-3 gap-2">
+                            
+                            <!-- Opções de Compartilhamento - MOVIDAS AQUI -->
+                            <div class="bg-purple-50 rounded-lg p-3 border border-purple-300 mt-3">
+                                <p class="text-xs font-bold text-purple-900 mb-2 text-center">
+                                    <i class="fas fa-share-alt mr-1"></i>
+                                    COMPARTILHAR
+                                </p>
+                                <div class="grid grid-cols-3 gap-2">
                             <!-- Opção 1: Baixar Imagem -->
                             <button onclick="downloadQRCode('${accountId}', '${pixData.qrCodeBase64}')" 
                                 class="bg-blue-600 text-white rounded-lg p-2 hover:bg-blue-700 text-center flex flex-col items-center gap-1 shadow-md">
@@ -1218,12 +1216,14 @@ async function generateStaticPix(accountId, walletId) {
                             </button>
                         </div>
                         
-                        <!-- Dica -->
-                        <div class="mt-2 text-center">
-                            <p class="text-xs text-gray-600">
-                                <i class="fas fa-lightbulb text-yellow-500 mr-1"></i>
-                                Use em: site, banner, WhatsApp, Stories
-                            </p>
+                                <!-- Dica -->
+                                <div class="mt-2 text-center">
+                                    <p class="text-xs text-gray-600">
+                                        <i class="fas fa-lightbulb text-yellow-500 mr-1"></i>
+                                        Use em: site, banner, WhatsApp
+                                    </p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
