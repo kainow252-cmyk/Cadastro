@@ -9,8 +9,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "asaas-manager-db",
-      "database_id": "local"
+      "database_name": "corretoracorporate-db",
+      "database_id": "728ee55c-d607-4846-969e-741a4fd0afb2"
     }
   ]
   // "vars": {
