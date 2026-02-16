@@ -1,0 +1,37 @@
+════════════════════════════════════════════════════════════════════
+📋 8 VARIÁVEIS - COPIE E COLE
+════════════════════════════════════════════════════════════════════
+
+🔹 VARIÁVEL 1:
+   Name: ASAAS_API_KEY
+   Value: aact_prod_000MzkwODA2MWY2OGM3MWRlMDU2NWM3MzJlNzZmNGZhZGY6OjJjN2I5NTIwLTU5YTUtNDg3NS05ZGIzLWMzYzk5YTdlMTJkZjo6JGFhY2hfMTNjN2U2YmMtMDhlOC00M2YyLTgyNjEtMzI0YzZhNjBlYTU1
+
+🔹 VARIÁVEL 2:
+   Name: ASAAS_API_URL
+   Value: https://api.asaas.com/v3
+
+🔹 VARIÁVEL 3:
+   Name: ADMIN_USERNAME
+   Value: admin
+
+🔹 VARIÁVEL 4:
+   Name: ADMIN_PASSWORD
+   Value: admin123
+
+🔹 VARIÁVEL 5:
+   Name: JWT_SECRET
+   Value: sua-chave-secreta-super-segura-mude-em-producao
+
+🔹 VARIÁVEL 6:
+   Name: MAILERSEND_API_KEY
+   Value: mlsn.ae314393b75a2a0588bcd6d6f4a235f658f9a8ad28b5be49b3800518fde78fbc
+
+🔹 VARIÁVEL 7:
+   Name: MAILERSEND_FROM_EMAIL
+   Value: noreply@trial-0r83ql3x7v3lzw1j.mlsender.net
+
+🔹 VARIÁVEL 8:
+   Name: MAILERSEND_FROM_NAME
+   Value: Gerenciador Asaas
+
+════════════════════════════════════════════════════════════════════

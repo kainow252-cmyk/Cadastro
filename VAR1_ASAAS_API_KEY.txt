@@ -1,0 +1,9 @@
+════════════════════════════════════════════════
+VARIÁVEL 1 de 8: ASAAS_API_KEY
+════════════════════════════════════════════════
+
+Name (copie):
+ASAAS_API_KEY
+
+Value (copie):
+aact_prod_000MzkwODA2MWY2OGM3MWRlMDU2NWM3MzJlNzZmNGZhZGY6OjJjN2I5NTIwLTU5YTUtNDg3NS05ZGIzLWMzYzk5YTdlMTJkZjo6JGFhY2hfMTNjN2U2YmMtMDhlOC00M2YyLTgyNjEtMzI0YzZhNjBlYTU1

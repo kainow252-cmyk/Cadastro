@@ -1,0 +1,9 @@
+════════════════════════════════════════════════
+VARIÁVEL 2 de 8: ASAAS_API_URL
+════════════════════════════════════════════════
+
+Name (copie):
+ASAAS_API_URL
+
+Value (copie):
+https://api.asaas.com/v3
