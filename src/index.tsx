@@ -1014,15 +1014,50 @@ app.post('/api/pix/static', async (c) => {
     
     console.log('✅ Cobrança criada:', payment.id, 'Status:', payment.status)
     
-    // IMPORTANTE: API Asaas retorna QR Code DINÂMICO (sem valor fixo) quando tem split
-    // Para mensalidades fixas, precisamos gerar o payload manualmente com valor embutido
-    console.log('⚡ Gerando payload PIX manual com valor fixo R$', value.toFixed(2))
+    // Buscar QR Code da API Asaas
+    const qrCodeResult = await asaasRequest(c, `/payments/${payment.id}/pixQrCode`)
     
-    const pixPayload = generateStaticPixPayload(walletId, value, description || 'Pagamento via PIX')
-    const qrCodeBase64Image = await generateQRCodeBase64(pixPayload)
+    if (!qrCodeResult.ok || !qrCodeResult.data) {
+      return c.json({ 
+        error: 'Erro ao gerar QR Code',
+        details: qrCodeResult.data 
+      }, 400)
+    }
+    
+    // API Asaas retorna QR Code dinâmico (sem valor fixo)
+    // Vamos inserir o campo 54 (Transaction Amount) manualmente
+    const asaasPayload = qrCodeResult.data.payload
+    console.log('📊 Payload Asaas (sem valor):', asaasPayload.substring(0, 100) + '...')
+    
+    // Inserir campo 54 após o campo 53 (currency)
+    const valueField = `54${value.toFixed(2).length.toString().padStart(2, '0')}${value.toFixed(2)}`
+    
+    // Encontrar posição do campo 58 (Country Code) e inserir campo 54 antes dele
+    const pos58 = asaasPayload.indexOf('5802')
+    if (pos58 === -1) {
+      console.error('❌ Campo 58 não encontrado no payload')
+      return c.json({ error: 'Formato de payload inválido' }, 500)
+    }
+    
+    // Montar payload com valor fixo
+    const payloadWithValue = asaasPayload.substring(0, pos58) + valueField + asaasPayload.substring(pos58)
+    
+    // Remover CRC antigo (últimos 8 caracteres: 6304XXXX)
+    const payloadWithoutCrc = payloadWithValue.substring(0, payloadWithValue.length - 8)
+    
+    // Adicionar placeholder CRC e recalcular
+    const payloadWithCrcPlaceholder = payloadWithoutCrc + '6304'
+    const crc = calculateCRC16(payloadWithCrcPlaceholder)
+    const finalPayload = payloadWithCrcPlaceholder + crc
+    
+    console.log('✅ Payload final (com valor fixo):', finalPayload.substring(0, 100) + '...')
+    console.log('📏 Comprimento:', finalPayload.length, 'caracteres')
+    
+    // Gerar novo QR Code
+    const qrCodeBase64Image = await generateQRCodeBase64(finalPayload)
     
     const pixData = {
-      payload: pixPayload,
+      payload: finalPayload,
       encodedImage: qrCodeBase64Image,
       expirationDate: payment.dueDate
     }
@@ -3486,7 +3521,7 @@ app.get('/', (c) => {
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-        <script src="/static/app.js?v=4.4"></script>
+        <script src="/static/app.js?v=4.5"></script>
         <script src="/static/payment-links.js?v=4.2"></script>
         <script src="/static/payment-filters.js?v=4.2"></script>
     </body>
