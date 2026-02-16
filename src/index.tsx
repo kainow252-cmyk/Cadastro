@@ -695,11 +695,71 @@ app.delete('/api/payment-links/:id', async (c) => {
   try {
     const id = c.req.param('id')
     
-    const result = await asaasRequest(c, `/paymentLinks/${id}`, {
-      method: 'DELETE'
-    })
+    const result = await asaasRequest(c, `/paymentLinks/${id}`, 'DELETE')
     
     return c.json({ ok: true })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Buscar pagamentos de um link específico
+app.get('/api/payment-links/:id/payments', async (c) => {
+  try {
+    const linkId = c.req.param('id')
+    
+    // Buscar cobranças associadas ao link
+    const result = await asaasRequest(c, `/payments?paymentLink=${linkId}`)
+    
+    return c.json({
+      ok: true,
+      data: result.data?.data || [],
+      totalCount: result.data?.totalCount || 0
+    })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Buscar detalhes de um pagamento específico
+app.get('/api/payments/:id', async (c) => {
+  try {
+    const paymentId = c.req.param('id')
+    
+    const result = await asaasRequest(c, `/payments/${paymentId}`)
+    
+    return c.json({
+      ok: true,
+      data: result.data
+    })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Listar todos os pagamentos
+app.get('/api/payments', async (c) => {
+  try {
+    const { status, dateCreated, limit, offset } = c.req.query()
+    
+    let endpoint = '/payments?'
+    const params = []
+    
+    if (status) params.push(`status=${status}`)
+    if (dateCreated) params.push(`dateCreated[ge]=${dateCreated}`)
+    if (limit) params.push(`limit=${limit}`)
+    if (offset) params.push(`offset=${offset}`)
+    
+    endpoint += params.join('&')
+    
+    const result = await asaasRequest(c, endpoint)
+    
+    return c.json({
+      ok: true,
+      data: result.data?.data || [],
+      totalCount: result.data?.totalCount || 0,
+      hasMore: result.data?.hasMore || false
+    })
   } catch (error: any) {
     return c.json({ error: error.message }, 500)
   }
@@ -3209,7 +3269,7 @@ app.get('/', (c) => {
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
         <script src="/static/app.js?v=3.5"></script>
-        <script src="/static/payment-links.js?v=3.2"></script>
+        <script src="/static/payment-links.js?v=3.3"></script>
     </body>
     </html>
   `)
