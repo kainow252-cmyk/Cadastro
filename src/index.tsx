@@ -657,13 +657,13 @@ app.post('/api/payment-links', async (c) => {
     }
     
     // Criar link na API Asaas
-    const result = await asaasRequest(c, '/paymentLinks', {
-      method: 'POST',
-      body: JSON.stringify(linkData)
-    })
+    const result = await asaasRequest(c, '/paymentLinks', 'POST', linkData)
     
     if (!result.ok) {
-      return c.json({ error: result.data?.errors?.[0]?.description || 'Erro ao criar link' }, 400)
+      // Log detalhado do erro para debug
+      console.error('Erro Asaas API:', JSON.stringify(result.data, null, 2))
+      const errorMessage = result.data?.errors?.[0]?.description || result.data?.error || JSON.stringify(result.data) || 'Erro ao criar link'
+      return c.json({ error: errorMessage, details: result.data }, 400)
     }
     
     return c.json({
@@ -2014,6 +2014,9 @@ app.get('/login', (c) => {
 
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
         <script>
+            // Configure axios to work with cookies
+            axios.defaults.withCredentials = true;
+            
             document.getElementById('login-form').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 
