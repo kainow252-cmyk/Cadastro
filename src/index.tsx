@@ -975,31 +975,52 @@ app.post('/api/pix/static', async (c) => {
 
 // Função para gerar payload PIX estático (EMV format simplificado)
 function generateStaticPixPayload(walletId: string, value: number, description: string): string {
-  // Formato EMV para PIX estático com valor fixo
+  // Formato EMV para PIX estático com valor fixo (Spec BACEN)
   const merchantName = 'ASAAS PAGAMENTOS'
   const merchantCity = 'SAO PAULO'
   const pixKey = walletId
   const valueStr = value.toFixed(2)
   
-  // Construir payload EMV
-  let payload = '00020126'  // Payload Format Indicator
-  payload += '0014br.gov.bcb.pix'  // GUI
-  payload += `01${pixKey.length.toString().padStart(2, '0')}${pixKey}`  // Chave PIX
-  payload += '52040000'  // Merchant Category Code
-  payload += '5303986'   // Transaction Currency (BRL)
-  payload += `54${valueStr.length.toString().padStart(2, '0')}${valueStr}`  // Transaction Amount
+  // Construir payload EMV seguindo especificação BACEN
+  let payload = ''
+  
+  // 00: Payload Format Indicator
+  payload += '000201'
+  
+  // 26: Merchant Account Information - PIX
+  const pixKeyTag = `0136${pixKey}` // 01 = chave PIX, 36 = tamanho, valor = UUID
+  const pixInfo = `0014br.gov.bcb.pix${pixKeyTag}`
+  payload += `26${pixInfo.length.toString().padStart(2, '0')}${pixInfo}`
+  
+  // 52: Merchant Category Code
+  payload += '52040000'
+  
+  // 53: Transaction Currency (986 = BRL)
+  payload += '5303986'
+  
+  // 54: Transaction Amount
+  payload += `54${valueStr.length.toString().padStart(2, '0')}${valueStr}`
+  
+  // 58: Country Code (BR)
+  payload += '5802BR'
+  
+  // 59: Merchant Name
   payload += `59${merchantName.length.toString().padStart(2, '0')}${merchantName}`
+  
+  // 60: Merchant City
   payload += `60${merchantCity.length.toString().padStart(2, '0')}${merchantCity}`
   
-  // Adicionar descrição se fornecida
+  // 62: Additional Data Field (opcional - descrição)
   if (description) {
-    const descClean = description.substring(0, 25) // Máximo 25 caracteres
-    payload += `62${(descClean.length + 4).toString().padStart(2, '0')}05${descClean.length.toString().padStart(2, '0')}${descClean}`
+    const descClean = description.substring(0, 25).trim()
+    if (descClean) {
+      const txidTag = `05${descClean.length.toString().padStart(2, '0')}${descClean}`
+      payload += `62${txidTag.length.toString().padStart(2, '0')}${txidTag}`
+    }
   }
   
-  payload += '6304'  // CRC placeholder
-  
-  // Calcular CRC16
+  // 63: CRC16
+  payload += '6304' // placeholder
   const crc = calculateCRC16(payload)
   payload += crc
   
