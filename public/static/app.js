@@ -40,6 +40,9 @@ function showSection(section) {
         loadSubaccountsFilter();
     } else if (section === 'reports') {
         loadReportAccounts();
+    } else if (section === 'payment-links') {
+        loadPaymentLinkAccounts();
+        loadPaymentLinks();
     }
 }
 
@@ -2365,4 +2368,256 @@ function exportReportExcel() {
     // Salvar arquivo
     const fileName = `relatorio_${account.name.replace(/\s+/g, '_')}_${new Date().getTime()}.xlsx`;
     XLSX.writeFile(wb, fileName);
+}
+
+// ===== FUNÇÕES DE LINKS DE PAGAMENTO =====
+
+// Carregar subcontas no select de links de pagamento
+async function loadPaymentLinkAccounts() {
+    try {
+        const response = await axios.get('/api/accounts');
+        const accounts = response.data.accounts || [];
+        
+        const select = document.getElementById('paylink-account');
+        select.innerHTML = '<option value="">Selecione uma subconta...</option>';
+        
+        accounts.forEach(account => {
+            if (account.walletId) { // Apenas aprovadas
+                const option = document.createElement('option');
+                option.value = account.id;
+                option.textContent = `${account.name} (${account.email})`;
+                select.appendChild(option);
+            }
+        });
+    } catch (error) {
+        console.error('Erro ao carregar subcontas:', error);
+    }
+}
+
+// Alternar entre valor fixo e recorrente
+document.addEventListener('DOMContentLoaded', () => {
+    const chargeTypeSelect = document.getElementById('paylink-charge-type');
+    const fixedSection = document.getElementById('paylink-fixed-value-section');
+    const recurrentSection = document.getElementById('paylink-recurrent-section');
+    const valueInput = document.getElementById('paylink-value');
+    const recurrentValueInput = document.getElementById('paylink-recurrent-value');
+    
+    if (chargeTypeSelect) {
+        chargeTypeSelect.addEventListener('change', (e) => {
+            if (e.target.value === 'DETACHED') {
+                fixedSection.classList.remove('hidden');
+                recurrentSection.classList.add('hidden');
+                valueInput.required = true;
+                recurrentValueInput.required = false;
+            } else {
+                fixedSection.classList.add('hidden');
+                recurrentSection.classList.remove('hidden');
+                valueInput.required = false;
+                recurrentValueInput.required = true;
+            }
+        });
+    }
+    
+    // Submit form
+    const form = document.getElementById('payment-link-form');
+    if (form) {
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            await createPaymentLink();
+        });
+    }
+});
+
+// Criar link de pagamento
+async function createPaymentLink() {
+    const accountId = document.getElementById('paylink-account').value;
+    const name = document.getElementById('paylink-name').value;
+    const description = document.getElementById('paylink-description').value;
+    const billingType = document.getElementById('paylink-billing-type').value;
+    const chargeType = document.getElementById('paylink-charge-type').value;
+    
+    if (!accountId || !name) {
+        alert('Preencha os campos obrigatórios');
+        return;
+    }
+    
+    const data = {
+        accountId,
+        name,
+        description,
+        billingType,
+        chargeType
+    };
+    
+    if (chargeType === 'DETACHED') {
+        const value = document.getElementById('paylink-value').value;
+        const dueDate = document.getElementById('paylink-due-date').value;
+        
+        if (!value || parseFloat(value) <= 0) {
+            alert('Informe um valor válido');
+            return;
+        }
+        
+        data.value = value;
+        if (dueDate) data.dueDate = dueDate;
+    } else {
+        const value = document.getElementById('paylink-recurrent-value').value;
+        const cycle = document.getElementById('paylink-cycle').value;
+        const duration = document.getElementById('paylink-duration').value;
+        
+        if (!value || parseFloat(value) <= 0) {
+            alert('Informe um valor válido');
+            return;
+        }
+        
+        data.value = value;
+        data.cycle = cycle;
+        if (duration) data.duration = duration;
+    }
+    
+    try {
+        const response = await axios.post('/api/payment-links', data);
+        
+        if (response.data.ok) {
+            alert('Link de pagamento criado com sucesso!');
+            document.getElementById('payment-link-form').reset();
+            loadPaymentLinks();
+        } else {
+            alert('Erro: ' + (response.data.error || 'Erro desconhecido'));
+        }
+    } catch (error) {
+        console.error('Erro ao criar link:', error);
+        alert('Erro ao criar link: ' + (error.response?.data?.error || error.message));
+    }
+}
+
+// Carregar lista de links
+async function loadPaymentLinks() {
+    try {
+        const response = await axios.get('/api/payment-links');
+        const links = response.data.data || [];
+        
+        const container = document.getElementById('payment-links-list');
+        
+        if (links.length === 0) {
+            container.innerHTML = `
+                <div class="text-center py-12 text-gray-500">
+                    <i class="fas fa-link text-6xl mb-4 opacity-30"></i>
+                    <p class="text-lg">Nenhum link criado ainda</p>
+                </div>
+            `;
+            return;
+        }
+        
+        const formatCurrency = (value) => {
+            return new Intl.NumberFormat('pt-BR', {
+                style: 'currency',
+                currency: 'BRL'
+            }).format(value);
+        };
+        
+        const formatDate = (dateStr) => {
+            if (!dateStr) return 'N/A';
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('pt-BR');
+        };
+        
+        const getChargeTypeBadge = (type) => {
+            if (type === 'DETACHED') {
+                return '<span class="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-semibold"><i class="fas fa-dollar-sign mr-1"></i>Valor Fixo</span>';
+            } else {
+                return '<span class="px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-xs font-semibold"><i class="fas fa-sync mr-1"></i>Recorrente</span>';
+            }
+        };
+        
+        const getStatusBadge = (active) => {
+            if (active) {
+                return '<span class="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-semibold"><i class="fas fa-check mr-1"></i>Ativo</span>';
+            } else {
+                return '<span class="px-2 py-1 bg-red-100 text-red-800 rounded-full text-xs font-semibold"><i class="fas fa-times mr-1"></i>Inativo</span>';
+            }
+        };
+        
+        container.innerHTML = links.map(link => `
+            <div class="bg-white border border-gray-200 rounded-lg p-4 mb-4 hover:shadow-md transition">
+                <div class="flex justify-between items-start mb-3">
+                    <div class="flex-1">
+                        <h4 class="text-lg font-bold text-gray-800 mb-1">${link.name}</h4>
+                        <p class="text-sm text-gray-600">${link.description || 'Sem descrição'}</p>
+                    </div>
+                    <div class="flex gap-2">
+                        ${getStatusBadge(link.active)}
+                        ${getChargeTypeBadge(link.chargeType)}
+                    </div>
+                </div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                    <div class="bg-gray-50 rounded p-2">
+                        <p class="text-xs text-gray-600">Valor</p>
+                        <p class="text-sm font-semibold text-gray-800">
+                            ${link.chargeType === 'DETACHED' ? formatCurrency(link.value) : formatCurrency(link.subscriptionValue)}
+                        </p>
+                    </div>
+                    <div class="bg-gray-50 rounded p-2">
+                        <p class="text-xs text-gray-600">Forma de Pagamento</p>
+                        <p class="text-sm font-semibold text-gray-800">${link.billingType || 'Todas'}</p>
+                    </div>
+                    <div class="bg-gray-50 rounded p-2">
+                        <p class="text-xs text-gray-600">Criado em</p>
+                        <p class="text-sm font-semibold text-gray-800">${formatDate(link.dateCreated)}</p>
+                    </div>
+                </div>
+                
+                <div class="flex gap-2">
+                    <button onclick="copyToClipboard('${link.url}')" 
+                        class="flex-1 bg-cyan-500 text-white px-4 py-2 rounded-lg hover:bg-cyan-600 font-semibold text-sm">
+                        <i class="fas fa-copy mr-2"></i>Copiar Link
+                    </button>
+                    <a href="${link.url}" target="_blank" 
+                        class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 font-semibold text-sm">
+                        <i class="fas fa-external-link-alt"></i>
+                    </a>
+                    <button onclick="deletePaymentLink('${link.id}')" 
+                        class="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 font-semibold text-sm">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('Erro ao carregar links:', error);
+    }
+}
+
+// Deletar link de pagamento
+async function deletePaymentLink(linkId) {
+    if (!confirm('Deseja realmente deletar este link? Esta ação não pode ser desfeita.')) {
+        return;
+    }
+    
+    try {
+        await axios.delete(`/api/payment-links/${linkId}`);
+        alert('Link deletado com sucesso!');
+        loadPaymentLinks();
+    } catch (error) {
+        console.error('Erro ao deletar link:', error);
+        alert('Erro ao deletar link: ' + (error.response?.data?.error || error.message));
+    }
+}
+
+// Copiar para clipboard
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        alert('Link copiado para a área de transferência!');
+    }).catch(err => {
+        console.error('Erro ao copiar:', err);
+        // Fallback
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        alert('Link copiado!');
+    });
 }

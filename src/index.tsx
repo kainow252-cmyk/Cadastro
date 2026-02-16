@@ -622,6 +622,86 @@ app.get('/api/reports/:accountId', async (c) => {
   }
 })
 
+// Criar link de pagamento
+app.post('/api/payment-links', async (c) => {
+  try {
+    const body = await c.req.json()
+    const { accountId, name, description, billingType, chargeType, value, cycle, dueDate, duration } = body
+    
+    // Dados base do link
+    const linkData: any = {
+      name,
+      description: description || undefined,
+      billingType: billingType === 'UNDEFINED' ? undefined : billingType,
+      chargeType,
+      endDate: undefined
+    }
+    
+    if (chargeType === 'DETACHED') {
+      // Link de valor fixo
+      linkData.value = parseFloat(value)
+      linkData.dueDateLimitDays = dueDate ? undefined : 30
+      if (dueDate) {
+        linkData.dueDate = dueDate
+      }
+    } else if (chargeType === 'RECURRENT') {
+      // Link de assinatura
+      linkData.subscriptionCycle = cycle
+      linkData.subscriptionValue = parseFloat(value)
+      if (duration) {
+        linkData.maxInstallmentCount = parseInt(duration)
+      }
+    }
+    
+    // Criar link na API Asaas
+    const result = await asaasRequest(c, '/paymentLinks', {
+      method: 'POST',
+      body: JSON.stringify(linkData)
+    })
+    
+    if (!result.ok) {
+      return c.json({ error: result.data?.errors?.[0]?.description || 'Erro ao criar link' }, 400)
+    }
+    
+    return c.json({
+      ok: true,
+      data: result.data
+    })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Listar links de pagamento
+app.get('/api/payment-links', async (c) => {
+  try {
+    const result = await asaasRequest(c, '/paymentLinks')
+    
+    return c.json({
+      ok: true,
+      data: result.data?.data || [],
+      totalCount: result.data?.totalCount || 0
+    })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Deletar link de pagamento
+app.delete('/api/payment-links/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    
+    const result = await asaasRequest(c, `/paymentLinks/${id}`, {
+      method: 'DELETE'
+    })
+    
+    return c.json({ ok: true })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 // Listar subcontas
 app.get('/api/accounts', async (c) => {
   try {
@@ -2153,7 +2233,7 @@ app.get('/', (c) => {
                             <i class="fas fa-bolt mr-2 text-yellow-500"></i>
                             Ações Rápidas
                         </h3>
-                        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-6 gap-3">
                             <button onclick="showSection('dashboard')" 
                                 class="flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 font-semibold shadow-md transition">
                                 <i class="fas fa-chart-line text-2xl"></i>
@@ -2178,6 +2258,11 @@ app.get('/', (c) => {
                                 class="flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-lg hover:from-orange-600 hover:to-red-600 font-semibold shadow-md transition">
                                 <i class="fas fa-chart-bar text-2xl"></i>
                                 <span>Relatórios</span>
+                            </button>
+                            <button onclick="showSection('payment-links')" 
+                                class="flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-lg hover:from-cyan-600 hover:to-blue-600 font-semibold shadow-md transition">
+                                <i class="fas fa-money-bill-wave text-2xl"></i>
+                                <span>Links Pagamento</span>
                             </button>
                         </div>
                     </div>
@@ -2809,6 +2894,135 @@ app.get('/', (c) => {
             </div>
         </div>
 
+        <!-- Payment Links Section -->
+        <div id="payment-links-section" class="section hidden">
+            <div class="bg-white rounded-lg shadow mb-6">
+                <div class="p-6 border-b border-gray-200">
+                    <h2 class="text-xl font-bold text-gray-800">
+                        <i class="fas fa-money-bill-wave mr-2 text-cyan-600"></i>
+                        Links de Pagamento
+                    </h2>
+                    <p class="text-gray-600 mt-2">Crie links para receber pagamentos via PIX, Cartão ou Assinatura</p>
+                </div>
+
+                <!-- Criar Novo Link -->
+                <div class="p-6 border-b border-gray-200 bg-gray-50">
+                    <h3 class="text-lg font-bold text-gray-800 mb-4">
+                        <i class="fas fa-plus-circle mr-2"></i>Criar Novo Link de Pagamento
+                    </h3>
+                    
+                    <form id="payment-link-form" class="space-y-4">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">Subconta *</label>
+                                <select id="paylink-account" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
+                                    <option value="">Selecione uma subconta...</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">Tipo de Cobrança *</label>
+                                <select id="paylink-billing-type" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
+                                    <option value="UNDEFINED">Todas (PIX + Cartão + Boleto)</option>
+                                    <option value="PIX">PIX</option>
+                                    <option value="CREDIT_CARD">Cartão de Crédito</option>
+                                    <option value="BOLETO">Boleto</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">Nome do Link *</label>
+                                <input type="text" id="paylink-name" required 
+                                    placeholder="Ex: Pagamento de Serviço"
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">Tipo de Valor *</label>
+                                <select id="paylink-charge-type" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
+                                    <option value="DETACHED">Valor Fixo</option>
+                                    <option value="RECURRENT">Assinatura/Recorrente</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div id="paylink-fixed-value-section" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">Valor (R$) *</label>
+                                <input type="number" id="paylink-value" required step="0.01" min="0.01" 
+                                    placeholder="10.00"
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">Data de Vencimento (opcional)</label>
+                                <input type="date" id="paylink-due-date" 
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
+                            </div>
+                        </div>
+
+                        <div id="paylink-recurrent-section" class="hidden space-y-4">
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">Valor (R$) *</label>
+                                    <input type="number" id="paylink-recurrent-value" step="0.01" min="0.01" 
+                                        placeholder="50.00"
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">Ciclo *</label>
+                                    <select id="paylink-cycle" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
+                                        <option value="MONTHLY">Mensal</option>
+                                        <option value="WEEKLY">Semanal</option>
+                                        <option value="BIWEEKLY">Quinzenal</option>
+                                        <option value="QUARTERLY">Trimestral</option>
+                                        <option value="SEMIANNUALLY">Semestral</option>
+                                        <option value="YEARLY">Anual</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">Duração (meses)</label>
+                                    <input type="number" id="paylink-duration" min="1" 
+                                        placeholder="12 (vazio = indeterminado)"
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Descrição</label>
+                            <textarea id="paylink-description" rows="3" 
+                                placeholder="Descreva o produto ou serviço..."
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500"></textarea>
+                        </div>
+
+                        <div class="flex justify-end gap-3">
+                            <button type="button" onclick="document.getElementById('payment-link-form').reset()" 
+                                class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-semibold">
+                                Limpar
+                            </button>
+                            <button type="submit" 
+                                class="px-6 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-lg hover:from-cyan-600 hover:to-blue-600 font-semibold shadow-md">
+                                <i class="fas fa-plus mr-2"></i>Criar Link
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Lista de Links -->
+                <div class="p-6">
+                    <h3 class="text-lg font-bold text-gray-800 mb-4">
+                        <i class="fas fa-list mr-2"></i>Links Criados
+                    </h3>
+                    <div id="payment-links-list">
+                        <div class="text-center py-12 text-gray-500">
+                            <i class="fas fa-link text-6xl mb-4 opacity-30"></i>
+                            <p class="text-lg">Nenhum link criado ainda</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Modal de Link de Cadastro -->
         <div id="link-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
             <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -2947,7 +3161,7 @@ app.get('/', (c) => {
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-        <script src="/static/app.js?v=2.8"></script>
+        <script src="/static/app.js?v=2.9"></script>
     </body>
     </html>
   `)
