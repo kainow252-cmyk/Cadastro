@@ -711,10 +711,17 @@ app.get('/api/payment-links/:id/payments', async (c) => {
     // Buscar cobranças associadas ao link
     const result = await asaasRequest(c, `/payments?paymentLink=${linkId}`)
     
+    // FILTRO ADICIONAL: A API Asaas tem bug e retorna pagamentos de outros links
+    // Vamos filtrar apenas pagamentos que realmente pertencem a este link
+    const allPayments = result.data?.data || []
+    const filteredPayments = allPayments.filter((payment: any) => 
+      payment.paymentLink === linkId
+    )
+    
     return c.json({
       ok: true,
-      data: result.data?.data || [],
-      totalCount: result.data?.totalCount || 0
+      data: filteredPayments,
+      totalCount: filteredPayments.length
     })
   } catch (error: any) {
     return c.json({ error: error.message }, 500)
