@@ -252,12 +252,16 @@ async function loadPaymentLinks() {
                         <span class="font-semibold ml-1">${link.notificationEnabled ? 'Sim' : 'Não'}</span>
                     </div>
                 </div>
-                <div class="flex items-center gap-2 mt-3 pt-3 border-t border-gray-200">
+                <div class="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-gray-200">
                     <input type="text" value="${link.url}" readonly 
-                        class="flex-1 px-3 py-2 bg-white border border-gray-300 rounded text-sm">
+                        class="flex-1 min-w-[200px] px-3 py-2 bg-white border border-gray-300 rounded text-sm">
                     <button onclick="viewLinkPayments('${link.id}', '${link.name}')" 
                         class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 font-semibold text-sm whitespace-nowrap">
                         <i class="fas fa-money-bill-wave mr-2"></i>Pagamentos
+                    </button>
+                    <button onclick="generateQRCodeHTML('${link.url}', '${link.name.replace(/'/g, "\\'")}', '${formatCurrency(link.value)}')" 
+                        class="bg-purple-500 text-white px-4 py-2 rounded-lg hover:bg-purple-600 font-semibold text-sm whitespace-nowrap">
+                        <i class="fas fa-qrcode mr-2"></i>QR Code HTML
                     </button>
                     <button onclick="copyToClipboard('${link.url}')" 
                         class="bg-cyan-500 text-white px-4 py-2 rounded-lg hover:bg-cyan-600 font-semibold text-sm">
@@ -328,5 +332,157 @@ function copyToClipboard(text) {
     }).catch(err => {
         console.error('Erro ao copiar:', err);
         alert('Erro ao copiar link');
+    });
+}
+
+// Gerar HTML do QR Code para embedding
+function generateQRCodeHTML(linkUrl, linkName, linkValue) {
+    // URL da API do Google Charts para gerar QR Code
+    const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(linkUrl)}`;
+    
+    // HTML completo pronto para copiar e colar
+    const htmlCode = `<!-- QR Code de Pagamento: ${linkName} -->
+<div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 20px; padding: 30px; max-width: 400px; margin: 20px auto; box-shadow: 0 10px 40px rgba(0,0,0,0.2); font-family: Arial, sans-serif; color: white; text-align: center;">
+    
+    <!-- Título -->
+    <h2 style="margin: 0 0 10px 0; font-size: 24px; font-weight: bold;">
+        💳 Pagamento PIX
+    </h2>
+    
+    <!-- Nome do Link -->
+    <p style="margin: 0 0 20px 0; font-size: 18px; opacity: 0.9;">
+        ${linkName}
+    </p>
+    
+    <!-- QR Code -->
+    <div style="background: white; padding: 20px; border-radius: 15px; display: inline-block; margin-bottom: 20px;">
+        <img src="${qrCodeUrl}" 
+             alt="QR Code para Pagamento" 
+             style="width: 250px; height: 250px; display: block;">
+    </div>
+    
+    <!-- Valor -->
+    <div style="background: rgba(255,255,255,0.2); border-radius: 10px; padding: 15px; margin-bottom: 20px;">
+        <p style="margin: 0; font-size: 14px; opacity: 0.8;">Valor:</p>
+        <p style="margin: 5px 0 0 0; font-size: 32px; font-weight: bold;">
+            ${linkValue}
+        </p>
+    </div>
+    
+    <!-- Instruções -->
+    <p style="margin: 0 0 15px 0; font-size: 14px; opacity: 0.9; line-height: 1.5;">
+        📱 Aponte a câmera do seu celular<br>
+        ou app do banco para o QR Code
+    </p>
+    
+    <!-- Botão -->
+    <a href="${linkUrl}" 
+       target="_blank"
+       style="display: inline-block; background: white; color: #667eea; padding: 12px 30px; border-radius: 25px; text-decoration: none; font-weight: bold; font-size: 16px; transition: transform 0.2s;">
+        Pagar Agora →
+    </a>
+    
+    <!-- Rodapé -->
+    <p style="margin: 20px 0 0 0; font-size: 12px; opacity: 0.7;">
+        🔒 Pagamento seguro via Asaas
+    </p>
+    
+</div>
+<!-- Fim do QR Code -->`;
+
+    // Criar modal para exibir o código
+    const modal = document.createElement('div');
+    modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 20px;';
+    
+    modal.innerHTML = `
+        <div style="background: white; border-radius: 15px; padding: 30px; max-width: 900px; max-height: 90vh; overflow-y: auto; position: relative;">
+            <!-- Botão Fechar -->
+            <button onclick="this.closest('div[style*=fixed]').remove()" 
+                style="position: absolute; top: 15px; right: 15px; background: #f3f4f6; border: none; width: 35px; height: 35px; border-radius: 50%; cursor: pointer; font-size: 20px; color: #6b7280; transition: all 0.2s;">
+                ×
+            </button>
+            
+            <!-- Título -->
+            <h2 style="margin: 0 0 20px 0; color: #1f2937; font-size: 24px;">
+                <i class="fas fa-qrcode" style="color: #8b5cf6; margin-right: 10px;"></i>
+                Código HTML do QR Code
+            </h2>
+            
+            <!-- Preview -->
+            <div style="margin-bottom: 25px;">
+                <h3 style="margin: 0 0 15px 0; color: #4b5563; font-size: 16px; font-weight: 600;">
+                    📱 Preview:
+                </h3>
+                <div style="background: #f9fafb; border: 2px solid #e5e7eb; border-radius: 10px; padding: 20px; overflow-x: auto;">
+                    ${htmlCode}
+                </div>
+            </div>
+            
+            <!-- Código HTML -->
+            <div style="margin-bottom: 20px;">
+                <h3 style="margin: 0 0 15px 0; color: #4b5563; font-size: 16px; font-weight: 600;">
+                    📋 Código HTML (Copie e Cole):
+                </h3>
+                <textarea id="html-code-textarea" readonly 
+                    style="width: 100%; height: 200px; padding: 15px; border: 2px solid #e5e7eb; border-radius: 8px; font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.5; resize: vertical;">${htmlCode}</textarea>
+            </div>
+            
+            <!-- Instruções -->
+            <div style="background: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                <h4 style="margin: 0 0 10px 0; color: #1e40af; font-size: 14px; font-weight: 600;">
+                    💡 Como usar:
+                </h4>
+                <ol style="margin: 0; padding-left: 20px; color: #1e3a8a; font-size: 13px; line-height: 1.6;">
+                    <li>Clique no botão "Copiar Código" abaixo</li>
+                    <li>Cole no HTML do seu site, banner, email ou página</li>
+                    <li>O QR Code funcionará automaticamente</li>
+                    <li>Personalize cores e textos se desejar</li>
+                </ol>
+            </div>
+            
+            <!-- Botões -->
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button onclick="
+                    const textarea = document.getElementById('html-code-textarea');
+                    textarea.select();
+                    document.execCommand('copy');
+                    this.innerHTML = '<i class=\\"fas fa-check\\"></i> Código Copiado!';
+                    this.style.background = '#10b981';
+                    setTimeout(() => {
+                        this.innerHTML = '<i class=\\"fas fa-copy\\"></i> Copiar Código';
+                        this.style.background = '#8b5cf6';
+                    }, 2000);
+                " 
+                style="flex: 1; background: #8b5cf6; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+                    <i class="fas fa-copy"></i> Copiar Código
+                </button>
+                
+                <button onclick="
+                    const blob = new Blob([document.getElementById('html-code-textarea').value], {type: 'text/html'});
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'qrcode-pagamento.html';
+                    a.click();
+                " 
+                style="flex: 1; background: #3b82f6; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+                    <i class="fas fa-download"></i> Baixar HTML
+                </button>
+                
+                <button onclick="this.closest('div[style*=fixed]').remove()" 
+                style="background: #6b7280; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s;">
+                    <i class="fas fa-times"></i> Fechar
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Fechar ao clicar fora
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.remove();
+        }
     });
 }
