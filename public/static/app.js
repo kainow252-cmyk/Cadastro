@@ -44,7 +44,6 @@ function showSection(section) {
     } else if (section === 'reports') {
         loadReportAccounts();
     } else if (section === 'payment-links') {
-        loadPaymentLinkAccounts();
         loadPaymentLinks();
     }
 }
