@@ -744,6 +744,22 @@ app.get('/api/payments/:id', async (c) => {
   }
 })
 
+// Buscar informações de um cliente/customer
+app.get('/api/customers/:id', async (c) => {
+  try {
+    const customerId = c.req.param('id')
+    
+    const result = await asaasRequest(c, `/customers/${customerId}`)
+    
+    return c.json({
+      ok: true,
+      data: result.data
+    })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 // Listar todos os pagamentos
 app.get('/api/payments', async (c) => {
   try {
@@ -3276,8 +3292,8 @@ app.get('/', (c) => {
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
         <script src="/static/app.js?v=3.6"></script>
-        <script src="/static/payment-links.js?v=3.6"></script>
-        <script src="/static/payment-filters.js?v=1.1"></script>
+        <script src="/static/payment-links.js?v=3.8"></script>
+        <script src="/static/payment-filters.js?v=1.2"></script>
     </body>
     </html>
   `)

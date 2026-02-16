@@ -304,10 +304,26 @@ async function viewLinkPayments(linkId, linkName) {
     try {
         const response = await axios.get(`/api/payment-links/${linkId}/payments`);
         
+        // Buscar informações dos clientes para cada pagamento
+        const payments = response.data.data || [];
+        const enrichedPayments = await Promise.all(payments.map(async (payment) => {
+            try {
+                if (payment.customer) {
+                    const customerResponse = await axios.get(`/api/customers/${payment.customer}`);
+                    payment.customerName = customerResponse.data.data?.name || payment.customer;
+                    payment.customerEmail = customerResponse.data.data?.email || '';
+                }
+            } catch (err) {
+                console.warn(`Erro ao buscar cliente ${payment.customer}:`, err);
+                payment.customerName = payment.customer; // Fallback para ID
+            }
+            return payment;
+        }));
+        
         // Definir variáveis globais para payment-filters.js
         window.currentLinkId = linkId;
         window.currentLinkName = linkName;
-        window.allPayments = response.data.data || [];
+        window.allPayments = enrichedPayments;
         window.filteredPayments = [...window.allPayments];
         
         // Renderizar com filtros

@@ -17,9 +17,10 @@ function applyPaymentFilters() {
     window.window.filteredPayments = window.window.allPayments.filter(payment => {
         // Filtro de busca (nome do cliente ou ID)
         if (searchTerm) {
-            const customerMatch = (payment.customer || '').toLowerCase().includes(searchTerm);
+            const customerNameMatch = (payment.customerName || '').toLowerCase().includes(searchTerm);
+            const customerIdMatch = (payment.customer || '').toLowerCase().includes(searchTerm);
             const idMatch = (payment.id || '').toLowerCase().includes(searchTerm);
-            if (!customerMatch && !idMatch) return false;
+            if (!customerNameMatch && !customerIdMatch && !idMatch) return false;
         }
         
         // Filtro de status
@@ -213,8 +214,9 @@ function renderFilteredPayments() {
                                 <tr class="hover:bg-gray-50 transition">
                                     <td class="px-4 py-3">
                                         <div>
-                                            <p class="font-semibold text-gray-800 text-sm">${payment.customer || 'Cliente'}</p>
-                                            <p class="text-xs text-gray-500">ID: ${payment.id}</p>
+                                            <p class="font-semibold text-gray-800 text-sm">${payment.customerName || payment.customer || 'Cliente'}</p>
+                                            <p class="text-xs text-gray-500">${payment.customerEmail || ''}</p>
+                                            <p class="text-xs text-gray-400">ID: ${payment.id}</p>
                                         </div>
                                     </td>
                                     <td class="px-4 py-3">${getStatusBadge(payment.status)}</td>
