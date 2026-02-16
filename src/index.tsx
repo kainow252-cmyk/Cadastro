@@ -573,12 +573,29 @@ app.get('/api/reports/:accountId', async (c) => {
     const account = accountResult.data
     
     // Buscar cobranças da subconta com filtro de data
-    let paymentsUrl = `/payments?customer=${accountId}`
-    if (startDate) paymentsUrl += `&dateCreated[ge]=${startDate}`
-    if (endDate) paymentsUrl += `&dateCreated[le]=${endDate}`
+    // IMPORTANTE: Para buscar pagamentos de uma subconta, precisamos usar o header asaas-account-key
+    // Primeiro, buscar chave API da subconta
+    const keysResult = await asaasRequest(c, `/accounts/${accountId}/api-keys`)
+    const keys = keysResult.data?.data || []
     
-    const paymentsResult = await asaasRequest(c, paymentsUrl)
-    const payments = paymentsResult?.data?.data || []
+    let payments: any[] = []
+    
+    if (keys.length > 0 && account.walletId) {
+      const activeKey = keys.find((k: any) => k.active)
+      if (activeKey) {
+        // Usar header para buscar pagamentos da subconta
+        const customHeaders = {
+          'asaas-account-key': activeKey.apiKey
+        }
+        
+        let paymentsUrl = `/payments?limit=100`
+        if (startDate) paymentsUrl += `&dateCreated[ge]=${startDate}`
+        if (endDate) paymentsUrl += `&dateCreated[le]=${endDate}`
+        
+        const paymentsResult = await asaasRequest(c, paymentsUrl, 'GET', undefined, customHeaders)
+        payments = paymentsResult?.data?.data || []
+      }
+    }
     
     // Calcular estatísticas
     let totalReceived = 0
