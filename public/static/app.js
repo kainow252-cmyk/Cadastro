@@ -1,3 +1,6 @@
+// Configure axios to send cookies with every request
+axios.defaults.withCredentials = true;
+
 // Check authentication on page load
 async function checkAuth() {
     try {

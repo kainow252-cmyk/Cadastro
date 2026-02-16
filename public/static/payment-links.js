@@ -1,6 +1,11 @@
 // ===== FUNÇÕES DE LINKS DE PAGAMENTO (Asaas API) =====
 // Links são criados direto na conta principal, SEM subconta
 
+// Configure axios to send cookies
+if (typeof axios !== 'undefined') {
+    axios.defaults.withCredentials = true;
+}
+
 // Alternar entre tipos de cobrança
 document.addEventListener('DOMContentLoaded', () => {
     const chargeTypeSelect = document.getElementById('paylink-charge-type');
