@@ -1338,13 +1338,246 @@ function closePixFrame(accountId) {
     }
     
     if (btn) {
-        btn.innerHTML = '<i class="fas fa-qrcode mr-2"></i>Gerar QR Code PIX com Valor Fixo (Split 20/80)';
+        btn.innerHTML = '<i class="fas fa-qrcode mr-2"></i>QR Code Avulso (Split 20/80)';
         btn.classList.remove('from-gray-500', 'to-gray-600');
         btn.classList.add('from-green-500', 'to-blue-500');
     }
     
     // Resetar formulário
     resetPixForm(accountId);
+}
+
+// Controles do formulário de assinatura
+function toggleSubscriptionForm(accountId, walletId) {
+    const frame = document.getElementById(`subscription-frame-${accountId}`);
+    const btn = document.getElementById(`btn-subscription-${accountId}`);
+    
+    if (!frame) {
+        console.error('Frame de assinatura não encontrado:', accountId);
+        return;
+    }
+    
+    if (frame.classList.contains('hidden')) {
+        frame.classList.remove('hidden');
+        btn.innerHTML = '<i class="fas fa-times mr-2"></i>Fechar';
+        btn.classList.remove('from-purple-500', 'to-pink-500');
+        btn.classList.add('from-gray-500', 'to-gray-600');
+        
+        setTimeout(() => {
+            const nameInput = document.getElementById(`sub-name-${accountId}`);
+            if (nameInput) nameInput.focus();
+        }, 100);
+    } else {
+        closeSubscriptionFrame(accountId);
+    }
+}
+
+function closeSubscriptionFrame(accountId) {
+    const frame = document.getElementById(`subscription-frame-${accountId}`);
+    const btn = document.getElementById(`btn-subscription-${accountId}`);
+    
+    if (frame) {
+        frame.classList.add('hidden');
+    }
+    
+    if (btn) {
+        btn.innerHTML = '<i class="fas fa-calendar-check mr-2"></i>Assinatura Mensal (Split 20/80)';
+        btn.classList.remove('from-gray-500', 'to-gray-600');
+        btn.classList.add('from-purple-500', 'to-pink-500');
+    }
+    
+    // Resetar formulário
+    const form = document.getElementById(`subscription-form-${accountId}`);
+    if (form) {
+        form.querySelectorAll('input').forEach(input => {
+            if (input.id.includes('desc')) {
+                input.value = 'Mensalidade';
+            } else {
+                input.value = '';
+            }
+        });
+    }
+}
+
+async function createSubscription(accountId, walletId) {
+    const resultDiv = document.getElementById(`subscription-result-${accountId}`);
+    const formDiv = document.getElementById(`subscription-form-${accountId}`);
+    
+    const customerName = document.getElementById(`sub-name-${accountId}`).value.trim();
+    const customerEmail = document.getElementById(`sub-email-${accountId}`).value.trim();
+    const customerCpf = document.getElementById(`sub-cpf-${accountId}`).value.trim();
+    const value = parseFloat(document.getElementById(`sub-value-${accountId}`).value);
+    const description = document.getElementById(`sub-desc-${accountId}`).value.trim();
+    
+    if (!customerName || !customerEmail || !customerCpf || !value || value <= 0) {
+        alert('⚠️ Preencha todos os campos obrigatórios!');
+        return;
+    }
+    
+    if (customerCpf.length !== 11 || !/^\d+$/.test(customerCpf)) {
+        alert('⚠️ CPF inválido! Digite apenas números (11 dígitos)');
+        return;
+    }
+    
+    formDiv.classList.add('hidden');
+    resultDiv.classList.remove('hidden');
+    resultDiv.innerHTML = `
+        <p class="text-gray-500 text-sm py-4">
+            <i class="fas fa-spinner fa-spin mr-2"></i>
+            Criando assinatura mensal de R$ ${value.toFixed(2)}...
+        </p>
+    `;
+    
+    try {
+        const response = await axios.post('/api/pix/subscription', {
+            walletId,
+            accountId,
+            value,
+            description,
+            customerName,
+            customerEmail,
+            customerCpf
+        });
+        
+        if (response.data.ok) {
+            const { subscription, firstPayment, splitConfig } = response.data;
+            
+            const splitSubAccount = (value * splitConfig.subAccount / 100).toFixed(2);
+            const splitMainAccount = (value * splitConfig.mainAccount / 100).toFixed(2);
+            
+            let qrCodeSection = '';
+            if (firstPayment.pix) {
+                qrCodeSection = `
+                    <div class="bg-white p-4 rounded-lg border-2 border-purple-200 mb-4">
+                        <h4 class="font-bold text-gray-800 mb-3 flex items-center">
+                            <i class="fas fa-qrcode text-purple-600 mr-2"></i>
+                            QR Code do Primeiro Pagamento
+                        </h4>
+                        
+                        <div class="flex flex-col items-center mb-4">
+                            <img src="${firstPayment.pix.qrCodeBase64}" alt="QR Code PIX" class="w-64 h-64 border-2 border-gray-300 rounded">
+                            <p class="text-sm text-gray-600 mt-2">Valor: <strong class="text-purple-600">R$ ${value.toFixed(2)}</strong></p>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                <i class="fas fa-copy mr-1"></i> Chave PIX (Copia e Cola)
+                            </label>
+                            <div class="flex gap-2">
+                                <textarea readonly 
+                                    id="pix-payload-${accountId}" 
+                                    class="flex-1 px-3 py-2 border border-gray-300 rounded bg-gray-50 font-mono text-xs"
+                                    rows="3">${firstPayment.pix.payload}</textarea>
+                                <button onclick="copyPixKey('${accountId}')" 
+                                    class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-1">
+                                <i class="fas fa-info-circle mr-1"></i>
+                                ${firstPayment.pix.payload.length} caracteres
+                            </p>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            resultDiv.innerHTML = `
+                <div class="bg-gradient-to-br from-purple-50 to-pink-50 p-4 rounded-lg border-2 border-purple-300">
+                    <div class="flex items-start gap-3 mb-4">
+                        <i class="fas fa-check-circle text-green-600 text-3xl"></i>
+                        <div class="flex-1">
+                            <h3 class="font-bold text-lg text-gray-800">✅ Assinatura Criada com Sucesso!</h3>
+                            <p class="text-sm text-gray-600 mt-1">
+                                O cliente receberá uma cobrança mensal de <strong class="text-purple-600">R$ ${value.toFixed(2)}</strong>
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                        <div class="bg-white p-3 rounded border border-gray-200">
+                            <p class="text-xs text-gray-500 mb-1"><i class="fas fa-user mr-1"></i>Cliente</p>
+                            <p class="font-semibold text-gray-800">${customerName}</p>
+                            <p class="text-sm text-gray-600">${customerEmail}</p>
+                        </div>
+                        
+                        <div class="bg-white p-3 rounded border border-gray-200">
+                            <p class="text-xs text-gray-500 mb-1"><i class="fas fa-calendar mr-1"></i>Próximo Vencimento</p>
+                            <p class="font-semibold text-gray-800">${new Date(subscription.nextDueDate).toLocaleDateString('pt-BR')}</p>
+                            <p class="text-sm text-gray-600">Ciclo: Mensal</p>
+                        </div>
+                    </div>
+                    
+                    ${qrCodeSection}
+                    
+                    <div class="bg-gradient-to-r from-green-100 to-blue-100 p-3 rounded border border-green-300 mb-4">
+                        <h4 class="font-bold text-gray-800 mb-2 flex items-center">
+                            <i class="fas fa-chart-pie text-green-600 mr-2"></i>
+                            Split Automático 20/80
+                        </h4>
+                        <div class="grid grid-cols-2 gap-3 text-sm">
+                            <div>
+                                <p class="text-gray-600">Para você (20%)</p>
+                                <p class="font-bold text-green-600 text-lg">R$ ${splitSubAccount}</p>
+                            </div>
+                            <div>
+                                <p class="text-gray-600">Conta Principal (80%)</p>
+                                <p class="font-bold text-blue-600 text-lg">R$ ${splitMainAccount}</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-yellow-50 border border-yellow-200 rounded p-3 mb-3">
+                        <p class="text-sm text-yellow-800">
+                            <i class="fas fa-info-circle mr-1"></i>
+                            <strong>Como funciona:</strong> O cliente receberá uma notificação automática todo mês com o QR Code PIX. 
+                            Após o pagamento, o split de 20/80 será aplicado automaticamente.
+                        </p>
+                    </div>
+                    
+                    <div class="flex gap-2">
+                        <button onclick="closeSubscriptionFrame('${accountId}')" 
+                            class="flex-1 px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 font-semibold">
+                            <i class="fas fa-check mr-2"></i>Concluir
+                        </button>
+                        <button onclick="viewSubscriptionDetails('${subscription.id}')" 
+                            class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700">
+                            <i class="fas fa-eye mr-2"></i>Ver Detalhes
+                        </button>
+                    </div>
+                </div>
+            `;
+        } else {
+            throw new Error(response.data.error || 'Erro ao criar assinatura');
+        }
+    } catch (error) {
+        console.error('Erro:', error);
+        resultDiv.innerHTML = `
+            <div class="bg-red-50 border border-red-200 rounded p-4">
+                <p class="text-red-800">
+                    <i class="fas fa-times-circle mr-2"></i>
+                    <strong>Erro:</strong> ${error.response?.data?.error || error.message}
+                </p>
+                <button onclick="closeSubscriptionFrame('${accountId}')" 
+                    class="mt-3 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
+                    <i class="fas fa-redo mr-2"></i>Tentar Novamente
+                </button>
+            </div>
+        `;
+    }
+}
+
+function copyPixKey(accountId) {
+    const textarea = document.getElementById(`pix-payload-${accountId}`);
+    if (textarea) {
+        textarea.select();
+        document.execCommand('copy');
+        alert('✅ Chave PIX copiada!\n\nCole no aplicativo do banco para pagar.');
+    }
+}
+
+function viewSubscriptionDetails(subscriptionId) {
+    alert(`🔍 Visualizar detalhes da assinatura ${subscriptionId}\n\nEm breve: painel com histórico de pagamentos, status e gestão da assinatura.`);
 }
 
 // Exibir erro ao carregar API Keys
@@ -1681,11 +1914,18 @@ function displayAccounts(accounts) {
         // Seção de PIX (só para aprovados)
         const pixSection = hasWallet ? `
             <div class="mt-4">
-                <button onclick="togglePixForm('${account.id}', '${account.walletId}')" 
-                    id="btn-toggle-${account.id}"
-                    class="w-full px-4 py-3 bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-lg hover:from-green-600 hover:to-blue-600 font-semibold shadow-md transition">
-                    <i class="fas fa-qrcode mr-2"></i>Gerar QR Code PIX com Valor Fixo (Split 20/80)
-                </button>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <button onclick="togglePixForm('${account.id}', '${account.walletId}')" 
+                        id="btn-toggle-${account.id}"
+                        class="px-4 py-3 bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-lg hover:from-green-600 hover:to-blue-600 font-semibold shadow-md transition">
+                        <i class="fas fa-qrcode mr-2"></i>QR Code Avulso (Split 20/80)
+                    </button>
+                    <button onclick="toggleSubscriptionForm('${account.id}', '${account.walletId}')" 
+                        id="btn-subscription-${account.id}"
+                        class="px-4 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:from-purple-600 hover:to-pink-600 font-semibold shadow-md transition">
+                        <i class="fas fa-calendar-check mr-2"></i>Assinatura Mensal (Split 20/80)
+                    </button>
+                </div>
                 
                 <!-- Iframe embutido (inicialmente escondido) -->
                 <div id="pix-frame-${account.id}" class="hidden mt-4 border-2 border-green-300 rounded-lg overflow-hidden shadow-lg">
@@ -1723,6 +1963,62 @@ function displayAccounts(accounts) {
                     
                     <!-- Resultado do QR Code -->
                     <div id="pix-static-${account.id}" class="hidden p-4 bg-gray-50"></div>
+                </div>
+                
+                <!-- Formulário de Assinatura Recorrente -->
+                <div id="subscription-frame-${account.id}" class="hidden mt-4 border-2 border-purple-300 rounded-lg overflow-hidden shadow-lg">
+                    <div class="bg-gradient-to-r from-purple-500 to-pink-500 p-3 flex justify-between items-center">
+                        <h4 class="text-white font-bold">
+                            <i class="fas fa-calendar-check mr-2"></i>Assinatura Mensal PIX
+                        </h4>
+                        <button onclick="closeSubscriptionFrame('${account.id}')" 
+                            class="text-white hover:text-gray-200 font-bold text-xl">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    
+                    <!-- Formulário -->
+                    <div id="subscription-form-${account.id}" class="p-4 bg-white">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                            <input type="text" 
+                                id="sub-name-${account.id}" 
+                                placeholder="Nome do cliente" 
+                                required
+                                class="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-purple-500">
+                            <input type="email" 
+                                id="sub-email-${account.id}" 
+                                placeholder="Email do cliente" 
+                                required
+                                class="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-purple-500">
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <input type="text" 
+                                id="sub-cpf-${account.id}" 
+                                placeholder="CPF (somente números)" 
+                                maxlength="11"
+                                required
+                                class="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-purple-500">
+                            <input type="number" 
+                                id="sub-value-${account.id}" 
+                                placeholder="Valor mensal (R$)" 
+                                step="0.01" 
+                                min="1"
+                                required
+                                class="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-purple-500">
+                            <input type="text" 
+                                id="sub-desc-${account.id}" 
+                                placeholder="Descrição" 
+                                value="Mensalidade"
+                                class="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-purple-500">
+                        </div>
+                        <button onclick="createSubscription('${account.id}', '${account.walletId}')" 
+                            class="w-full mt-3 px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 font-semibold">
+                            <i class="fas fa-calendar-check mr-2"></i>Criar Assinatura Mensal
+                        </button>
+                    </div>
+                    
+                    <!-- Resultado da Assinatura -->
+                    <div id="subscription-result-${account.id}" class="hidden p-4 bg-gray-50"></div>
                 </div>
             </div>
         ` : '';

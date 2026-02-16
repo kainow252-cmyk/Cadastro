@@ -1114,6 +1114,163 @@ app.post('/api/pix/static', async (c) => {
   }
 })
 
+// Criar assinatura recorrente mensal com PIX
+app.post('/api/pix/subscription', async (c) => {
+  try {
+    // Verificar autenticação
+    const token = getCookie(c, 'auth_token')
+    if (!token) {
+      return c.json({ error: 'Não autorizado' }, 401)
+    }
+    
+    try {
+      await verifyToken(token, c.env.JWT_SECRET)
+    } catch {
+      return c.json({ error: 'Token inválido' }, 401)
+    }
+    
+    const { walletId, accountId, value, description, customerName, customerEmail, customerCpf } = await c.req.json()
+    
+    if (!walletId || !value || value <= 0) {
+      return c.json({ error: 'walletId e value (> 0) são obrigatórios' }, 400)
+    }
+    
+    if (!customerName || !customerEmail || !customerCpf) {
+      return c.json({ error: 'Dados do cliente (nome, email, CPF) são obrigatórios' }, 400)
+    }
+    
+    // 1. Buscar ou criar customer
+    const searchResult = await asaasRequest(c, `/customers?cpfCnpj=${customerCpf}`)
+    
+    let customerId
+    if (searchResult.ok && searchResult.data?.data?.[0]?.id) {
+      customerId = searchResult.data.data[0].id
+      console.log('✅ Customer existente:', customerId)
+    } else {
+      const customerData = {
+        name: customerName,
+        cpfCnpj: customerCpf,
+        email: customerEmail,
+        notificationDisabled: false
+      }
+      
+      const createResult = await asaasRequest(c, '/customers', 'POST', customerData)
+      if (!createResult.ok || !createResult.data?.id) {
+        return c.json({ 
+          error: 'Erro ao criar customer',
+          details: createResult.data 
+        }, 400)
+      }
+      
+      customerId = createResult.data.id
+      console.log('✅ Customer criado:', customerId)
+    }
+    
+    // 2. Criar assinatura mensal
+    const subscriptionData = {
+      customer: customerId,
+      billingType: 'PIX',
+      value: value,
+      nextDueDate: new Date(Date.now() + 24*60*60*1000).toISOString().split('T')[0], // Amanhã
+      cycle: 'MONTHLY',
+      description: description || 'Mensalidade',
+      split: [{
+        walletId: walletId,
+        percentualValue: 20
+      }]
+    }
+    
+    console.log('📝 Criando assinatura:', JSON.stringify(subscriptionData, null, 2))
+    
+    const subscriptionResult = await asaasRequest(c, '/subscriptions', 'POST', subscriptionData)
+    
+    if (!subscriptionResult.ok) {
+      return c.json({ 
+        error: 'Erro ao criar assinatura',
+        details: subscriptionResult.data 
+      }, 400)
+    }
+    
+    const subscription = subscriptionResult.data
+    
+    console.log('✅ Assinatura criada:', subscription.id)
+    
+    // 3. Buscar primeiro pagamento gerado pela assinatura
+    const paymentsResult = await asaasRequest(c, `/payments?subscription=${subscription.id}`)
+    
+    if (!paymentsResult.ok || !paymentsResult.data?.data?.[0]) {
+      return c.json({
+        ok: true,
+        subscription: {
+          id: subscription.id,
+          status: subscription.status,
+          value: subscription.value,
+          cycle: subscription.cycle,
+          nextDueDate: subscription.nextDueDate
+        },
+        warning: 'Assinatura criada, mas primeiro pagamento ainda não foi gerado'
+      })
+    }
+    
+    const firstPayment = paymentsResult.data.data[0]
+    
+    // 4. Buscar QR Code do primeiro pagamento
+    const qrCodeResult = await asaasRequest(c, `/payments/${firstPayment.id}/pixQrCode`)
+    
+    let pixData = null
+    if (qrCodeResult.ok && qrCodeResult.data) {
+      const asaasPayload = qrCodeResult.data.payload
+      
+      // Inserir campo 54 (valor fixo)
+      const valueField = `54${value.toFixed(2).length.toString().padStart(2, '0')}${value.toFixed(2)}`
+      const pos58 = asaasPayload.indexOf('5802')
+      
+      if (pos58 !== -1) {
+        const payloadWithValue = asaasPayload.substring(0, pos58) + valueField + asaasPayload.substring(pos58)
+        const payloadWithoutCrc = payloadWithValue.substring(0, payloadWithValue.length - 8)
+        const payloadWithCrcPlaceholder = payloadWithoutCrc + '6304'
+        const crc = calculateCRC16(payloadWithCrcPlaceholder)
+        const finalPayload = payloadWithCrcPlaceholder + crc
+        
+        const qrCodeBase64Image = await generateQRCodeBase64(finalPayload)
+        
+        pixData = {
+          payload: finalPayload,
+          qrCodeBase64: qrCodeBase64Image,
+          expirationDate: firstPayment.dueDate
+        }
+      }
+    }
+    
+    return c.json({
+      ok: true,
+      subscription: {
+        id: subscription.id,
+        status: subscription.status,
+        value: subscription.value,
+        cycle: subscription.cycle,
+        nextDueDate: subscription.nextDueDate,
+        description: subscription.description
+      },
+      firstPayment: {
+        id: firstPayment.id,
+        status: firstPayment.status,
+        dueDate: firstPayment.dueDate,
+        invoiceUrl: firstPayment.invoiceUrl,
+        pix: pixData
+      },
+      splitConfig: {
+        subAccount: 20,
+        mainAccount: 80
+      }
+    })
+    
+  } catch (error: any) {
+    console.error('Erro ao criar assinatura:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 // Função para gerar payload PIX estático (EMV format simplificado)
 function generateStaticPixPayload(walletId: string, value: number, description: string): string {
   // Formato EMV para PIX estático com valor fixo (Spec BACEN)
