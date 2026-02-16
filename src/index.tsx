@@ -640,10 +640,8 @@ app.post('/api/payment-links', async (c) => {
     if (chargeType === 'DETACHED') {
       // Link de valor fixo
       linkData.value = parseFloat(value)
-      linkData.dueDateLimitDays = dueDate ? undefined : 30
-      if (dueDate) {
-        linkData.dueDate = dueDate
-      }
+      // Para PIX, sempre é necessário dueDateLimitDays (quantidade de dias para vencimento)
+      linkData.dueDateLimitDays = 30
     } else if (chargeType === 'RECURRENT') {
       // Link de assinatura
       linkData.subscriptionCycle = cycle
