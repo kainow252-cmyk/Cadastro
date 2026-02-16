@@ -1271,6 +1271,235 @@ app.post('/api/pix/subscription', async (c) => {
   }
 })
 
+// Criar autorização PIX Automático (débito automático)
+app.post('/api/pix/automatic-authorization', async (c) => {
+  try {
+    // Verificar autenticação
+    const token = getCookie(c, 'auth_token')
+    if (!token) {
+      return c.json({ error: 'Não autorizado' }, 401)
+    }
+    
+    try {
+      await verifyToken(token, c.env.JWT_SECRET)
+    } catch {
+      return c.json({ error: 'Token inválido' }, 401)
+    }
+    
+    const { 
+      walletId, 
+      accountId, 
+      value, 
+      description, 
+      customerName, 
+      customerEmail, 
+      customerCpf,
+      recurrenceType = 'MONTHLY',
+      startDate,
+      endDate
+    } = await c.req.json()
+    
+    if (!walletId || !value || value <= 0) {
+      return c.json({ error: 'walletId e value (> 0) são obrigatórios' }, 400)
+    }
+    
+    if (!customerName || !customerEmail || !customerCpf) {
+      return c.json({ error: 'Dados do cliente (nome, email, CPF) são obrigatórios' }, 400)
+    }
+    
+    // 1. Buscar ou criar customer
+    const searchResult = await asaasRequest(c, `/customers?cpfCnpj=${customerCpf}`)
+    
+    let customerId
+    if (searchResult.ok && searchResult.data?.data?.[0]?.id) {
+      customerId = searchResult.data.data[0].id
+      console.log('✅ Customer existente:', customerId)
+    } else {
+      const customerData = {
+        name: customerName,
+        cpfCnpj: customerCpf,
+        email: customerEmail,
+        notificationDisabled: false
+      }
+      
+      const createResult = await asaasRequest(c, '/customers', 'POST', customerData)
+      if (!createResult.ok || !createResult.data?.id) {
+        return c.json({ 
+          error: 'Erro ao criar customer',
+          details: createResult.data 
+        }, 400)
+      }
+      
+      customerId = createResult.data.id
+      console.log('✅ Customer criado:', customerId)
+    }
+    
+    // 2. Criar autorização PIX Automático com QR Code imediato (Jornada 3)
+    const authData = {
+      customer: customerId,
+      billingType: 'PIX',
+      value: value,
+      description: description || 'Mensalidade',
+      recurrenceType: recurrenceType, // MONTHLY, WEEKLY, DAILY
+      startDate: startDate || new Date(Date.now() + 24*60*60*1000).toISOString().split('T')[0],
+      endDate: endDate || null, // Opcional
+      split: [{
+        walletId: walletId,
+        percentualValue: 20
+      }]
+    }
+    
+    console.log('📝 Criando autorização PIX Automático:', JSON.stringify(authData, null, 2))
+    
+    const authResult = await asaasRequest(c, '/pix/automatic/authorizations', 'POST', authData)
+    
+    if (!authResult.ok) {
+      return c.json({ 
+        error: 'Erro ao criar autorização PIX Automático',
+        details: authResult.data 
+      }, 400)
+    }
+    
+    const authorization = authResult.data
+    
+    console.log('✅ Autorização criada:', authorization.id, 'Status:', authorization.status)
+    
+    // 3. Obter QR Code da autorização
+    const qrCode = authorization.immediateQrCode || {}
+    
+    return c.json({
+      ok: true,
+      authorization: {
+        id: authorization.id,
+        status: authorization.status, // PENDING_AUTHORIZATION, ACTIVE, CANCELLED
+        customer: authorization.customer,
+        value: authorization.value,
+        recurrenceType: authorization.recurrenceType,
+        startDate: authorization.startDate,
+        endDate: authorization.endDate,
+        description: authorization.description,
+        conciliationIdentifier: qrCode.conciliationIdentifier
+      },
+      qrCode: {
+        payload: qrCode.payload,
+        encodedImage: qrCode.encodedImage,
+        expirationDate: qrCode.expirationDate
+      },
+      splitConfig: {
+        subAccount: 20,
+        mainAccount: 80
+      },
+      instructions: {
+        step1: 'Cliente escaneia QR Code',
+        step2: 'Cliente autoriza débito automático no app do banco',
+        step3: 'Cliente paga primeira parcela imediatamente',
+        step4: 'Autorização fica ATIVA após pagamento',
+        step5: 'Cobranças futuras ocorrem automaticamente'
+      }
+    })
+    
+  } catch (error: any) {
+    console.error('Erro ao criar autorização PIX Automático:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Criar cobrança recorrente automática (após autorização ativa)
+app.post('/api/pix/automatic-charge', async (c) => {
+  try {
+    // Verificar autenticação
+    const token = getCookie(c, 'auth_token')
+    if (!token) {
+      return c.json({ error: 'Não autorizado' }, 401)
+    }
+    
+    try {
+      await verifyToken(token, c.env.JWT_SECRET)
+    } catch {
+      return c.json({ error: 'Token inválido' }, 401)
+    }
+    
+    const { authorizationId, value, dueDate, description } = await c.req.json()
+    
+    if (!authorizationId) {
+      return c.json({ error: 'authorizationId é obrigatório' }, 400)
+    }
+    
+    // Criar cobrança vinculada à autorização
+    const chargeData = {
+      pixAutomaticAuthorizationId: authorizationId,
+      value: value,
+      dueDate: dueDate,
+      description: description || 'Cobrança recorrente automática'
+    }
+    
+    console.log('📝 Criando cobrança recorrente:', JSON.stringify(chargeData, null, 2))
+    
+    const chargeResult = await asaasRequest(c, '/payments', 'POST', chargeData)
+    
+    if (!chargeResult.ok) {
+      return c.json({ 
+        error: 'Erro ao criar cobrança recorrente',
+        details: chargeResult.data 
+      }, 400)
+    }
+    
+    const charge = chargeResult.data
+    
+    return c.json({
+      ok: true,
+      charge: {
+        id: charge.id,
+        status: charge.status,
+        value: charge.value,
+        dueDate: charge.dueDate,
+        description: charge.description,
+        authorizationId: authorizationId
+      }
+    })
+    
+  } catch (error: any) {
+    console.error('Erro ao criar cobrança recorrente:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Listar autorizações PIX Automático
+app.get('/api/pix/automatic-authorizations', async (c) => {
+  try {
+    // Verificar autenticação
+    const token = getCookie(c, 'auth_token')
+    if (!token) {
+      return c.json({ error: 'Não autorizado' }, 401)
+    }
+    
+    try {
+      await verifyToken(token, c.env.JWT_SECRET)
+    } catch {
+      return c.json({ error: 'Token inválido' }, 401)
+    }
+    
+    const result = await asaasRequest(c, '/pix/automatic/authorizations')
+    
+    if (!result.ok) {
+      return c.json({ 
+        error: 'Erro ao listar autorizações',
+        details: result.data 
+      }, 400)
+    }
+    
+    return c.json({
+      ok: true,
+      authorizations: result.data?.data || [],
+      totalCount: result.data?.totalCount || 0
+    })
+    
+  } catch (error: any) {
+    console.error('Erro ao listar autorizações:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 // Função para gerar payload PIX estático (EMV format simplificado)
 function generateStaticPixPayload(walletId: string, value: number, description: string): string {
   // Formato EMV para PIX estático com valor fixo (Spec BACEN)

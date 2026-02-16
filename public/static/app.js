@@ -1580,6 +1580,248 @@ function viewSubscriptionDetails(subscriptionId) {
     alert(`🔍 Visualizar detalhes da assinatura ${subscriptionId}\n\nEm breve: painel com histórico de pagamentos, status e gestão da assinatura.`);
 }
 
+// Controles do formulário de PIX Automático
+function toggleAutomaticForm(accountId, walletId) {
+    const frame = document.getElementById(`automatic-frame-${accountId}`);
+    const btn = document.getElementById(`btn-automatic-${accountId}`);
+    
+    if (!frame) {
+        console.error('Frame de PIX Automático não encontrado:', accountId);
+        return;
+    }
+    
+    if (frame.classList.contains('hidden')) {
+        frame.classList.remove('hidden');
+        btn.innerHTML = '<i class="fas fa-times mr-2"></i>Fechar';
+        btn.classList.remove('from-indigo-500', 'to-cyan-500');
+        btn.classList.add('from-gray-500', 'to-gray-600');
+        
+        setTimeout(() => {
+            const nameInput = document.getElementById(`auto-name-${accountId}`);
+            if (nameInput) nameInput.focus();
+        }, 100);
+    } else {
+        closeAutomaticFrame(accountId);
+    }
+}
+
+function closeAutomaticFrame(accountId) {
+    const frame = document.getElementById(`automatic-frame-${accountId}`);
+    const btn = document.getElementById(`btn-automatic-${accountId}`);
+    
+    if (frame) {
+        frame.classList.add('hidden');
+    }
+    
+    if (btn) {
+        btn.innerHTML = '<i class="fas fa-robot mr-2"></i>PIX Automático';
+        btn.classList.remove('from-gray-500', 'to-gray-600');
+        btn.classList.add('from-indigo-500', 'to-cyan-500');
+    }
+    
+    // Resetar formulário
+    const form = document.getElementById(`automatic-form-${accountId}`);
+    if (form) {
+        form.querySelectorAll('input').forEach(input => {
+            if (input.id.includes('desc')) {
+                input.value = 'Mensalidade';
+            } else {
+                input.value = '';
+            }
+        });
+    }
+}
+
+async function createAutomaticAuthorization(accountId, walletId) {
+    const resultDiv = document.getElementById(`automatic-result-${accountId}`);
+    const formDiv = document.getElementById(`automatic-form-${accountId}`);
+    
+    const customerName = document.getElementById(`auto-name-${accountId}`).value.trim();
+    const customerEmail = document.getElementById(`auto-email-${accountId}`).value.trim();
+    const customerCpf = document.getElementById(`auto-cpf-${accountId}`).value.trim();
+    const value = parseFloat(document.getElementById(`auto-value-${accountId}`).value);
+    const description = document.getElementById(`auto-desc-${accountId}`).value.trim();
+    
+    if (!customerName || !customerEmail || !customerCpf || !value || value <= 0) {
+        alert('⚠️ Preencha todos os campos obrigatórios!');
+        return;
+    }
+    
+    if (customerCpf.length !== 11 || !/^\d+$/.test(customerCpf)) {
+        alert('⚠️ CPF inválido! Digite apenas números (11 dígitos)');
+        return;
+    }
+    
+    formDiv.classList.add('hidden');
+    resultDiv.classList.remove('hidden');
+    resultDiv.innerHTML = `
+        <p class="text-gray-500 text-sm py-4">
+            <i class="fas fa-spinner fa-spin mr-2"></i>
+            Criando autorização PIX Automático de R$ ${value.toFixed(2)}...
+        </p>
+    `;
+    
+    try {
+        const response = await axios.post('/api/pix/automatic-authorization', {
+            walletId,
+            accountId,
+            value,
+            description,
+            customerName,
+            customerEmail,
+            customerCpf,
+            recurrenceType: 'MONTHLY'
+        });
+        
+        if (response.data.ok) {
+            const { authorization, qrCode, splitConfig, instructions } = response.data;
+            
+            const splitSubAccount = (value * splitConfig.subAccount / 100).toFixed(2);
+            const splitMainAccount = (value * splitConfig.mainAccount / 100).toFixed(2);
+            
+            resultDiv.innerHTML = `
+                <div class="bg-gradient-to-br from-indigo-50 to-cyan-50 p-4 rounded-lg border-2 border-indigo-300">
+                    <div class="flex items-start gap-3 mb-4">
+                        <i class="fas fa-check-circle text-green-600 text-3xl"></i>
+                        <div class="flex-1">
+                            <h3 class="font-bold text-lg text-gray-800">✅ Autorização PIX Automático Criada!</h3>
+                            <p class="text-sm text-gray-600 mt-1">
+                                Cliente precisa <strong class="text-indigo-600">escanear o QR Code</strong> e <strong>autorizar</strong> no app do banco.
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-yellow-50 border border-yellow-200 rounded p-3 mb-4">
+                        <p class="text-sm text-yellow-800 font-semibold mb-2">
+                            <i class="fas fa-info-circle mr-1"></i>
+                            Como funciona:
+                        </p>
+                        <ol class="text-xs text-yellow-800 space-y-1 ml-4 list-decimal">
+                            <li>${instructions.step1}</li>
+                            <li>${instructions.step2}</li>
+                            <li>${instructions.step3}</li>
+                            <li>${instructions.step4}</li>
+                            <li>${instructions.step5}</li>
+                        </ol>
+                    </div>
+                    
+                    <div class="bg-white p-4 rounded-lg border-2 border-indigo-200 mb-4">
+                        <h4 class="font-bold text-gray-800 mb-3 flex items-center">
+                            <i class="fas fa-qrcode text-indigo-600 mr-2"></i>
+                            QR Code de Autorização
+                        </h4>
+                        
+                        <div class="flex flex-col items-center mb-4">
+                            <img src="${qrCode.encodedImage}" alt="QR Code PIX Automático" class="w-64 h-64 border-2 border-gray-300 rounded">
+                            <p class="text-sm text-gray-600 mt-2">Valor mensal: <strong class="text-indigo-600">R$ ${value.toFixed(2)}</strong></p>
+                            <p class="text-xs text-gray-500">Status: ${authorization.status}</p>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                <i class="fas fa-copy mr-1"></i> Chave PIX (Copia e Cola)
+                            </label>
+                            <div class="flex gap-2">
+                                <textarea readonly 
+                                    id="auto-payload-${accountId}" 
+                                    class="flex-1 px-3 py-2 border border-gray-300 rounded bg-gray-50 font-mono text-xs"
+                                    rows="3">${qrCode.payload}</textarea>
+                                <button onclick="copyAutomaticPayload('${accountId}')" 
+                                    class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-1">
+                                <i class="fas fa-info-circle mr-1"></i>
+                                ${qrCode.payload.length} caracteres
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                        <div class="bg-white p-3 rounded border border-gray-200">
+                            <p class="text-xs text-gray-500 mb-1"><i class="fas fa-user mr-1"></i>Cliente</p>
+                            <p class="font-semibold text-gray-800">${customerName}</p>
+                            <p class="text-sm text-gray-600">${customerEmail}</p>
+                        </div>
+                        
+                        <div class="bg-white p-3 rounded border border-gray-200">
+                            <p class="text-xs text-gray-500 mb-1"><i class="fas fa-calendar mr-1"></i>Recorrência</p>
+                            <p class="font-semibold text-gray-800">Mensal</p>
+                            <p class="text-sm text-gray-600">Início: ${authorization.startDate}</p>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-gradient-to-r from-green-100 to-blue-100 p-3 rounded border border-green-300 mb-4">
+                        <h4 class="font-bold text-gray-800 mb-2 flex items-center">
+                            <i class="fas fa-chart-pie text-green-600 mr-2"></i>
+                            Split Automático 20/80
+                        </h4>
+                        <div class="grid grid-cols-2 gap-3 text-sm">
+                            <div>
+                                <p class="text-gray-600">Para você (20%)</p>
+                                <p class="font-bold text-green-600 text-lg">R$ ${splitSubAccount}</p>
+                            </div>
+                            <div>
+                                <p class="text-gray-600">Conta Principal (80%)</p>
+                                <p class="font-bold text-blue-600 text-lg">R$ ${splitMainAccount}</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-blue-50 border border-blue-200 rounded p-3 mb-3">
+                        <p class="text-sm text-blue-800">
+                            <i class="fas fa-robot mr-1"></i>
+                            <strong>Débito Automático:</strong> Após autorização, o valor será debitado automaticamente todo mês. 
+                            Cliente NÃO precisa pagar manualmente. Split aplicado em todos os pagamentos.
+                        </p>
+                    </div>
+                    
+                    <div class="flex gap-2">
+                        <button onclick="closeAutomaticFrame('${accountId}')" 
+                            class="flex-1 px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 font-semibold">
+                            <i class="fas fa-check mr-2"></i>Concluir
+                        </button>
+                        <button onclick="viewAuthorizationDetails('${authorization.id}')" 
+                            class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700">
+                            <i class="fas fa-eye mr-2"></i>Ver Detalhes
+                        </button>
+                    </div>
+                </div>
+            `;
+        } else {
+            throw new Error(response.data.error || 'Erro ao criar autorização');
+        }
+    } catch (error) {
+        console.error('Erro:', error);
+        resultDiv.innerHTML = `
+            <div class="bg-red-50 border border-red-200 rounded p-4">
+                <p class="text-red-800">
+                    <i class="fas fa-times-circle mr-2"></i>
+                    <strong>Erro:</strong> ${error.response?.data?.error || error.message}
+                </p>
+                <button onclick="closeAutomaticFrame('${accountId}')" 
+                    class="mt-3 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
+                    <i class="fas fa-redo mr-2"></i>Tentar Novamente
+                </button>
+            </div>
+        `;
+    }
+}
+
+function copyAutomaticPayload(accountId) {
+    const textarea = document.getElementById(`auto-payload-${accountId}`);
+    if (textarea) {
+        textarea.select();
+        document.execCommand('copy');
+        alert('✅ Chave PIX copiada!\n\nCliente deve colar no aplicativo do banco e autorizar o débito automático.');
+    }
+}
+
+function viewAuthorizationDetails(authorizationId) {
+    alert(`🔍 Visualizar detalhes da autorização ${authorizationId}\n\nEm breve: painel com status da autorização, histórico de cobranças automáticas e opção de cancelamento.`);
+}
+
 // Exibir erro ao carregar API Keys
 function showApiKeysError(container, errorData) {
     const message = errorData?.message || errorData?.error || 'Erro ao carregar API Keys';
@@ -1914,16 +2156,21 @@ function displayAccounts(accounts) {
         // Seção de PIX (só para aprovados)
         const pixSection = hasWallet ? `
             <div class="mt-4">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <button onclick="togglePixForm('${account.id}', '${account.walletId}')" 
                         id="btn-toggle-${account.id}"
                         class="px-4 py-3 bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-lg hover:from-green-600 hover:to-blue-600 font-semibold shadow-md transition">
-                        <i class="fas fa-qrcode mr-2"></i>QR Code Avulso (Split 20/80)
+                        <i class="fas fa-qrcode mr-2"></i>QR Code Avulso
                     </button>
                     <button onclick="toggleSubscriptionForm('${account.id}', '${account.walletId}')" 
                         id="btn-subscription-${account.id}"
                         class="px-4 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:from-purple-600 hover:to-pink-600 font-semibold shadow-md transition">
-                        <i class="fas fa-calendar-check mr-2"></i>Assinatura Mensal (Split 20/80)
+                        <i class="fas fa-calendar-check mr-2"></i>Assinatura Mensal
+                    </button>
+                    <button onclick="toggleAutomaticForm('${account.id}', '${account.walletId}')" 
+                        id="btn-automatic-${account.id}"
+                        class="px-4 py-3 bg-gradient-to-r from-indigo-500 to-cyan-500 text-white rounded-lg hover:from-indigo-600 hover:to-cyan-600 font-semibold shadow-md transition">
+                        <i class="fas fa-robot mr-2"></i>PIX Automático
                     </button>
                 </div>
                 
@@ -2019,6 +2266,69 @@ function displayAccounts(accounts) {
                     
                     <!-- Resultado da Assinatura -->
                     <div id="subscription-result-${account.id}" class="hidden p-4 bg-gray-50"></div>
+                </div>
+                
+                <!-- Formulário de PIX Automático (Débito Automático) -->
+                <div id="automatic-frame-${account.id}" class="hidden mt-4 border-2 border-indigo-300 rounded-lg overflow-hidden shadow-lg">
+                    <div class="bg-gradient-to-r from-indigo-500 to-cyan-500 p-3 flex justify-between items-center">
+                        <h4 class="text-white font-bold">
+                            <i class="fas fa-robot mr-2"></i>PIX Automático (Débito Automático)
+                        </h4>
+                        <button onclick="closeAutomaticFrame('${account.id}')" 
+                            class="text-white hover:text-gray-200 font-bold text-xl">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    
+                    <!-- Formulário -->
+                    <div id="automatic-form-${account.id}" class="p-4 bg-white">
+                        <div class="bg-blue-50 border border-blue-200 rounded p-3 mb-4">
+                            <p class="text-sm text-blue-800">
+                                <i class="fas fa-info-circle mr-1"></i>
+                                <strong>PIX Automático:</strong> Cliente autoriza UMA VEZ e o débito ocorre automaticamente todo mês. Sem necessidade de pagar manualmente.
+                            </p>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                            <input type="text" 
+                                id="auto-name-${account.id}" 
+                                placeholder="Nome do cliente" 
+                                required
+                                class="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500">
+                            <input type="email" 
+                                id="auto-email-${account.id}" 
+                                placeholder="Email do cliente" 
+                                required
+                                class="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500">
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <input type="text" 
+                                id="auto-cpf-${account.id}" 
+                                placeholder="CPF (somente números)" 
+                                maxlength="11"
+                                required
+                                class="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500">
+                            <input type="number" 
+                                id="auto-value-${account.id}" 
+                                placeholder="Valor mensal (R$)" 
+                                step="0.01" 
+                                min="1"
+                                required
+                                class="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500">
+                            <input type="text" 
+                                id="auto-desc-${account.id}" 
+                                placeholder="Descrição" 
+                                value="Mensalidade"
+                                class="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500">
+                        </div>
+                        <button onclick="createAutomaticAuthorization('${account.id}', '${account.walletId}')" 
+                            class="w-full mt-3 px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 font-semibold">
+                            <i class="fas fa-robot mr-2"></i>Gerar Autorização PIX Automático
+                        </button>
+                    </div>
+                    
+                    <!-- Resultado da Autorização -->
+                    <div id="automatic-result-${account.id}" class="hidden p-4 bg-gray-50"></div>
                 </div>
             </div>
         ` : '';
