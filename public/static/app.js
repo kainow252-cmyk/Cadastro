@@ -129,6 +129,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Check authentication first
     await checkAuth();
     
+    // Show dashboard by default after login
+    showSection('dashboard');
+    
     // Then proceed with page initialization
     document.getElementById('create-account-form').addEventListener('submit', async (e) => {
         e.preventDefault();
