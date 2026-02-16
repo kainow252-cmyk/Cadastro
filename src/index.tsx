@@ -486,6 +486,64 @@ app.post('/api/public/signup', async (c) => {
   }
 })
 
+// Estatísticas do dashboard
+app.get('/api/stats', async (c) => {
+  try {
+    // Buscar subcontas
+    const accountsResult = await asaasRequest(c, '/accounts')
+    const accounts = accountsResult?.data?.data || []
+    
+    // Buscar links de cadastro do banco D1
+    const linksResult = await c.env.DB.prepare(`
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END) as active,
+        SUM(uses_count) as total_uses
+      FROM signup_links
+    `).first()
+    
+    // Calcular estatísticas
+    const totalAccounts = accounts.length
+    const approvedAccounts = accounts.filter((a: any) => a.walletId).length
+    const pendingAccounts = totalAccounts - approvedAccounts
+    
+    // Links de cadastro
+    const totalLinks = linksResult?.total || 0
+    const activeLinks = linksResult?.active || 0
+    const totalConversions = linksResult?.total_uses || 0
+    
+    // Taxa de conversão
+    const conversionRate = totalLinks > 0 ? ((totalConversions / totalLinks) * 100).toFixed(1) : '0'
+    
+    return c.json({
+      ok: true,
+      data: {
+        accounts: {
+          total: totalAccounts,
+          approved: approvedAccounts,
+          pending: pendingAccounts,
+          approvalRate: totalAccounts > 0 ? ((approvedAccounts / totalAccounts) * 100).toFixed(1) : '0'
+        },
+        links: {
+          total: totalLinks,
+          active: activeLinks,
+          conversions: totalConversions,
+          conversionRate
+        },
+        recentAccounts: accounts.slice(0, 5).map((a: any) => ({
+          id: a.id,
+          name: a.name,
+          email: a.email,
+          dateCreated: a.dateCreated,
+          status: a.walletId ? 'approved' : 'pending'
+        }))
+      }
+    })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 // Listar subcontas
 app.get('/api/accounts', async (c) => {
   try {
@@ -1900,13 +1958,141 @@ app.get('/', (c) => {
                     </div>
                 </div>
 
-                <div class="bg-white rounded-lg shadow p-6">
-                    <h2 class="text-xl font-bold text-gray-800 mb-4">
-                        <i class="fas fa-chart-line mr-2 text-blue-600"></i>
-                        Visão Geral
-                    </h2>
-                    <p class="text-gray-600">Bem-vindo ao Gerenciador de Contas e Subcontas Asaas!</p>
-                    <p class="text-gray-600 mt-2">Use o menu acima para navegar entre as seções.</p>
+                <!-- Dashboard Overview -->
+                <div class="space-y-6">
+                    <!-- Header -->
+                    <div class="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg shadow-xl p-8 text-white">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h2 class="text-3xl font-bold mb-2">
+                                    <i class="fas fa-chart-line mr-3"></i>
+                                    Visão Geral
+                                </h2>
+                                <p class="text-blue-100">Dashboard de Gerenciamento de Subcontas Asaas</p>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-sm text-blue-100">Última atualização</p>
+                                <p class="text-lg font-semibold" id="last-update-time">--:--</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Stats Cards -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <!-- Total Subcontas -->
+                        <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-blue-500 hover:shadow-lg transition">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-600 mb-1">Total de Subcontas</p>
+                                    <p class="text-3xl font-bold text-gray-800" id="stat-total-accounts">0</p>
+                                    <p class="text-xs text-gray-500 mt-2">
+                                        <i class="fas fa-users mr-1"></i>Todas as contas
+                                    </p>
+                                </div>
+                                <div class="bg-blue-100 rounded-full p-4">
+                                    <i class="fas fa-users text-3xl text-blue-600"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Aprovadas -->
+                        <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-green-500 hover:shadow-lg transition">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-600 mb-1">Aprovadas</p>
+                                    <p class="text-3xl font-bold text-green-600" id="stat-approved-accounts">0</p>
+                                    <p class="text-xs text-green-600 mt-2 font-semibold">
+                                        <i class="fas fa-check-circle mr-1"></i>
+                                        <span id="stat-approval-rate">0%</span> de aprovação
+                                    </p>
+                                </div>
+                                <div class="bg-green-100 rounded-full p-4">
+                                    <i class="fas fa-check-circle text-3xl text-green-600"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Pendentes -->
+                        <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-yellow-500 hover:shadow-lg transition">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-600 mb-1">Pendentes</p>
+                                    <p class="text-3xl font-bold text-yellow-600" id="stat-pending-accounts">0</p>
+                                    <p class="text-xs text-gray-500 mt-2">
+                                        <i class="fas fa-clock mr-1"></i>Aguardando aprovação
+                                    </p>
+                                </div>
+                                <div class="bg-yellow-100 rounded-full p-4">
+                                    <i class="fas fa-clock text-3xl text-yellow-600"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Links de Cadastro -->
+                        <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-purple-500 hover:shadow-lg transition">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-600 mb-1">Links Ativos</p>
+                                    <p class="text-3xl font-bold text-purple-600" id="stat-active-links">0</p>
+                                    <p class="text-xs text-purple-600 mt-2 font-semibold">
+                                        <i class="fas fa-link mr-1"></i>
+                                        <span id="stat-conversion-rate">0%</span> conversão
+                                    </p>
+                                </div>
+                                <div class="bg-purple-100 rounded-full p-4">
+                                    <i class="fas fa-link text-3xl text-purple-600"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Charts Row -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <!-- Status Distribution Chart -->
+                        <div class="bg-white rounded-lg shadow-md p-6">
+                            <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                                <i class="fas fa-chart-pie mr-2 text-blue-600"></i>
+                                Distribuição de Status
+                            </h3>
+                            <canvas id="status-chart" height="200"></canvas>
+                        </div>
+
+                        <!-- Recent Activity -->
+                        <div class="bg-white rounded-lg shadow-md p-6">
+                            <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                                <i class="fas fa-history mr-2 text-green-600"></i>
+                                Atividades Recentes
+                            </h3>
+                            <div id="recent-activity" class="space-y-3 max-h-64 overflow-y-auto">
+                                <p class="text-gray-500 text-center py-8">Carregando...</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Quick Actions -->
+                    <div class="bg-white rounded-lg shadow-md p-6">
+                        <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                            <i class="fas fa-bolt mr-2 text-yellow-500"></i>
+                            Ações Rápidas
+                        </h3>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <button onclick="showSection('accounts')" 
+                                class="flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 font-semibold shadow-md transition">
+                                <i class="fas fa-user-plus text-2xl"></i>
+                                <span>Criar Subconta</span>
+                            </button>
+                            <button onclick="showSection('list'); setTimeout(() => document.querySelector('#link-modal') && openLinkModal(), 100)" 
+                                class="flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:from-purple-600 hover:to-pink-600 font-semibold shadow-md transition">
+                                <i class="fas fa-link text-2xl"></i>
+                                <span>Gerar Link</span>
+                            </button>
+                            <button onclick="showSection('list')" 
+                                class="flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 font-semibold shadow-md transition">
+                                <i class="fas fa-list text-2xl"></i>
+                                <span>Ver Subcontas</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -2613,7 +2799,8 @@ app.get('/', (c) => {
         </div>
 
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-        <script src="/static/app.js?v=2.6"></script>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+        <script src="/static/app.js?v=2.7"></script>
     </body>
     </html>
   `)

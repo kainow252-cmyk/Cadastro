@@ -1792,3 +1792,184 @@ function downloadQRCode() {
         document.body.removeChild(link);
     }
 }
+
+// ============================================
+// DASHBOARD OVERVIEW / ESTATÍSTICAS
+// ============================================
+
+let statusChart = null;
+
+// Carregar estatísticas do dashboard
+async function loadDashboardStats() {
+    try {
+        const response = await axios.get('/api/stats');
+        
+        if (response.data && response.data.ok) {
+            const stats = response.data.data;
+            
+            // Atualizar cards de estatísticas
+            document.getElementById('stat-total-accounts').textContent = stats.accounts.total;
+            document.getElementById('stat-approved-accounts').textContent = stats.accounts.approved;
+            document.getElementById('stat-pending-accounts').textContent = stats.accounts.pending;
+            document.getElementById('stat-active-links').textContent = stats.links.active;
+            document.getElementById('stat-approval-rate').textContent = stats.accounts.approvalRate + '%';
+            document.getElementById('stat-conversion-rate').textContent = stats.links.conversionRate + '%';
+            
+            // Atualizar timestamp
+            const now = new Date();
+            document.getElementById('last-update-time').textContent = now.toLocaleTimeString('pt-BR', { 
+                hour: '2-digit', 
+                minute: '2-digit' 
+            });
+            
+            // Renderizar gráfico de status
+            renderStatusChart(stats.accounts);
+            
+            // Renderizar atividades recentes
+            renderRecentActivity(stats.recentAccounts);
+        }
+    } catch (error) {
+        console.error('Erro ao carregar estatísticas:', error);
+    }
+}
+
+// Renderizar gráfico de pizza de status
+function renderStatusChart(accountStats) {
+    const canvas = document.getElementById('status-chart');
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    
+    // Destruir gráfico anterior se existir
+    if (statusChart) {
+        statusChart.destroy();
+    }
+    
+    // Criar novo gráfico
+    statusChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Aprovadas', 'Pendentes'],
+            datasets: [{
+                data: [accountStats.approved, accountStats.pending],
+                backgroundColor: [
+                    'rgba(34, 197, 94, 0.8)',  // Verde
+                    'rgba(234, 179, 8, 0.8)'    // Amarelo
+                ],
+                borderColor: [
+                    'rgba(34, 197, 94, 1)',
+                    'rgba(234, 179, 8, 1)'
+                ],
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        padding: 15,
+                        font: {
+                            size: 12,
+                            family: "'Inter', sans-serif"
+                        }
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const label = context.label || '';
+                            const value = context.parsed || 0;
+                            const total = accountStats.total;
+                            const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                            return `${label}: ${value} (${percentage}%)`;
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+// Renderizar atividades recentes
+function renderRecentActivity(recentAccounts) {
+    const container = document.getElementById('recent-activity');
+    if (!container) return;
+    
+    if (!recentAccounts || recentAccounts.length === 0) {
+        container.innerHTML = '<p class="text-gray-500 text-center py-8">Nenhuma atividade recente</p>';
+        return;
+    }
+    
+    container.innerHTML = recentAccounts.map(account => {
+        const date = account.dateCreated ? new Date(account.dateCreated).toLocaleDateString('pt-BR', {
+            day: '2-digit',
+            month: 'short',
+            hour: '2-digit',
+            minute: '2-digit'
+        }) : 'Data não disponível';
+        
+        const statusBadge = account.status === 'approved' 
+            ? '<span class="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full font-semibold"><i class="fas fa-check-circle mr-1"></i>Aprovada</span>'
+            : '<span class="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full font-semibold"><i class="fas fa-clock mr-1"></i>Pendente</span>';
+        
+        return `
+            <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition">
+                <div class="flex items-center gap-3">
+                    <div class="bg-blue-100 rounded-full p-2">
+                        <i class="fas fa-user text-blue-600"></i>
+                    </div>
+                    <div>
+                        <p class="text-sm font-semibold text-gray-800">${account.name}</p>
+                        <p class="text-xs text-gray-500">${account.email}</p>
+                    </div>
+                </div>
+                <div class="text-right">
+                    ${statusBadge}
+                    <p class="text-xs text-gray-500 mt-1">${date}</p>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Auto-refresh do dashboard a cada 30 segundos
+let dashboardRefreshInterval = null;
+
+function startDashboardAutoRefresh() {
+    // Limpar intervalo anterior se existir
+    if (dashboardRefreshInterval) {
+        clearInterval(dashboardRefreshInterval);
+    }
+    
+    // Carregar estatísticas imediatamente
+    loadDashboardStats();
+    
+    // Atualizar a cada 30 segundos
+    dashboardRefreshInterval = setInterval(loadDashboardStats, 30000);
+}
+
+function stopDashboardAutoRefresh() {
+    if (dashboardRefreshInterval) {
+        clearInterval(dashboardRefreshInterval);
+        dashboardRefreshInterval = null;
+    }
+}
+
+// Iniciar auto-refresh quando entrar na seção de overview
+const originalShowSection = window.showSection;
+window.showSection = function(section) {
+    // Chamar função original
+    if (originalShowSection) {
+        originalShowSection(section);
+    }
+    
+    // Iniciar/parar auto-refresh baseado na seção
+    if (section === 'overview') {
+        startDashboardAutoRefresh();
+    } else {
+        stopDashboardAutoRefresh();
+    }
+}
