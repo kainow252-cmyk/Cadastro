@@ -544,6 +544,84 @@ app.get('/api/stats', async (c) => {
   }
 })
 
+// Relatório de subconta
+app.get('/api/reports/:accountId', async (c) => {
+  try {
+    const accountId = c.req.param('accountId')
+    const startDate = c.req.query('startDate')
+    const endDate = c.req.query('endDate')
+    
+    // Buscar informações da subconta
+    const accountResult = await asaasRequest(c, `/accounts/${accountId}`)
+    if (!accountResult.ok) {
+      return c.json({ error: 'Subconta não encontrada' }, 404)
+    }
+    
+    const account = accountResult.data
+    
+    // Buscar cobranças da subconta com filtro de data
+    let paymentsUrl = `/payments?customer=${accountId}`
+    if (startDate) paymentsUrl += `&dateCreated[ge]=${startDate}`
+    if (endDate) paymentsUrl += `&dateCreated[le]=${endDate}`
+    
+    const paymentsResult = await asaasRequest(c, paymentsUrl)
+    const payments = paymentsResult?.data?.data || []
+    
+    // Calcular estatísticas
+    let totalReceived = 0
+    let totalPending = 0
+    let totalOverdue = 0
+    let totalRefunded = 0
+    
+    payments.forEach((payment: any) => {
+      const value = parseFloat(payment.value || 0)
+      if (payment.status === 'RECEIVED') totalReceived += value
+      else if (payment.status === 'PENDING') totalPending += value
+      else if (payment.status === 'OVERDUE') totalOverdue += value
+      else if (payment.status === 'REFUNDED') totalRefunded += value
+    })
+    
+    // Preparar transações para retorno
+    const transactions = payments.map((p: any) => ({
+      id: p.id,
+      value: parseFloat(p.value || 0),
+      description: p.description || 'Sem descrição',
+      dueDate: p.dueDate,
+      status: p.status,
+      dateCreated: p.dateCreated,
+      billingType: p.billingType,
+      invoiceUrl: p.invoiceUrl
+    }))
+    
+    return c.json({
+      ok: true,
+      data: {
+        account: {
+          id: account.id,
+          name: account.name,
+          email: account.email,
+          cpfCnpj: account.cpfCnpj,
+          walletId: account.walletId
+        },
+        period: {
+          startDate: startDate || 'Início',
+          endDate: endDate || 'Hoje'
+        },
+        summary: {
+          totalReceived,
+          totalPending,
+          totalOverdue,
+          totalRefunded,
+          totalTransactions: payments.length
+        },
+        transactions
+      }
+    })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 // Listar subcontas
 app.get('/api/accounts', async (c) => {
   try {
@@ -2091,6 +2169,11 @@ app.get('/', (c) => {
                                 <i class="fas fa-list text-2xl"></i>
                                 <span>Ver Subcontas</span>
                             </button>
+                            <button onclick="showSection('reports')" 
+                                class="flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-lg hover:from-orange-600 hover:to-red-600 font-semibold shadow-md transition">
+                                <i class="fas fa-chart-bar text-2xl"></i>
+                                <span>Relatórios</span>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -2665,6 +2748,62 @@ app.get('/', (c) => {
             </div>
         </div>
 
+        <!-- Reports Section -->
+        <div id="reports-section" class="section hidden">
+            <div class="bg-white rounded-lg shadow mb-6">
+                <div class="p-6 border-b border-gray-200">
+                    <h2 class="text-xl font-bold text-gray-800">
+                        <i class="fas fa-chart-bar mr-2 text-orange-600"></i>
+                        Relatórios de Subcontas
+                    </h2>
+                    <p class="text-gray-600 mt-2">Visualize transações e estatísticas por subconta</p>
+                </div>
+
+                <!-- Filtros -->
+                <div class="p-6 border-b border-gray-200 bg-gray-50">
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                <i class="fas fa-user mr-1"></i>Subconta
+                            </label>
+                            <select id="report-account-select" 
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500">
+                                <option value="">Selecione uma subconta...</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                <i class="fas fa-calendar mr-1"></i>Data Início
+                            </label>
+                            <input type="date" id="report-start-date" 
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                <i class="fas fa-calendar mr-1"></i>Data Fim
+                            </label>
+                            <input type="date" id="report-end-date" 
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500">
+                        </div>
+                        <div class="flex items-end">
+                            <button onclick="generateReport()" 
+                                class="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white px-4 py-2 rounded-lg hover:from-orange-600 hover:to-red-600 font-semibold shadow-md transition">
+                                <i class="fas fa-search mr-2"></i>Gerar Relatório
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Área de Resultados -->
+                <div id="report-results" class="p-6">
+                    <div class="text-center py-12 text-gray-500">
+                        <i class="fas fa-chart-line text-6xl mb-4 opacity-30"></i>
+                        <p class="text-lg">Selecione uma subconta e clique em "Gerar Relatório"</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Modal de Link de Cadastro -->
         <div id="link-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
             <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -2800,7 +2939,10 @@ app.get('/', (c) => {
 
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-        <script src="/static/app.js?v=2.7"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+        <script src="/static/app.js?v=2.8"></script>
     </body>
     </html>
   `)

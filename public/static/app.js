@@ -1972,4 +1972,395 @@ window.showSection = function(section) {
     } else {
         stopDashboardAutoRefresh();
     }
+    
+    // Carregar subcontas no select quando entrar na seção de relatórios
+    if (section === 'reports') {
+        loadReportAccounts();
+    }
+}
+
+// ===== FUNÇÕES DE RELATÓRIOS =====
+
+// Variável global para armazenar dados do relatório
+let currentReportData = null;
+
+// Carregar subcontas no select
+async function loadReportAccounts() {
+    try {
+        const response = await axios.get('/api/accounts');
+        const accounts = response.data.accounts || [];
+        
+        const select = document.getElementById('report-account-select');
+        select.innerHTML = '<option value="">Selecione uma subconta...</option>';
+        
+        accounts.forEach(account => {
+            if (account.walletId) { // Apenas aprovadas
+                const option = document.createElement('option');
+                option.value = account.id;
+                option.textContent = `${account.name} (${account.email})`;
+                select.appendChild(option);
+            }
+        });
+    } catch (error) {
+        console.error('Erro ao carregar subcontas:', error);
+    }
+}
+
+// Gerar relatório
+async function generateReport() {
+    const accountId = document.getElementById('report-account-select').value;
+    const startDate = document.getElementById('report-start-date').value;
+    const endDate = document.getElementById('report-end-date').value;
+    const resultsDiv = document.getElementById('report-results');
+    
+    if (!accountId) {
+        alert('Selecione uma subconta');
+        return;
+    }
+    
+    // Mostrar loading
+    resultsDiv.innerHTML = `
+        <div class="text-center py-12">
+            <i class="fas fa-spinner fa-spin text-4xl text-orange-500 mb-4"></i>
+            <p class="text-gray-600">Gerando relatório...</p>
+        </div>
+    `;
+    
+    try {
+        let url = `/api/reports/${accountId}`;
+        const params = [];
+        if (startDate) params.push(`startDate=${startDate}`);
+        if (endDate) params.push(`endDate=${endDate}`);
+        if (params.length > 0) url += `?${params.join('&')}`;
+        
+        const response = await axios.get(url);
+        currentReportData = response.data.data;
+        
+        displayReport(currentReportData);
+    } catch (error) {
+        console.error('Erro ao gerar relatório:', error);
+        resultsDiv.innerHTML = `
+            <div class="text-center py-12 text-red-600">
+                <i class="fas fa-exclamation-triangle text-4xl mb-4"></i>
+                <p class="text-lg">Erro ao gerar relatório</p>
+                <p class="text-sm mt-2">${error.response?.data?.error || error.message}</p>
+            </div>
+        `;
+    }
+}
+
+// Exibir relatório
+function displayReport(data) {
+    const resultsDiv = document.getElementById('report-results');
+    const { account, period, summary, transactions } = data;
+    
+    let statusClass = '';
+    let statusIcon = '';
+    let statusText = '';
+    
+    // Formatador de moeda
+    const formatCurrency = (value) => {
+        return new Intl.NumberFormat('pt-BR', {
+            style: 'currency',
+            currency: 'BRL'
+        }).format(value);
+    };
+    
+    // Formatador de data
+    const formatDate = (dateStr) => {
+        if (!dateStr) return 'N/A';
+        const date = new Date(dateStr);
+        return date.toLocaleDateString('pt-BR');
+    };
+    
+    // Status das transações
+    const getStatusBadge = (status) => {
+        const badges = {
+            'RECEIVED': '<span class="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-semibold"><i class="fas fa-check mr-1"></i>Recebido</span>',
+            'PENDING': '<span class="px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-semibold"><i class="fas fa-clock mr-1"></i>Pendente</span>',
+            'OVERDUE': '<span class="px-2 py-1 bg-red-100 text-red-800 rounded-full text-xs font-semibold"><i class="fas fa-exclamation-circle mr-1"></i>Vencido</span>',
+            'REFUNDED': '<span class="px-2 py-1 bg-gray-100 text-gray-800 rounded-full text-xs font-semibold"><i class="fas fa-undo mr-1"></i>Reembolsado</span>'
+        };
+        return badges[status] || status;
+    };
+    
+    resultsDiv.innerHTML = `
+        <!-- Cabeçalho do Relatório -->
+        <div class="bg-gradient-to-r from-orange-500 to-red-500 rounded-lg p-6 text-white mb-6">
+            <div class="flex justify-between items-start">
+                <div>
+                    <h3 class="text-2xl font-bold mb-2">
+                        <i class="fas fa-file-alt mr-2"></i>Relatório de Subconta
+                    </h3>
+                    <p class="text-orange-100">
+                        <i class="fas fa-user mr-1"></i>${account.name}
+                    </p>
+                    <p class="text-orange-100 text-sm mt-1">
+                        <i class="fas fa-envelope mr-1"></i>${account.email} | 
+                        <i class="fas fa-id-card ml-2 mr-1"></i>${account.cpfCnpj}
+                    </p>
+                    <p class="text-orange-100 text-sm mt-1">
+                        <i class="fas fa-wallet mr-1"></i>Wallet: ${account.walletId?.substring(0, 8)}...
+                    </p>
+                </div>
+                <div class="text-right">
+                    <p class="text-sm text-orange-100">Período</p>
+                    <p class="font-semibold">${formatDate(period.startDate)} - ${formatDate(period.endDate)}</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Cards de Resumo -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-gradient-to-br from-green-500 to-green-600 rounded-lg p-4 text-white">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-green-100 text-sm">Recebido</p>
+                        <p class="text-2xl font-bold mt-1">${formatCurrency(summary.totalReceived)}</p>
+                    </div>
+                    <i class="fas fa-check-circle text-4xl text-green-300 opacity-50"></i>
+                </div>
+            </div>
+            
+            <div class="bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-lg p-4 text-white">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-yellow-100 text-sm">Pendente</p>
+                        <p class="text-2xl font-bold mt-1">${formatCurrency(summary.totalPending)}</p>
+                    </div>
+                    <i class="fas fa-clock text-4xl text-yellow-300 opacity-50"></i>
+                </div>
+            </div>
+            
+            <div class="bg-gradient-to-br from-red-500 to-red-600 rounded-lg p-4 text-white">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-red-100 text-sm">Vencido</p>
+                        <p class="text-2xl font-bold mt-1">${formatCurrency(summary.totalOverdue)}</p>
+                    </div>
+                    <i class="fas fa-exclamation-triangle text-4xl text-red-300 opacity-50"></i>
+                </div>
+            </div>
+            
+            <div class="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg p-4 text-white">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-blue-100 text-sm">Transações</p>
+                        <p class="text-2xl font-bold mt-1">${summary.totalTransactions}</p>
+                    </div>
+                    <i class="fas fa-list text-4xl text-blue-300 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Botões de Exportação -->
+        <div class="flex justify-end gap-3 mb-6">
+            <button onclick="exportReportPDF()" 
+                class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 font-semibold shadow-md transition">
+                <i class="fas fa-file-pdf mr-2"></i>Exportar PDF
+            </button>
+            <button onclick="exportReportExcel()" 
+                class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 font-semibold shadow-md transition">
+                <i class="fas fa-file-excel mr-2"></i>Exportar Excel
+            </button>
+        </div>
+        
+        <!-- Tabela de Transações -->
+        <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
+            <div class="bg-gray-50 px-6 py-4 border-b border-gray-200">
+                <h4 class="text-lg font-bold text-gray-800">
+                    <i class="fas fa-exchange-alt mr-2"></i>Transações (${transactions.length})
+                </h4>
+            </div>
+            <div class="overflow-x-auto">
+                ${transactions.length > 0 ? `
+                    <table class="w-full">
+                        <thead class="bg-gray-100 border-b border-gray-200">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Data</th>
+                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Descrição</th>
+                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Tipo</th>
+                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Valor</th>
+                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Status</th>
+                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200">
+                            ${transactions.map(t => `
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-6 py-4 text-sm text-gray-700">${formatDate(t.dateCreated)}</td>
+                                    <td class="px-6 py-4 text-sm text-gray-900">${t.description}</td>
+                                    <td class="px-6 py-4 text-sm text-gray-700">${t.billingType || 'N/A'}</td>
+                                    <td class="px-6 py-4 text-sm font-semibold text-gray-900">${formatCurrency(t.value)}</td>
+                                    <td class="px-6 py-4 text-sm">${getStatusBadge(t.status)}</td>
+                                    <td class="px-6 py-4 text-sm">
+                                        ${t.invoiceUrl ? `
+                                            <a href="${t.invoiceUrl}" target="_blank" 
+                                                class="text-blue-600 hover:text-blue-800 font-semibold">
+                                                <i class="fas fa-external-link-alt mr-1"></i>Ver
+                                            </a>
+                                        ` : '-'}
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                ` : `
+                    <div class="p-12 text-center text-gray-500">
+                        <i class="fas fa-inbox text-4xl mb-4 opacity-30"></i>
+                        <p>Nenhuma transação encontrada no período selecionado</p>
+                    </div>
+                `}
+            </div>
+        </div>
+    `;
+}
+
+// Exportar relatório em PDF
+function exportReportPDF() {
+    if (!currentReportData) {
+        alert('Nenhum relatório gerado');
+        return;
+    }
+    
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    const { account, period, summary, transactions } = currentReportData;
+    
+    // Formatador de moeda
+    const formatCurrency = (value) => {
+        return new Intl.NumberFormat('pt-BR', {
+            style: 'currency',
+            currency: 'BRL'
+        }).format(value);
+    };
+    
+    // Formatador de data
+    const formatDate = (dateStr) => {
+        if (!dateStr) return 'N/A';
+        const date = new Date(dateStr);
+        return date.toLocaleDateString('pt-BR');
+    };
+    
+    // Título
+    doc.setFontSize(18);
+    doc.setFont(undefined, 'bold');
+    doc.text('Relatório de Subconta', 14, 20);
+    
+    // Informações da subconta
+    doc.setFontSize(11);
+    doc.setFont(undefined, 'normal');
+    doc.text(`Nome: ${account.name}`, 14, 30);
+    doc.text(`Email: ${account.email}`, 14, 36);
+    doc.text(`CPF/CNPJ: ${account.cpfCnpj}`, 14, 42);
+    doc.text(`Wallet ID: ${account.walletId}`, 14, 48);
+    doc.text(`Período: ${formatDate(period.startDate)} - ${formatDate(period.endDate)}`, 14, 54);
+    
+    // Resumo
+    doc.setFontSize(14);
+    doc.setFont(undefined, 'bold');
+    doc.text('Resumo Financeiro', 14, 66);
+    
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    doc.text(`Total Recebido: ${formatCurrency(summary.totalReceived)}`, 14, 74);
+    doc.text(`Total Pendente: ${formatCurrency(summary.totalPending)}`, 14, 80);
+    doc.text(`Total Vencido: ${formatCurrency(summary.totalOverdue)}`, 14, 86);
+    doc.text(`Total de Transações: ${summary.totalTransactions}`, 14, 92);
+    
+    // Tabela de transações
+    if (transactions.length > 0) {
+        doc.setFontSize(14);
+        doc.setFont(undefined, 'bold');
+        doc.text('Transações', 14, 104);
+        
+        const tableData = transactions.map(t => [
+            formatDate(t.dateCreated),
+            t.description.substring(0, 30),
+            formatCurrency(t.value),
+            t.status
+        ]);
+        
+        doc.autoTable({
+            startY: 108,
+            head: [['Data', 'Descrição', 'Valor', 'Status']],
+            body: tableData,
+            styles: { fontSize: 8 },
+            headStyles: { fillColor: [249, 115, 22] } // Orange
+        });
+    }
+    
+    // Salvar PDF
+    const fileName = `relatorio_${account.name.replace(/\s+/g, '_')}_${new Date().getTime()}.pdf`;
+    doc.save(fileName);
+}
+
+// Exportar relatório em Excel
+function exportReportExcel() {
+    if (!currentReportData) {
+        alert('Nenhum relatório gerado');
+        return;
+    }
+    
+    const { account, period, summary, transactions } = currentReportData;
+    
+    // Formatador de moeda
+    const formatCurrency = (value) => {
+        return new Intl.NumberFormat('pt-BR', {
+            style: 'currency',
+            currency: 'BRL'
+        }).format(value);
+    };
+    
+    // Formatador de data
+    const formatDate = (dateStr) => {
+        if (!dateStr) return 'N/A';
+        const date = new Date(dateStr);
+        return date.toLocaleDateString('pt-BR');
+    };
+    
+    // Criar workbook
+    const wb = XLSX.utils.book_new();
+    
+    // Sheet 1: Informações da Subconta
+    const infoData = [
+        ['RELATÓRIO DE SUBCONTA'],
+        [],
+        ['Nome', account.name],
+        ['Email', account.email],
+        ['CPF/CNPJ', account.cpfCnpj],
+        ['Wallet ID', account.walletId],
+        ['Período', `${formatDate(period.startDate)} - ${formatDate(period.endDate)}`],
+        [],
+        ['RESUMO FINANCEIRO'],
+        ['Total Recebido', formatCurrency(summary.totalReceived)],
+        ['Total Pendente', formatCurrency(summary.totalPending)],
+        ['Total Vencido', formatCurrency(summary.totalOverdue)],
+        ['Total Reembolsado', formatCurrency(summary.totalRefunded)],
+        ['Total de Transações', summary.totalTransactions]
+    ];
+    
+    const ws1 = XLSX.utils.aoa_to_sheet(infoData);
+    XLSX.utils.book_append_sheet(wb, ws1, 'Informações');
+    
+    // Sheet 2: Transações
+    if (transactions.length > 0) {
+        const transactionsData = transactions.map(t => ({
+            'Data Criação': formatDate(t.dateCreated),
+            'Data Vencimento': formatDate(t.dueDate),
+            'Descrição': t.description,
+            'Tipo': t.billingType || 'N/A',
+            'Valor': formatCurrency(t.value),
+            'Status': t.status,
+            'ID': t.id,
+            'Link Fatura': t.invoiceUrl || 'N/A'
+        }));
+        
+        const ws2 = XLSX.utils.json_to_sheet(transactionsData);
+        XLSX.utils.book_append_sheet(wb, ws2, 'Transações');
+    }
+    
+    // Salvar arquivo
+    const fileName = `relatorio_${account.name.replace(/\s+/g, '_')}_${new Date().getTime()}.xlsx`;
+    XLSX.writeFile(wb, fileName);
 }
