@@ -1157,15 +1157,21 @@ async function generateStaticPix(accountId, walletId) {
                                     Chave PIX (Copia e Cola):
                                 </label>
                                 <div class="flex gap-1">
-                                    <input type="text" readonly value="${pixData.payload}" 
+                                    <textarea readonly 
                                         id="pix-payload-${accountId}"
-                                        class="flex-1 px-2 py-1 bg-gray-50 border border-gray-300 rounded text-xs font-mono">
+                                        class="flex-1 px-2 py-1 bg-gray-50 border border-gray-300 rounded text-xs font-mono resize-none"
+                                        rows="3"
+                                        style="word-break: break-all; overflow-wrap: break-word;">${pixData.payload}</textarea>
                                     <button onclick="copyPixPayload('${accountId}')"
                                         id="copy-btn-${accountId}"
                                         class="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 font-semibold">
                                         <i class="fas fa-copy"></i>
                                     </button>
                                 </div>
+                                <p class="text-xs text-gray-500 mt-1">
+                                    <i class="fas fa-info-circle mr-1"></i>
+                                    Comprimento: ${pixData.payload.length} caracteres
+                                </p>
                             </div>
                             <div class="bg-gradient-to-r from-green-100 to-blue-100 rounded-lg p-3 border border-green-300">
                                 <p class="text-xs font-bold text-gray-800 text-center mb-2">
@@ -1190,7 +1196,7 @@ async function generateStaticPix(accountId, walletId) {
                                     <i class="fas fa-share-alt mr-1"></i>
                                     COMPARTILHAR
                                 </p>
-                                <div class="grid grid-cols-3 gap-2">
+                                <div class="grid grid-cols-3 gap-2 items-start">
                             <!-- Opção 1: Baixar Imagem -->
                             <button onclick="downloadQRCode('${accountId}', '${pixData.qrCodeBase64}')" 
                                 class="bg-blue-600 text-white rounded-lg p-2 hover:bg-blue-700 text-center flex flex-col items-center gap-1 shadow-md">
@@ -1205,11 +1211,18 @@ async function generateStaticPix(accountId, walletId) {
                                 <span class="text-xs font-bold">Copiar<br>HTML</span>
                             </button>
                             
-                            <!-- Opção 3: Link Direto -->
+                            <!-- Opção 3: Copiar Chave -->
                             <button onclick="copyPixLink('${accountId}', '${pixData.payload}')" 
                                 class="bg-purple-600 text-white rounded-lg p-2 hover:bg-purple-700 text-center flex flex-col items-center gap-1 shadow-md">
                                 <i class="fas fa-share-alt text-2xl"></i>
                                 <span class="text-xs font-bold">Copiar<br>Chave</span>
+                            </button>
+                            
+                            <!-- Opção 4: Exibir QR Code Grande -->
+                            <button onclick="showFullScreenQR('${pixData.qrCodeBase64}', '${pixData.payload}', ${value})" 
+                                class="bg-indigo-600 text-white rounded-lg p-2 hover:bg-indigo-700 text-center flex flex-col items-center gap-1 shadow-md col-span-3">
+                                <i class="fas fa-expand text-2xl"></i>
+                                <span class="text-xs font-bold">Ver QR Code em Tela Cheia</span>
                             </button>
                         </div>
                         
@@ -1456,6 +1469,87 @@ function copyHtmlCode(accountId, base64Image, value, description) {
 }
 
 // Função para copiar link do PIX
+// Função para exibir QR Code em tela cheia
+function showFullScreenQR(qrCodeBase64, payload, value) {
+    const modal = document.createElement('div');
+    modal.className = 'fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4';
+    modal.innerHTML = `
+        <div class="bg-white rounded-lg shadow-2xl max-w-2xl w-full p-6 relative">
+            <button onclick="this.closest('.fixed').remove()" 
+                class="absolute top-4 right-4 text-gray-500 hover:text-gray-700 text-3xl font-bold">
+                &times;
+            </button>
+            
+            <h3 class="text-2xl font-bold text-gray-800 mb-6 text-center">
+                <i class="fas fa-qrcode mr-2 text-indigo-600"></i>
+                QR Code PIX - R$ ${value.toFixed(2)}
+            </h3>
+            
+            <div class="flex flex-col items-center gap-6">
+                <!-- QR Code Grande -->
+                <div class="bg-white p-6 rounded-lg border-4 border-indigo-600 shadow-xl">
+                    <img src="${qrCodeBase64}" alt="QR Code PIX" class="w-80 h-80">
+                </div>
+                
+                <!-- Payload Completo -->
+                <div class="w-full">
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">
+                        <i class="fas fa-key mr-1"></i>
+                        Chave PIX Completa (${payload.length} caracteres):
+                    </label>
+                    <div class="relative">
+                        <textarea readonly 
+                            id="fullscreen-payload"
+                            class="w-full px-3 py-2 bg-gray-50 border-2 border-gray-300 rounded text-xs font-mono resize-none"
+                            rows="4"
+                            style="word-break: break-all;">${payload}</textarea>
+                        <button onclick="navigator.clipboard.writeText('${payload}').then(() => alert('✅ Chave PIX copiada!'))"
+                            class="absolute top-2 right-2 px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-xs font-semibold">
+                            <i class="fas fa-copy mr-1"></i>Copiar
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Instruções -->
+                <div class="w-full bg-blue-50 border-2 border-blue-300 rounded-lg p-4">
+                    <p class="text-sm font-semibold text-blue-900 mb-2">
+                        <i class="fas fa-mobile-alt mr-2"></i>
+                        Como usar no app do banco:
+                    </p>
+                    <ol class="text-xs text-blue-800 space-y-1 ml-4 list-decimal">
+                        <li><strong>Opção 1:</strong> Escaneie o QR Code acima</li>
+                        <li><strong>Opção 2:</strong> Copie a chave PIX e cole no app do banco (PIX → Copia e Cola)</li>
+                        <li>Confirme o valor: <strong>R$ ${value.toFixed(2)}</strong></li>
+                        <li>Complete o pagamento</li>
+                    </ol>
+                </div>
+                
+                <!-- Botões de Ação -->
+                <div class="flex gap-3 w-full">
+                    <button onclick="downloadQRCodeFromModal('${qrCodeBase64}', ${value})" 
+                        class="flex-1 bg-green-600 text-white rounded-lg py-3 hover:bg-green-700 font-semibold">
+                        <i class="fas fa-download mr-2"></i>Baixar QR Code
+                    </button>
+                    <button onclick="this.closest('.fixed').remove()" 
+                        class="flex-1 bg-gray-600 text-white rounded-lg py-3 hover:bg-gray-700 font-semibold">
+                        <i class="fas fa-times mr-2"></i>Fechar
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+// Função auxiliar para download do QR Code do modal
+function downloadQRCodeFromModal(qrCodeBase64, value) {
+    const link = document.createElement('a');
+    link.href = qrCodeBase64;
+    link.download = `qrcode-pix-${value.toFixed(2).replace('.', ',')}.png`;
+    link.click();
+    alert('✅ QR Code baixado com sucesso!');
+}
+
 function copyPixLink(accountId, payload) {
     navigator.clipboard.writeText(payload).then(() => {
         const valueInput = document.getElementById(`pix-value-${accountId}`);
