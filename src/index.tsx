@@ -2090,29 +2090,43 @@ app.get('/', (c) => {
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             <!-- Dashboard Section -->
             <div id="dashboard-section" class="section hidden">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                    <div class="bg-white rounded-lg shadow p-6">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <p class="text-gray-500 text-sm">Total de Subcontas</p>
-                                <p class="text-3xl font-bold text-gray-800" id="total-accounts">0</p>
-                            </div>
-                            <div class="bg-blue-100 rounded-full p-3">
-                                <i class="fas fa-users text-blue-600 text-2xl"></i>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="bg-white rounded-lg shadow p-6">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <p class="text-gray-500 text-sm">Cobranças PIX</p>
-                                <p class="text-3xl font-bold text-gray-800" id="total-payments">0</p>
-                            </div>
-                            <div class="bg-green-100 rounded-full p-3">
-                                <i class="fas fa-qrcode text-green-600 text-2xl"></i>
-                            </div>
-                        </div>
+                <!-- Quick Actions - TOPO -->
+                <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                    <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                        <i class="fas fa-bolt mr-2 text-yellow-500"></i>
+                        Ações Rápidas
+                    </h3>
+                    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                        <button onclick="showSection('dashboard')" 
+                            class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 font-semibold shadow-md transition">
+                            <i class="fas fa-chart-line text-3xl"></i>
+                            <span class="text-sm">Dashboard</span>
+                        </button>
+                        <button onclick="showSection('accounts')" 
+                            class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 font-semibold shadow-md transition">
+                            <i class="fas fa-user-plus text-3xl"></i>
+                            <span class="text-sm">Criar Subconta</span>
+                        </button>
+                        <button onclick="showSection('accounts'); setTimeout(() => document.querySelector('#link-modal') && openLinkModal(), 100)" 
+                            class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:from-purple-600 hover:to-pink-600 font-semibold shadow-md transition">
+                            <i class="fas fa-link text-3xl"></i>
+                            <span class="text-sm">Gerar Link</span>
+                        </button>
+                        <button onclick="showSection('accounts')" 
+                            class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 font-semibold shadow-md transition">
+                            <i class="fas fa-list text-3xl"></i>
+                            <span class="text-sm">Ver Subcontas</span>
+                        </button>
+                        <button onclick="showSection('reports')" 
+                            class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-lg hover:from-orange-600 hover:to-red-600 font-semibold shadow-md transition">
+                            <i class="fas fa-chart-bar text-3xl"></i>
+                            <span class="text-sm">Relatórios</span>
+                        </button>
+                        <button onclick="showSection('payment-links')" 
+                            class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-lg hover:from-cyan-600 hover:to-blue-600 font-semibold shadow-md transition">
+                            <i class="fas fa-money-bill-wave text-3xl"></i>
+                            <span class="text-sm">Links Pagamento</span>
+                        </button>
                     </div>
                 </div>
 
@@ -2224,46 +2238,6 @@ app.get('/', (c) => {
                             <div id="recent-activity" class="space-y-3 max-h-64 overflow-y-auto">
                                 <p class="text-gray-500 text-center py-8">Carregando...</p>
                             </div>
-                        </div>
-                    </div>
-
-                    <!-- Quick Actions -->
-                    <div class="bg-white rounded-lg shadow-md p-6">
-                        <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
-                            <i class="fas fa-bolt mr-2 text-yellow-500"></i>
-                            Ações Rápidas
-                        </h3>
-                        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                            <button onclick="showSection('dashboard')" 
-                                class="flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 font-semibold shadow-md transition">
-                                <i class="fas fa-chart-line text-2xl"></i>
-                                <span>Dashboard</span>
-                            </button>
-                            <button onclick="showSection('accounts')" 
-                                class="flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 font-semibold shadow-md transition">
-                                <i class="fas fa-user-plus text-2xl"></i>
-                                <span>Criar Subconta</span>
-                            </button>
-                            <button onclick="showSection('accounts'); setTimeout(() => document.querySelector('#link-modal') && openLinkModal(), 100)" 
-                                class="flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:from-purple-600 hover:to-pink-600 font-semibold shadow-md transition">
-                                <i class="fas fa-link text-2xl"></i>
-                                <span>Gerar Link</span>
-                            </button>
-                            <button onclick="showSection('accounts')" 
-                                class="flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 font-semibold shadow-md transition">
-                                <i class="fas fa-list text-2xl"></i>
-                                <span>Ver Subcontas</span>
-                            </button>
-                            <button onclick="showSection('reports')" 
-                                class="flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-lg hover:from-orange-600 hover:to-red-600 font-semibold shadow-md transition">
-                                <i class="fas fa-chart-bar text-2xl"></i>
-                                <span>Relatórios</span>
-                            </button>
-                            <button onclick="showSection('payment-links')" 
-                                class="flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-lg hover:from-cyan-600 hover:to-blue-600 font-semibold shadow-md transition">
-                                <i class="fas fa-money-bill-wave text-2xl"></i>
-                                <span>Links Pagamento</span>
-                            </button>
                         </div>
                     </div>
                 </div>
@@ -3228,8 +3202,8 @@ app.get('/', (c) => {
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-        <script src="/static/app.js?v=3.0"></script>
-        <script src="/static/payment-links.js?v=3.0"></script>
+        <script src="/static/app.js?v=3.1"></script>
+        <script src="/static/payment-links.js?v=3.1"></script>
     </body>
     </html>
   `)
