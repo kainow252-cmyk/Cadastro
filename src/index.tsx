@@ -3218,7 +3218,7 @@ app.post('/api/webhooks/asaas', async (c) => {
   try {
     // Validar token de segurança (opcional mas recomendado)
     const receivedToken = c.req.header('asaas-access-token')
-    const expectedToken = c.env.ASAAS_WEBHOOK_TOKEN || c.env.ASAAS_API_KEY
+    const expectedToken = c.env.ASAAS_WEBHOOK_TOKEN // Apenas token específico, não API_KEY
     
     // Se tiver token configurado, validar
     if (expectedToken && receivedToken !== expectedToken) {
