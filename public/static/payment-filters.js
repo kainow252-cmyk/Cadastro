@@ -1,10 +1,10 @@
 // ===== FILTROS E RELATÓRIOS DE PAGAMENTOS =====
 
-// Estado global dos filtros
-let currentLinkId = null;
-let currentLinkName = null;
-let allPayments = [];
-let filteredPayments = [];
+// Estado global dos filtros (acessados via window para compatibilidade)
+if (typeof window.window.currentLinkId === 'undefined') window.window.currentLinkId = null;
+if (typeof window.window.currentLinkName === 'undefined') window.window.currentLinkName = null;
+if (typeof window.window.allPayments === 'undefined') window.window.allPayments = [];
+if (typeof window.window.filteredPayments === 'undefined') window.window.filteredPayments = [];
 
 // Aplicar filtros
 function applyPaymentFilters() {
@@ -14,7 +14,7 @@ function applyPaymentFilters() {
     const endDate = document.getElementById('payment-end-date')?.value || '';
     const monthFilter = document.getElementById('payment-month-filter')?.value || '';
     
-    filteredPayments = allPayments.filter(payment => {
+    window.window.filteredPayments = window.window.allPayments.filter(payment => {
         // Filtro de busca (nome do cliente ou ID)
         if (searchTerm) {
             const customerMatch = (payment.customer || '').toLowerCase().includes(searchTerm);
@@ -81,11 +81,11 @@ function renderFilteredPayments() {
     };
     
     // Calcular estatísticas
-    const totalValue = filteredPayments.reduce((sum, p) => sum + (p.value || 0), 0);
-    const totalNetValue = filteredPayments.reduce((sum, p) => sum + (p.netValue || p.value || 0), 0);
-    const receivedCount = filteredPayments.filter(p => p.status === 'RECEIVED' || p.status === 'CONFIRMED').length;
-    const pendingCount = filteredPayments.filter(p => p.status === 'PENDING').length;
-    const overdueCount = filteredPayments.filter(p => p.status === 'OVERDUE').length;
+    const totalValue = window.filteredPayments.reduce((sum, p) => sum + (p.value || 0), 0);
+    const totalNetValue = window.filteredPayments.reduce((sum, p) => sum + (p.netValue || p.value || 0), 0);
+    const receivedCount = window.filteredPayments.filter(p => p.status === 'RECEIVED' || p.status === 'CONFIRMED').length;
+    const pendingCount = window.filteredPayments.filter(p => p.status === 'PENDING').length;
+    const overdueCount = window.filteredPayments.filter(p => p.status === 'OVERDUE').length;
     
     let html = `
         <div class="mb-6">
@@ -93,7 +93,7 @@ function renderFilteredPayments() {
             <div class="flex items-center justify-between mb-4">
                 <h3 class="text-xl font-bold text-gray-800">
                     <i class="fas fa-money-bill-wave text-green-600 mr-2"></i>
-                    Pagamentos: ${currentLinkName}
+                    Pagamentos: ${window.currentLinkName}
                 </h3>
                 <div class="flex gap-2">
                     <button onclick="exportPaymentsExcel()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 font-semibold text-sm">
@@ -153,13 +153,13 @@ function renderFilteredPayments() {
                         <i class="fas fa-times mr-2"></i>Limpar Filtros
                     </button>
                     <span class="text-sm text-gray-600 px-3 py-2">
-                        Mostrando <strong>${filteredPayments.length}</strong> de <strong>${allPayments.length}</strong> pagamentos
+                        Mostrando <strong>${window.filteredPayments.length}</strong> de <strong>${window.allPayments.length}</strong> pagamentos
                     </span>
                 </div>
             </div>
     `;
     
-    if (filteredPayments.length === 0) {
+    if (window.filteredPayments.length === 0) {
         html += `
             <div class="text-center py-12 bg-gray-50 rounded-lg">
                 <i class="fas fa-search text-gray-300 text-6xl mb-4"></i>
@@ -174,21 +174,21 @@ function renderFilteredPayments() {
                 <div class="bg-gradient-to-r from-green-500 to-emerald-600 text-white p-4 rounded-lg shadow">
                     <p class="text-sm opacity-90">Recebidos</p>
                     <p class="text-2xl font-bold">${receivedCount}</p>
-                    <p class="text-xs opacity-75">${formatCurrency(filteredPayments.filter(p => p.status === 'RECEIVED' || p.status === 'CONFIRMED').reduce((sum, p) => sum + (p.value || 0), 0))}</p>
+                    <p class="text-xs opacity-75">${formatCurrency(window.filteredPayments.filter(p => p.status === 'RECEIVED' || p.status === 'CONFIRMED').reduce((sum, p) => sum + (p.value || 0), 0))}</p>
                 </div>
                 <div class="bg-gradient-to-r from-yellow-500 to-amber-600 text-white p-4 rounded-lg shadow">
                     <p class="text-sm opacity-90">Pendentes</p>
                     <p class="text-2xl font-bold">${pendingCount}</p>
-                    <p class="text-xs opacity-75">${formatCurrency(filteredPayments.filter(p => p.status === 'PENDING').reduce((sum, p) => sum + (p.value || 0), 0))}</p>
+                    <p class="text-xs opacity-75">${formatCurrency(window.filteredPayments.filter(p => p.status === 'PENDING').reduce((sum, p) => sum + (p.value || 0), 0))}</p>
                 </div>
                 <div class="bg-gradient-to-r from-red-500 to-rose-600 text-white p-4 rounded-lg shadow">
                     <p class="text-sm opacity-90">Vencidos</p>
                     <p class="text-2xl font-bold">${overdueCount}</p>
-                    <p class="text-xs opacity-75">${formatCurrency(filteredPayments.filter(p => p.status === 'OVERDUE').reduce((sum, p) => sum + (p.value || 0), 0))}</p>
+                    <p class="text-xs opacity-75">${formatCurrency(window.filteredPayments.filter(p => p.status === 'OVERDUE').reduce((sum, p) => sum + (p.value || 0), 0))}</p>
                 </div>
                 <div class="bg-gradient-to-r from-blue-500 to-indigo-600 text-white p-4 rounded-lg shadow">
                     <p class="text-sm opacity-90">Total</p>
-                    <p class="text-2xl font-bold">${filteredPayments.length}</p>
+                    <p class="text-2xl font-bold">${window.filteredPayments.length}</p>
                     <p class="text-xs opacity-75">Bruto: ${formatCurrency(totalValue)} | Líquido: ${formatCurrency(totalNetValue)}</p>
                 </div>
             </div>
@@ -209,7 +209,7 @@ function renderFilteredPayments() {
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-200">
-                            ${filteredPayments.map(payment => `
+                            ${window.filteredPayments.map(payment => `
                                 <tr class="hover:bg-gray-50 transition">
                                     <td class="px-4 py-3">
                                         <div>
@@ -251,7 +251,7 @@ function clearPaymentFilters() {
     document.getElementById('payment-start-date').value = '';
     document.getElementById('payment-end-date').value = '';
     document.getElementById('payment-month-filter').value = '';
-    filteredPayments = [...allPayments];
+    window.filteredPayments = [...window.allPayments];
     renderFilteredPayments();
 }
 
@@ -262,7 +262,7 @@ function exportPaymentsExcel() {
         return;
     }
     
-    const data = filteredPayments.map(p => ({
+    const data = window.filteredPayments.map(p => ({
         'Cliente': p.customer || 'N/A',
         'ID': p.id,
         'Status': p.status,
@@ -277,7 +277,7 @@ function exportPaymentsExcel() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Pagamentos');
     
-    const fileName = `pagamentos_${currentLinkName}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    const fileName = `pagamentos_${window.currentLinkName}_${new Date().toISOString().split('T')[0]}.xlsx`;
     XLSX.writeFile(wb, fileName);
 }
 
@@ -294,20 +294,20 @@ function exportPaymentsPDF() {
     doc.setFontSize(16);
     doc.text(`Relatório de Pagamentos`, 14, 15);
     doc.setFontSize(12);
-    doc.text(`Link: ${currentLinkName}`, 14, 22);
+    doc.text(`Link: ${window.currentLinkName}`, 14, 22);
     doc.setFontSize(10);
     doc.text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 14, 28);
     
     // Estatísticas
-    const totalValue = filteredPayments.reduce((sum, p) => sum + (p.value || 0), 0);
-    const receivedCount = filteredPayments.filter(p => p.status === 'RECEIVED' || p.status === 'CONFIRMED').length;
+    const totalValue = window.filteredPayments.reduce((sum, p) => sum + (p.value || 0), 0);
+    const receivedCount = window.filteredPayments.filter(p => p.status === 'RECEIVED' || p.status === 'CONFIRMED').length;
     
-    doc.text(`Total de Pagamentos: ${filteredPayments.length}`, 14, 35);
+    doc.text(`Total de Pagamentos: ${window.filteredPayments.length}`, 14, 35);
     doc.text(`Pagamentos Recebidos: ${receivedCount}`, 14, 40);
     doc.text(`Valor Total: R$ ${totalValue.toFixed(2)}`, 14, 45);
     
     // Tabela
-    const tableData = filteredPayments.map(p => [
+    const tableData = window.filteredPayments.map(p => [
         p.customer || 'Cliente',
         p.status,
         `R$ ${(p.value || 0).toFixed(2)}`,
@@ -322,6 +322,6 @@ function exportPaymentsPDF() {
         headStyles: { fillColor: [34, 197, 94] }
     });
     
-    const fileName = `pagamentos_${currentLinkName}_${new Date().toISOString().split('T')[0]}.pdf`;
+    const fileName = `pagamentos_${window.currentLinkName}_${new Date().toISOString().split('T')[0]}.pdf`;
     doc.save(fileName);
 }

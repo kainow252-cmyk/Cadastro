@@ -3270,7 +3270,7 @@ app.get('/', (c) => {
         <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
         <script src="/static/app.js?v=3.6"></script>
         <script src="/static/payment-links.js?v=3.6"></script>
-        <script src="/static/payment-filters.js?v=1.0"></script>
+        <script src="/static/payment-filters.js?v=1.1"></script>
     </body>
     </html>
   `)
