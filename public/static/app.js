@@ -38,6 +38,8 @@ function showSection(section) {
         loadRecentPayments();
     } else if (section === 'api-keys') {
         loadSubaccountsFilter();
+    } else if (section === 'reports') {
+        loadReportAccounts();
     }
 }
 
@@ -1967,7 +1969,7 @@ window.showSection = function(section) {
     }
     
     // Iniciar/parar auto-refresh baseado na seção
-    if (section === 'overview') {
+    if (section === 'dashboard') {
         startDashboardAutoRefresh();
     } else {
         stopDashboardAutoRefresh();
