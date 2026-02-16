@@ -3269,7 +3269,8 @@ app.get('/', (c) => {
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
         <script src="/static/app.js?v=3.5"></script>
-        <script src="/static/payment-links.js?v=3.3"></script>
+        <script src="/static/payment-links.js?v=3.4"></script>
+        <script src="/static/payment-filters.js?v=1.0"></script>
     </body>
     </html>
   `)

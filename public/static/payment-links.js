@@ -295,125 +295,32 @@ async function deletePaymentLink(linkId) {
     }
 }
 
-// Visualizar pagamentos de um link
+// Visualizar pagamentos de um link (integra com payment-filters.js)
 async function viewLinkPayments(linkId, linkName) {
     try {
         const response = await axios.get(`/api/payment-links/${linkId}/payments`);
-        const payments = response.data.data || [];
         
-        const formatCurrency = (value) => {
-            return new Intl.NumberFormat('pt-BR', {
-                style: 'currency',
-                currency: 'BRL'
-            }).format(value);
-        };
+        // Definir variáveis globais para payment-filters.js
+        window.currentLinkId = linkId;
+        window.currentLinkName = linkName;
+        window.allPayments = response.data.data || [];
+        window.filteredPayments = [...window.allPayments];
         
-        const getStatusBadge = (status) => {
-            const statusConfig = {
-                'PENDING': { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Pendente' },
-                'RECEIVED': { bg: 'bg-green-100', text: 'text-green-700', label: 'Recebido' },
-                'CONFIRMED': { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Confirmado' },
-                'OVERDUE': { bg: 'bg-red-100', text: 'text-red-700', label: 'Vencido' },
-                'REFUNDED': { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Reembolsado' }
-            };
-            const config = statusConfig[status] || { bg: 'bg-gray-100', text: 'text-gray-700', label: status };
-            return `<span class="px-2 py-1 rounded-full text-xs font-semibold ${config.bg} ${config.text}">${config.label}</span>`;
-        };
-        
-        const formatDate = (dateString) => {
-            return new Date(dateString).toLocaleString('pt-BR');
-        };
-        
-        let html = `
-            <div class="mb-6">
-                <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-xl font-bold text-gray-800">
-                        <i class="fas fa-money-bill-wave text-green-600 mr-2"></i>
-                        Pagamentos do Link: ${linkName}
-                    </h3>
-                    <button onclick="loadPaymentLinks()" class="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600">
-                        <i class="fas fa-arrow-left mr-2"></i>Voltar
-                    </button>
-                </div>
-        `;
-        
-        if (payments.length === 0) {
-            html += `
-                <div class="text-center py-12 bg-gray-50 rounded-lg">
-                    <i class="fas fa-receipt text-gray-300 text-6xl mb-4"></i>
-                    <p class="text-gray-600 text-lg">Nenhum pagamento realizado ainda</p>
-                    <p class="text-gray-500 text-sm mt-2">Compartilhe o link para receber pagamentos</p>
-                </div>
-            `;
+        // Renderizar com filtros
+        if (typeof renderFilteredPayments === 'function') {
+            renderFilteredPayments();
         } else {
-            html += `
-                <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-                    <div class="bg-gradient-to-r from-green-500 to-emerald-600 text-white p-4">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <p class="text-sm opacity-90">Total de Pagamentos</p>
-                                <p class="text-3xl font-bold">${payments.length}</p>
-                            </div>
-                            <div class="text-right">
-                                <p class="text-sm opacity-90">Valor Total</p>
-                                <p class="text-3xl font-bold">${formatCurrency(payments.reduce((sum, p) => sum + (p.value || 0), 0))}</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="divide-y divide-gray-200">
-                        ${payments.map(payment => `
-                            <div class="p-4 hover:bg-gray-50 transition">
-                                <div class="flex justify-between items-start mb-2">
-                                    <div>
-                                        <p class="font-semibold text-gray-800">${payment.customer || 'Cliente'}</p>
-                                        <p class="text-sm text-gray-600">ID: ${payment.id}</p>
-                                    </div>
-                                    ${getStatusBadge(payment.status)}
-                                </div>
-                                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm mt-3">
-                                    <div>
-                                        <span class="text-gray-500">Valor:</span>
-                                        <span class="font-semibold ml-1">${formatCurrency(payment.value)}</span>
-                                    </div>
-                                    <div>
-                                        <span class="text-gray-500">Líquido:</span>
-                                        <span class="font-semibold ml-1 text-green-600">${formatCurrency(payment.netValue || payment.value)}</span>
-                                    </div>
-                                    <div>
-                                        <span class="text-gray-500">Criado:</span>
-                                        <span class="font-semibold ml-1">${formatDate(payment.dateCreated)}</span>
-                                    </div>
-                                    <div>
-                                        <span class="text-gray-500">Vencimento:</span>
-                                        <span class="font-semibold ml-1">${payment.dueDate || 'N/A'}</span>
-                                    </div>
-                                </div>
-                                ${payment.description ? `<p class="text-sm text-gray-600 mt-2">${payment.description}</p>` : ''}
-                                ${payment.invoiceUrl ? `
-                                    <a href="${payment.invoiceUrl}" target="_blank" 
-                                        class="inline-block mt-2 text-blue-600 hover:text-blue-700 text-sm font-semibold">
-                                        <i class="fas fa-file-invoice mr-1"></i>Ver Fatura
-                                    </a>
-                                ` : ''}
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-            `;
+            console.error('payment-filters.js não carregado');
+            alert('Erro: Módulo de filtros não carregado. Recarregue a página.');
         }
-        
-        html += `</div>`;
-        
-        document.getElementById('payment-links-list').innerHTML = html;
     } catch (error) {
         console.error('Erro ao carregar pagamentos:', error);
         alert('Erro ao carregar pagamentos: ' + (error.response?.data?.error || error.message));
     }
 }
 
-// Função auxiliar para copiar para clipboard
-function copyToClipboard(text) {
+
+// Renderizar pagamentos com filtros - Ver payment-filters.js
     navigator.clipboard.writeText(text).then(() => {
         alert('Link copiado para a área de transferência!');
     }).catch(err => {
