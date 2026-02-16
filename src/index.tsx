@@ -2949,54 +2949,61 @@ app.get('/', (c) => {
                     <form id="payment-link-form" class="space-y-4">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-2">Subconta *</label>
-                                <select id="paylink-account" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
-                                    <option value="">Selecione uma subconta...</option>
-                                </select>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">Nome do Link *</label>
+                                <input type="text" id="paylink-name" required 
+                                    placeholder="Ex: Venda de produtos"
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
                             </div>
                             <div>
                                 <label class="block text-sm font-semibold text-gray-700 mb-2">Tipo de Cobrança *</label>
                                 <select id="paylink-billing-type" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
                                     <option value="UNDEFINED">Todas (PIX + Cartão + Boleto)</option>
-                                    <option value="PIX">PIX</option>
-                                    <option value="CREDIT_CARD">Cartão de Crédito</option>
-                                    <option value="BOLETO">Boleto</option>
+                                    <option value="PIX">PIX apenas</option>
+                                    <option value="CREDIT_CARD">Cartão de Crédito apenas</option>
+                                    <option value="BOLETO">Boleto apenas</option>
                                 </select>
                             </div>
                         </div>
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-2">Nome do Link *</label>
-                                <input type="text" id="paylink-name" required 
-                                    placeholder="Ex: Pagamento de Serviço"
-                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
-                            </div>
-                            <div>
                                 <label class="block text-sm font-semibold text-gray-700 mb-2">Tipo de Valor *</label>
                                 <select id="paylink-charge-type" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
-                                    <option value="DETACHED">Valor Fixo</option>
-                                    <option value="RECURRENT">Assinatura/Recorrente</option>
+                                    <option value="DETACHED">Pagamento Único (Valor Fixo)</option>
+                                    <option value="RECURRENT">Assinatura Recorrente</option>
+                                    <option value="INSTALLMENT">Parcelado (Cartão)</option>
                                 </select>
                             </div>
-                        </div>
-
-                        <div id="paylink-fixed-value-section" class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-2">Valor (R$) *</label>
-                                <input type="number" id="paylink-value" required step="0.01" min="0.01" 
-                                    placeholder="10.00"
-                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-2">Data de Vencimento (opcional)</label>
-                                <input type="date" id="paylink-due-date" 
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">Descrição (Opcional)</label>
+                                <input type="text" id="paylink-description" 
+                                    placeholder="Ex: Qualquer produto por R$ 50,00"
                                     class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
                             </div>
                         </div>
 
+                        <!-- Pagamento Único -->
+                        <div id="paylink-detached-section" class="space-y-4">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">Valor (R$) *</label>
+                                    <input type="number" id="paylink-value" required step="0.01" min="0.01" 
+                                        placeholder="50.00"
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">Dias até vencimento (para Boleto)</label>
+                                    <input type="number" id="paylink-due-days" min="1" value="10"
+                                        placeholder="10"
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
+                                    <p class="text-xs text-gray-500 mt-1">Quantidade de dias após a compra para o boleto vencer</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Assinatura Recorrente -->
                         <div id="paylink-recurrent-section" class="hidden space-y-4">
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                                     <label class="block text-sm font-semibold text-gray-700 mb-2">Valor (R$) *</label>
                                     <input type="number" id="paylink-recurrent-value" step="0.01" min="0.01" 
@@ -3004,30 +3011,55 @@ app.get('/', (c) => {
                                         class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
                                 </div>
                                 <div>
-                                    <label class="block text-sm font-semibold text-gray-700 mb-2">Ciclo *</label>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">Ciclo de Cobrança *</label>
                                     <select id="paylink-cycle" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
-                                        <option value="MONTHLY">Mensal</option>
                                         <option value="WEEKLY">Semanal</option>
-                                        <option value="BIWEEKLY">Quinzenal</option>
-                                        <option value="QUARTERLY">Trimestral</option>
-                                        <option value="SEMIANNUALLY">Semestral</option>
-                                        <option value="YEARLY">Anual</option>
+                                        <option value="BIWEEKLY">Quinzenal (14 dias)</option>
+                                        <option value="MONTHLY" selected>Mensal</option>
+                                        <option value="QUARTERLY">Trimestral (3 meses)</option>
+                                        <option value="SEMIANNUALLY">Semestral (6 meses)</option>
+                                        <option value="YEARLY">Anual (12 meses)</option>
                                     </select>
-                                </div>
-                                <div>
-                                    <label class="block text-sm font-semibold text-gray-700 mb-2">Duração (meses)</label>
-                                    <input type="number" id="paylink-duration" min="1" 
-                                        placeholder="12 (vazio = indeterminado)"
-                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
                                 </div>
                             </div>
                         </div>
 
-                        <div>
-                            <label class="block text-sm font-semibold text-gray-700 mb-2">Descrição</label>
-                            <textarea id="paylink-description" rows="3" 
-                                placeholder="Descreva o produto ou serviço..."
-                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500"></textarea>
+                        <!-- Parcelamento (Cartão) -->
+                        <div id="paylink-installment-section" class="hidden space-y-4">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">Valor Total (R$) *</label>
+                                    <input type="number" id="paylink-installment-value" step="0.01" min="0.01" 
+                                        placeholder="500.00"
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">Parcelas Máximas *</label>
+                                    <select id="paylink-max-installments" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
+                                        <option value="2">2x</option>
+                                        <option value="3">3x</option>
+                                        <option value="4">4x</option>
+                                        <option value="5">5x</option>
+                                        <option value="6" selected>6x</option>
+                                        <option value="7">7x</option>
+                                        <option value="8">8x</option>
+                                        <option value="9">9x</option>
+                                        <option value="10">10x</option>
+                                        <option value="11">11x</option>
+                                        <option value="12">12x</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="flex items-center">
+                                <input type="checkbox" id="paylink-notification" 
+                                    class="w-4 h-4 text-cyan-600 border-gray-300 rounded focus:ring-cyan-500">
+                                <label for="paylink-notification" class="ml-2 text-sm text-gray-700">
+                                    Ativar notificações (Email/SMS) - R$ 0,85 por cobrança
+                                </label>
+                            </div>
                         </div>
 
                         <div class="flex justify-end gap-3">
@@ -3196,7 +3228,8 @@ app.get('/', (c) => {
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-        <script src="/static/app.js?v=2.9.3"></script>
+        <script src="/static/app.js?v=3.0"></script>
+        <script src="/static/payment-links.js?v=3.0"></script>
     </body>
     </html>
   `)

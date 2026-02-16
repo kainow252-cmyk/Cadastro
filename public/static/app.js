@@ -2375,36 +2375,16 @@ function exportReportExcel() {
 
 // ===== FUNÇÕES DE LINKS DE PAGAMENTO =====
 
-// Carregar subcontas no select de links de pagamento
-async function loadPaymentLinkAccounts() {
-    try {
-        const response = await axios.get('/api/accounts');
-        const accounts = response.data.accounts || [];
-        
-        const select = document.getElementById('paylink-account');
-        select.innerHTML = '<option value="">Selecione uma subconta...</option>';
-        
-        accounts.forEach(account => {
-            if (account.walletId) { // Apenas aprovadas
-                const option = document.createElement('option');
-                option.value = account.id;
-                option.textContent = `${account.name} (${account.email})`;
-                select.appendChild(option);
-            }
-        });
-    } catch (error) {
-        console.error('Erro ao carregar subcontas:', error);
-    }
-}
-
-// Alternar entre valor fixo e recorrente
+// Alternar entre tipos de cobrança
 document.addEventListener('DOMContentLoaded', () => {
     const chargeTypeSelect = document.getElementById('paylink-charge-type');
     const billingTypeSelect = document.getElementById('paylink-billing-type');
-    const fixedSection = document.getElementById('paylink-fixed-value-section');
+    const detachedSection = document.getElementById('paylink-detached-section');
     const recurrentSection = document.getElementById('paylink-recurrent-section');
+    const installmentSection = document.getElementById('paylink-installment-section');
     const valueInput = document.getElementById('paylink-value');
     const recurrentValueInput = document.getElementById('paylink-recurrent-value');
+    const installmentValueInput = document.getElementById('paylink-installment-value');
     
     // Função para verificar se pode usar recorrente
     const updateRecurrentAvailability = () => {
