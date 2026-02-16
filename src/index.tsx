@@ -2271,6 +2271,13 @@ app.get('/', (c) => {
 
             <!-- Accounts Section -->
             <div id="accounts-section" class="section">
+                <div class="mb-4">
+                    <button onclick="showSection('dashboard')" 
+                        class="flex items-center gap-2 text-gray-600 hover:text-gray-800 font-semibold transition">
+                        <i class="fas fa-arrow-left"></i>
+                        <span>Voltar ao Dashboard</span>
+                    </button>
+                </div>
                 <!-- Formulário de Nova Subconta -->
                 <div class="bg-white rounded-lg shadow mb-6">
                     <div class="p-6 border-b border-gray-200">
@@ -2599,6 +2606,13 @@ app.get('/', (c) => {
 
             <!-- PIX Section (HIDDEN) -->
             <div id="pix-section" class="section hidden" style="display: none;">
+                <div class="mb-4">
+                    <button onclick="showSection('dashboard')" 
+                        class="flex items-center gap-2 text-gray-600 hover:text-gray-800 font-semibold transition">
+                        <i class="fas fa-arrow-left"></i>
+                        <span>Voltar ao Dashboard</span>
+                    </button>
+                </div>
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <!-- Gerar Cobrança PIX -->
                     <div class="bg-white rounded-lg shadow">
@@ -2805,6 +2819,13 @@ app.get('/', (c) => {
 
             <!-- API Keys Section (HIDDEN) -->
             <div id="api-keys-section" class="section hidden" style="display: none;">
+                <div class="mb-4">
+                    <button onclick="showSection('dashboard')" 
+                        class="flex items-center gap-2 text-gray-600 hover:text-gray-800 font-semibold transition">
+                        <i class="fas fa-arrow-left"></i>
+                        <span>Voltar ao Dashboard</span>
+                    </button>
+                </div>
                 <div class="bg-white rounded-lg shadow mb-6">
                     <div class="p-6 border-b border-gray-200">
                         <h2 class="text-2xl font-bold text-gray-800">
@@ -2840,6 +2861,13 @@ app.get('/', (c) => {
 
         <!-- Reports Section -->
         <div id="reports-section" class="section hidden">
+            <div class="mb-4">
+                <button onclick="showSection('dashboard')" 
+                    class="flex items-center gap-2 text-gray-600 hover:text-gray-800 font-semibold transition">
+                    <i class="fas fa-arrow-left"></i>
+                    <span>Voltar ao Dashboard</span>
+                </button>
+            </div>
             <div class="bg-white rounded-lg shadow mb-6">
                 <div class="p-6 border-b border-gray-200">
                     <h2 class="text-xl font-bold text-gray-800">
@@ -2896,6 +2924,13 @@ app.get('/', (c) => {
 
         <!-- Payment Links Section -->
         <div id="payment-links-section" class="section hidden">
+            <div class="mb-4">
+                <button onclick="showSection('dashboard')" 
+                    class="flex items-center gap-2 text-gray-600 hover:text-gray-800 font-semibold transition">
+                    <i class="fas fa-arrow-left"></i>
+                    <span>Voltar ao Dashboard</span>
+                </button>
+            </div>
             <div class="bg-white rounded-lg shadow mb-6">
                 <div class="p-6 border-b border-gray-200">
                     <h2 class="text-xl font-bold text-gray-800">
@@ -3161,7 +3196,7 @@ app.get('/', (c) => {
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-        <script src="/static/app.js?v=2.9.2"></script>
+        <script src="/static/app.js?v=2.9.3"></script>
     </body>
     </html>
   `)
