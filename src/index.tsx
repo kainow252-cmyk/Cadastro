@@ -733,6 +733,28 @@ app.get('/api/payment-links', async (c) => {
   }
 })
 
+// Buscar QR Code PIX de um pagamento
+app.get('/api/payments/:id/pixqrcode', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const result = await asaasRequest(c, `/payments/${id}/pixQrCode`)
+    
+    if (!result.ok) {
+      return c.json({ 
+        error: 'Erro ao buscar QR Code',
+        details: result.data 
+      }, result.status || 400)
+    }
+    
+    return c.json({
+      ok: true,
+      data: result.data
+    })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 // Deletar link de pagamento
 app.delete('/api/payment-links/:id', async (c) => {
   try {
@@ -921,13 +943,97 @@ app.post('/api/pix/static', async (c) => {
       return c.json({ error: 'Valor deve ser maior que zero' }, 400)
     }
     
-    // Gerar payload PIX manualmente (EMV format)
-    const payload = generateStaticPixPayload(walletId, value, description || '')
+    // NOVA ABORDAGEM: Criar cobrança PIX via API Asaas
+    // Isso garante QR Code válido gerado pelo próprio Asaas
     
-    // Gerar QR Code em base64
-    const qrCodeBase64 = await generateQRCodeBase64(payload)
+    // Buscar customer genérico ou criar um novo
+    const cpfGenerico = '24971563792' // CPF válido para QR Code estático
+    const searchResult = await asaasRequest(c, `/customers?cpfCnpj=${cpfGenerico}`)
     
-    // Salvar no banco de dados para aplicar split quando pagamento for recebido
+    let customerId
+    if (searchResult.ok && searchResult.data?.data?.[0]?.id) {
+      customerId = searchResult.data.data[0].id
+      console.log('✅ Customer existente encontrado:', customerId)
+    } else {
+      // Criar customer genérico
+      const customerData = {
+        name: 'Cliente QR Code Estático',
+        cpfCnpj: cpfGenerico,
+        email: 'qrcode@static.pix',
+        notificationDisabled: true
+      }
+      
+      const createResult = await asaasRequest(c, '/customers', 'POST', customerData)
+      if (!createResult.ok || !createResult.data?.id) {
+        return c.json({ 
+          error: 'Erro ao criar customer',
+          details: createResult.data 
+        }, 400)
+      }
+      
+      customerId = createResult.data.id
+      console.log('✅ Customer criado:', customerId)
+    }
+    
+    // Criar cobrança PIX com split
+    const dueDate = new Date()
+    dueDate.setDate(dueDate.getDate() + 7) // 7 dias de validade
+    
+    const chargeData = {
+      customer: customerId,
+      billingType: 'PIX',
+      value: value,
+      dueDate: dueDate.toISOString().split('T')[0],
+      description: description || 'Pagamento via PIX',
+      split: [{
+        walletId: walletId, // CORREÇÃO: usar walletId (chave PIX) ao invés de accountId
+        percentualValue: 20  // 20% para subconta
+      }]
+    }
+    
+    console.log('📝 Criando cobrança PIX:', JSON.stringify(chargeData, null, 2))
+    
+    const chargeResult = await asaasRequest(c, '/payments', 'POST', chargeData)
+    
+    console.log('📊 Resultado cobrança:', JSON.stringify({
+      ok: chargeResult.ok,
+      status: chargeResult.status,
+      hasData: !!chargeResult.data,
+      errorCode: chargeResult.data?.errors?.[0]?.code,
+      errorDesc: chargeResult.data?.errors?.[0]?.description
+    }))
+    
+    if (!chargeResult.ok) {
+      return c.json({ 
+        error: 'Erro ao criar cobrança PIX',
+        details: chargeResult.data 
+      }, 400)
+    }
+    
+    const payment = chargeResult.data
+    
+    console.log('✅ Cobrança criada:', payment.id, 'Status:', payment.status)
+    
+    // Buscar QR Code da cobrança
+    const qrCodeResult = await asaasRequest(c, `/payments/${payment.id}/pixQrCode`)
+    
+    console.log('📊 Resposta QR Code:', JSON.stringify({
+      ok: qrCodeResult.ok,
+      hasData: !!qrCodeResult.data,
+      hasPayload: !!qrCodeResult.data?.payload,
+      hasEncodedImage: !!qrCodeResult.data?.encodedImage
+    }))
+    
+    if (!qrCodeResult.ok || !qrCodeResult.data) {
+      return c.json({ 
+        error: 'Erro ao gerar QR Code',
+        details: qrCodeResult.data 
+      }, 400)
+    }
+    
+    const pixData = qrCodeResult.data
+    
+    // Salvar no banco para tracking
     const pixId = `pix_static_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     try {
       await c.env.DB.prepare(`
@@ -935,6 +1041,7 @@ app.post('/api/pix/static', async (c) => {
           id TEXT PRIMARY KEY,
           wallet_id TEXT NOT NULL,
           account_id TEXT NOT NULL,
+          payment_id TEXT,
           value REAL NOT NULL,
           description TEXT,
           split_percentage REAL DEFAULT 20,
@@ -943,13 +1050,15 @@ app.post('/api/pix/static', async (c) => {
       `).run()
       
       await c.env.DB.prepare(`
-        INSERT INTO pix_splits (id, wallet_id, account_id, value, description, split_percentage)
-        VALUES (?, ?, ?, ?, ?, 20)
-      `).bind(pixId, walletId, accountId, value, description || '').run()
+        INSERT INTO pix_splits (id, wallet_id, account_id, payment_id, value, description, split_percentage)
+        VALUES (?, ?, ?, ?, ?, ?, 20)
+      `).bind(pixId, walletId, accountId, payment.id, value, description || '').run()
     } catch (dbError: any) {
       console.error('Erro ao salvar split no banco:', dbError)
-      // Continuar mesmo se der erro no banco
     }
+    
+    // Converter imagem do QR Code para base64
+    const qrCodeBase64 = pixData.encodedImage || await generateQRCodeBase64(pixData.payload)
     
     return c.json({
       ok: true,
@@ -958,9 +1067,11 @@ app.post('/api/pix/static', async (c) => {
         accountId,
         value,
         description,
-        payload,
+        payload: pixData.payload,
         qrCodeBase64,
         pixId,
+        paymentId: payment.id,
+        invoiceUrl: payment.invoiceUrl,
         type: 'STATIC',
         splitConfig: {
           subAccount: 20,
@@ -969,6 +1080,7 @@ app.post('/api/pix/static', async (c) => {
       }
     })
   } catch (error: any) {
+    console.error('Erro ao gerar PIX:', error)
     return c.json({ error: error.message }, 500)
   }
 })
