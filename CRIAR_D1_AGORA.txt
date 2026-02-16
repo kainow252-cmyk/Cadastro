@@ -1,0 +1,74 @@
+🚨 ATENÇÃO: Você precisa criar o banco D1 ANTES de configurar!
+
+══════════════════════════════════════════════════════════════════
+
+📋 OPÇÃO 1: Usar Banco Existente (MAIS RÁPIDO - 2 minutos)
+══════════════════════════════════════════════════════════════════
+
+Vejo no seu dashboard que você já tem vários bancos D1 criados:
+- webapp-production
+- integracao-liagaz-production  
+- corretoracorporate-db
+- d1-template-database
+- pastoralnews-production
+- kairnowsuite
+- kairnow-db
+
+✅ RECOMENDAÇÃO: Use "corretoracorporate-db"
+   Parece ser específico para este projeto!
+
+PREENCHA ASSIM:
+┌─────────────────────────────────────────┐
+│ Nome da variável: DB                    │
+│ Banco de dados D1: corretoracorporate-db│
+└─────────────────────────────────────────┘
+
+Depois clique em "Salvar" no canto inferior direito
+
+══════════════════════════════════════════════════════════════════
+
+📋 OPÇÃO 2: Criar Novo Banco D1 (10 minutos)
+══════════════════════════════════════════════════════════════════
+
+Se você prefere criar um banco NOVO específico:
+
+1️⃣ Abra um novo terminal/console
+2️⃣ Execute:
+   npx wrangler d1 create gerenciador-asaas-db
+
+3️⃣ Copie o database_id que aparecer
+4️⃣ Volte para o dashboard
+5️⃣ Selecione "gerenciador-asaas-db" no dropdown
+6️⃣ Preencha:
+   Nome da variável: DB
+   Banco de dados D1: gerenciador-asaas-db
+
+══════════════════════════════════════════════════════════════════
+
+💡 QUAL ESCOLHER?
+══════════════════════════════════════════════════════════════════
+
+✅ Use "corretoracorporate-db" SE:
+   - Quer deploy AGORA (2 minutos)
+   - Esse banco já existe e está vazio/disponível
+   - Não se importa em reusar um banco existente
+
+✅ Crie "gerenciador-asaas-db" SE:
+   - Quer banco dedicado para este projeto
+   - Tem mais 10 minutos
+   - Quer controle total do schema
+
+══════════════════════════════════════════════════════════════════
+
+🔥 RECOMENDAÇÃO FINAL: Use "corretoracorporate-db"
+══════════════════════════════════════════════════════════════════
+
+Pelo nome, parece ser o banco correto para este projeto!
+Basta:
+1. Nome da variável: DB
+2. Banco de dados D1: corretoracorporate-db (selecionar no dropdown)
+3. Clicar em "Salvar"
+
+PRONTO! D1 configurado! ✅
+
+══════════════════════════════════════════════════════════════════
