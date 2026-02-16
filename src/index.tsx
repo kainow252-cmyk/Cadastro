@@ -3209,4 +3209,288 @@ app.get('/', (c) => {
   `)
 })
 
+// ======================
+// WEBHOOKS DO ASAAS
+// ======================
+
+// Endpoint para receber webhooks do Asaas
+app.post('/api/webhooks/asaas', async (c) => {
+  try {
+    // Validar token de segurança (opcional mas recomendado)
+    const receivedToken = c.req.header('asaas-access-token')
+    const expectedToken = c.env.ASAAS_WEBHOOK_TOKEN || c.env.ASAAS_API_KEY
+    
+    // Se tiver token configurado, validar
+    if (expectedToken && receivedToken !== expectedToken) {
+      console.log('Token inválido:', { receivedToken, expectedToken })
+      return c.json({ error: 'Unauthorized' }, 401)
+    }
+
+    // Receber payload do webhook
+    const payload = await c.req.json()
+    const webhookId = `webhook-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    
+    console.log('Webhook recebido:', {
+      id: webhookId,
+      event: payload.event,
+      paymentId: payload.payment?.id,
+      accountId: payload.account?.id
+    })
+
+    // Salvar webhook no banco para processamento posterior
+    await c.env.DB.prepare(`
+      INSERT INTO webhooks (id, event, payload, processed, created_at)
+      VALUES (?, ?, ?, 0, datetime('now'))
+    `).bind(
+      webhookId,
+      payload.event,
+      JSON.stringify(payload)
+    ).run()
+
+    // Processar evento imediatamente
+    await processWebhookEvent(c, payload, webhookId)
+
+    // Retornar sucesso (importante para o Asaas saber que recebeu)
+    return c.json({ 
+      ok: true, 
+      message: 'Webhook recebido',
+      webhookId 
+    })
+
+  } catch (error: any) {
+    console.error('Erro ao processar webhook:', error)
+    // Mesmo com erro, retornar 200 para não reenviar
+    return c.json({ 
+      ok: false, 
+      error: error.message,
+      message: 'Erro ao processar webhook'
+    }, 500)
+  }
+})
+
+// Função auxiliar para processar eventos do webhook
+async function processWebhookEvent(c: any, payload: any, webhookId: string) {
+  const event = payload.event
+  
+  try {
+    switch (event) {
+      // Eventos de Pagamento
+      case 'PAYMENT_CREATED':
+        await handlePaymentCreated(c, payload)
+        break
+      
+      case 'PAYMENT_CONFIRMED':
+      case 'PAYMENT_RECEIVED':
+        await handlePaymentReceived(c, payload)
+        break
+      
+      case 'PAYMENT_OVERDUE':
+        await handlePaymentOverdue(c, payload)
+        break
+      
+      case 'PAYMENT_REFUNDED':
+        await handlePaymentRefunded(c, payload)
+        break
+      
+      // Eventos de Subconta
+      case 'ACCOUNT_CREATED':
+      case 'ACCOUNT_UPDATED':
+      case 'ACCOUNT_STATUS_CHANGED':
+        await handleAccountEvent(c, payload)
+        break
+      
+      // Eventos de Transferência
+      case 'TRANSFER_DONE':
+        await handleTransferDone(c, payload)
+        break
+      
+      default:
+        console.log('Evento não tratado:', event)
+    }
+
+    // Marcar webhook como processado
+    await c.env.DB.prepare(`
+      UPDATE webhooks 
+      SET processed = 1, processed_at = datetime('now')
+      WHERE id = ?
+    `).bind(webhookId).run()
+
+  } catch (error: any) {
+    console.error('Erro ao processar evento:', error)
+    
+    // Salvar erro no banco
+    await c.env.DB.prepare(`
+      UPDATE webhooks 
+      SET error = ?
+      WHERE id = ?
+    `).bind(error.message, webhookId).run()
+    
+    throw error
+  }
+}
+
+// Handlers para cada tipo de evento
+async function handlePaymentCreated(c: any, payload: any) {
+  console.log('Pagamento criado:', payload.payment?.id)
+  // Adicionar lógica personalizada aqui
+}
+
+async function handlePaymentReceived(c: any, payload: any) {
+  console.log('Pagamento recebido:', payload.payment?.id)
+  
+  // Registrar no log de atividades
+  await c.env.DB.prepare(`
+    INSERT INTO activity_logs (user_id, action, details, ip_address)
+    VALUES (NULL, 'PAYMENT_RECEIVED', ?, 'webhook')
+  `).bind(
+    JSON.stringify({
+      paymentId: payload.payment?.id,
+      value: payload.payment?.value,
+      customer: payload.payment?.customer
+    })
+  ).run()
+  
+  // Aqui você pode:
+  // - Enviar email de confirmação
+  // - Liberar produto/serviço
+  // - Atualizar status no seu sistema
+}
+
+async function handlePaymentOverdue(c: any, payload: any) {
+  console.log('Pagamento vencido:', payload.payment?.id)
+  
+  // Registrar no log
+  await c.env.DB.prepare(`
+    INSERT INTO activity_logs (user_id, action, details, ip_address)
+    VALUES (NULL, 'PAYMENT_OVERDUE', ?, 'webhook')
+  `).bind(
+    JSON.stringify({
+      paymentId: payload.payment?.id,
+      value: payload.payment?.value,
+      dueDate: payload.payment?.dueDate
+    })
+  ).run()
+  
+  // Aqui você pode:
+  // - Enviar email de cobrança
+  // - Suspender serviço
+  // - Gerar segunda via
+}
+
+async function handlePaymentRefunded(c: any, payload: any) {
+  console.log('Pagamento estornado:', payload.payment?.id)
+  
+  // Registrar no log
+  await c.env.DB.prepare(`
+    INSERT INTO activity_logs (user_id, action, details, ip_address)
+    VALUES (NULL, 'PAYMENT_REFUNDED', ?, 'webhook')
+  `).bind(
+    JSON.stringify({
+      paymentId: payload.payment?.id,
+      value: payload.payment?.value
+    })
+  ).run()
+  
+  // Aqui você pode:
+  // - Cancelar serviço
+  // - Notificar cliente
+  // - Reverter liberação
+}
+
+async function handleAccountEvent(c: any, payload: any) {
+  console.log('Evento de subconta:', payload.event, payload.account?.id)
+  
+  // Atualizar cache de subcontas
+  if (payload.account) {
+    const account = payload.account
+    
+    await c.env.DB.prepare(`
+      INSERT OR REPLACE INTO cached_accounts 
+      (id, wallet_id, name, email, status, data, last_updated)
+      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    `).bind(
+      account.id,
+      account.walletId || '',
+      account.name || '',
+      account.email || '',
+      account.status || '',
+      JSON.stringify(account)
+    ).run()
+  }
+}
+
+async function handleTransferDone(c: any, payload: any) {
+  console.log('Transferência concluída:', payload.transfer?.id)
+  
+  // Registrar no log
+  await c.env.DB.prepare(`
+    INSERT INTO activity_logs (user_id, action, details, ip_address)
+    VALUES (NULL, 'TRANSFER_DONE', ?, 'webhook')
+  `).bind(
+    JSON.stringify({
+      transferId: payload.transfer?.id,
+      value: payload.transfer?.value
+    })
+  ).run()
+}
+
+// Listar webhooks recebidos (para debug/admin)
+app.get('/api/webhooks', async (c) => {
+  try {
+    const { limit = 50, processed } = c.req.query()
+    
+    let query = 'SELECT * FROM webhooks WHERE 1=1'
+    const params: any[] = []
+    
+    if (processed !== undefined) {
+      query += ' AND processed = ?'
+      params.push(processed === 'true' ? 1 : 0)
+    }
+    
+    query += ' ORDER BY created_at DESC LIMIT ?'
+    params.push(parseInt(limit as string))
+    
+    const stmt = c.env.DB.prepare(query).bind(...params)
+    const result = await stmt.all()
+    
+    return c.json({ 
+      ok: true, 
+      data: result.results.map((row: any) => ({
+        ...row,
+        payload: JSON.parse(row.payload)
+      }))
+    })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Reprocessar webhook (em caso de erro)
+app.post('/api/webhooks/:id/reprocess', async (c) => {
+  try {
+    const webhookId = c.req.param('id')
+    
+    // Buscar webhook
+    const webhook = await c.env.DB.prepare(`
+      SELECT * FROM webhooks WHERE id = ?
+    `).bind(webhookId).first()
+    
+    if (!webhook) {
+      return c.json({ error: 'Webhook não encontrado' }, 404)
+    }
+    
+    const payload = JSON.parse(webhook.payload as string)
+    
+    // Reprocessar
+    await processWebhookEvent(c, payload, webhookId)
+    
+    return c.json({ 
+      ok: true, 
+      message: 'Webhook reprocessado com sucesso' 
+    })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 export default app
