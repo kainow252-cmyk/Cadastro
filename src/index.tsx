@@ -2153,7 +2153,7 @@ app.get('/', (c) => {
                             <i class="fas fa-bolt mr-2 text-yellow-500"></i>
                             Ações Rápidas
                         </h3>
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-5 gap-3">
                             <button onclick="showSection('dashboard')" 
                                 class="flex items-center justify-center gap-3 px-6 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 font-semibold shadow-md transition">
                                 <i class="fas fa-chart-line text-2xl"></i>
