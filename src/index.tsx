@@ -293,18 +293,26 @@ async function asaasRequest(
   c: any,
   endpoint: string,
   method: string = 'GET',
-  body?: any
+  body?: any,
+  customHeaders?: Record<string, string>
 ) {
   const apiKey = c.env.ASAAS_API_KEY
   const apiUrl = c.env.ASAAS_API_URL
   
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'access_token': apiKey,
+    'User-Agent': 'AsaasManager/1.0'
+  }
+  
+  // Adicionar headers customizados (ex: asaas-account-key para subcontas)
+  if (customHeaders) {
+    Object.assign(headers, customHeaders)
+  }
+  
   const options: RequestInit = {
     method,
-    headers: {
-      'Content-Type': 'application/json',
-      'access_token': apiKey,
-      'User-Agent': 'AsaasManager/1.0'
-    }
+    headers
   }
   
   if (body && method !== 'GET') {
@@ -656,8 +664,42 @@ app.post('/api/payment-links', async (c) => {
       }
     }
     
-    // Criar link na API Asaas
-    const result = await asaasRequest(c, '/paymentLinks', 'POST', linkData)
+    // Se accountId foi fornecido, criar link NA SUBCONTA
+    let customHeaders = undefined
+    if (accountId) {
+      // Buscar API key da subconta
+      const accountResult = await asaasRequest(c, `/accounts/${accountId}`)
+      if (!accountResult.ok) {
+        return c.json({ error: 'Subconta não encontrada' }, 404)
+      }
+      
+      const walletId = accountResult.data?.walletId
+      if (!walletId) {
+        return c.json({ error: 'Subconta não possui walletId (não aprovada ainda)' }, 400)
+      }
+      
+      // Buscar chaves API da subconta
+      const keysResult = await asaasRequest(c, `/accounts/${accountId}/api-keys`)
+      const keys = keysResult.data?.data || []
+      
+      if (keys.length === 0) {
+        return c.json({ error: 'Subconta não possui chaves API. Crie uma chave primeiro.' }, 400)
+      }
+      
+      // Usar a primeira chave ativa
+      const activeKey = keys.find((k: any) => k.active)
+      if (!activeKey) {
+        return c.json({ error: 'Subconta não possui chaves API ativas' }, 400)
+      }
+      
+      // Usar header asaas-account-key para criar na subconta
+      customHeaders = {
+        'asaas-account-key': activeKey.apiKey
+      }
+    }
+    
+    // Criar link na API Asaas (conta principal OU subconta)
+    const result = await asaasRequest(c, '/paymentLinks', 'POST', linkData, customHeaders)
     
     if (!result.ok) {
       // Log detalhado do erro para debug
@@ -668,7 +710,8 @@ app.post('/api/payment-links', async (c) => {
     
     return c.json({
       ok: true,
-      data: result.data
+      data: result.data,
+      account: accountId ? { id: accountId, usedSubaccount: true } : { usedSubaccount: false }
     })
   } catch (error: any) {
     return c.json({ error: error.message }, 500)
