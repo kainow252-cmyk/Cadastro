@@ -2397,10 +2397,43 @@ async function loadPaymentLinkAccounts() {
 // Alternar entre valor fixo e recorrente
 document.addEventListener('DOMContentLoaded', () => {
     const chargeTypeSelect = document.getElementById('paylink-charge-type');
+    const billingTypeSelect = document.getElementById('paylink-billing-type');
     const fixedSection = document.getElementById('paylink-fixed-value-section');
     const recurrentSection = document.getElementById('paylink-recurrent-section');
     const valueInput = document.getElementById('paylink-value');
     const recurrentValueInput = document.getElementById('paylink-recurrent-value');
+    
+    // Função para verificar se pode usar recorrente
+    const updateRecurrentAvailability = () => {
+        if (billingTypeSelect && chargeTypeSelect) {
+            const billingType = billingTypeSelect.value;
+            const recurrentOption = chargeTypeSelect.querySelector('option[value="RECURRENT"]');
+            
+            // PIX não suporta recorrente - apenas Cartão e Boleto
+            if (billingType === 'PIX') {
+                if (recurrentOption) {
+                    recurrentOption.disabled = true;
+                    recurrentOption.textContent = 'Assinatura/Recorrente (não disponível para PIX)';
+                }
+                // Se estava selecionado recorrente, muda para valor fixo
+                if (chargeTypeSelect.value === 'RECURRENT') {
+                    chargeTypeSelect.value = 'DETACHED';
+                    chargeTypeSelect.dispatchEvent(new Event('change'));
+                }
+            } else {
+                // Outras formas de pagamento permitem recorrente
+                if (recurrentOption) {
+                    recurrentOption.disabled = false;
+                    recurrentOption.textContent = 'Assinatura/Recorrente';
+                }
+            }
+        }
+    };
+    
+    // Event listener para mudança no tipo de cobrança
+    if (billingTypeSelect) {
+        billingTypeSelect.addEventListener('change', updateRecurrentAvailability);
+    }
     
     if (chargeTypeSelect) {
         chargeTypeSelect.addEventListener('change', (e) => {
@@ -2426,6 +2459,9 @@ document.addEventListener('DOMContentLoaded', () => {
             await createPaymentLink();
         });
     }
+    
+    // Inicializar estado
+    updateRecurrentAvailability();
 });
 
 // Criar link de pagamento
