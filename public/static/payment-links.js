@@ -319,8 +319,10 @@ async function viewLinkPayments(linkId, linkName) {
     }
 }
 
-
 // Renderizar pagamentos com filtros - Ver payment-filters.js
+
+// Função auxiliar para copiar para clipboard
+function copyToClipboard(text) {
     navigator.clipboard.writeText(text).then(() => {
         alert('Link copiado para a área de transferência!');
     }).catch(err => {
