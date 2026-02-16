@@ -1014,24 +1014,18 @@ app.post('/api/pix/static', async (c) => {
     
     console.log('✅ Cobrança criada:', payment.id, 'Status:', payment.status)
     
-    // Buscar QR Code da cobrança
-    const qrCodeResult = await asaasRequest(c, `/payments/${payment.id}/pixQrCode`)
+    // IMPORTANTE: API Asaas retorna QR Code DINÂMICO (sem valor fixo) quando tem split
+    // Para mensalidades fixas, precisamos gerar o payload manualmente com valor embutido
+    console.log('⚡ Gerando payload PIX manual com valor fixo R$', value.toFixed(2))
     
-    console.log('📊 Resposta QR Code:', JSON.stringify({
-      ok: qrCodeResult.ok,
-      hasData: !!qrCodeResult.data,
-      hasPayload: !!qrCodeResult.data?.payload,
-      hasEncodedImage: !!qrCodeResult.data?.encodedImage
-    }))
+    const pixPayload = generateStaticPixPayload(walletId, value, description || 'Pagamento via PIX')
+    const qrCodeBase64Image = await generateQRCodeBase64(pixPayload)
     
-    if (!qrCodeResult.ok || !qrCodeResult.data) {
-      return c.json({ 
-        error: 'Erro ao gerar QR Code',
-        details: qrCodeResult.data 
-      }, 400)
+    const pixData = {
+      payload: pixPayload,
+      encodedImage: qrCodeBase64Image,
+      expirationDate: payment.dueDate
     }
-    
-    const pixData = qrCodeResult.data
     
     // Salvar no banco para tracking
     const pixId = `pix_static_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
@@ -1088,8 +1082,8 @@ app.post('/api/pix/static', async (c) => {
 // Função para gerar payload PIX estático (EMV format simplificado)
 function generateStaticPixPayload(walletId: string, value: number, description: string): string {
   // Formato EMV para PIX estático com valor fixo (Spec BACEN)
-  const merchantName = 'ASAAS PAGAMENTOS'
-  const merchantCity = 'SAO PAULO'
+  const merchantName = 'CORRETORA CORPORATE LTDA'
+  const merchantCity = 'Sao Paulo'
   const pixKey = walletId
   const valueStr = value.toFixed(2)
   
@@ -3492,7 +3486,7 @@ app.get('/', (c) => {
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-        <script src="/static/app.js?v=4.3"></script>
+        <script src="/static/app.js?v=4.4"></script>
         <script src="/static/payment-links.js?v=4.2"></script>
         <script src="/static/payment-filters.js?v=4.2"></script>
     </body>
