@@ -927,6 +927,30 @@ app.post('/api/pix/static', async (c) => {
     // Gerar QR Code em base64
     const qrCodeBase64 = await generateQRCodeBase64(payload)
     
+    // Salvar no banco de dados para aplicar split quando pagamento for recebido
+    const pixId = `pix_static_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    try {
+      await c.env.DB.prepare(`
+        CREATE TABLE IF NOT EXISTS pix_splits (
+          id TEXT PRIMARY KEY,
+          wallet_id TEXT NOT NULL,
+          account_id TEXT NOT NULL,
+          value REAL NOT NULL,
+          description TEXT,
+          split_percentage REAL DEFAULT 20,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+      `).run()
+      
+      await c.env.DB.prepare(`
+        INSERT INTO pix_splits (id, wallet_id, account_id, value, description, split_percentage)
+        VALUES (?, ?, ?, ?, ?, 20)
+      `).bind(pixId, walletId, accountId, value, description || '').run()
+    } catch (dbError: any) {
+      console.error('Erro ao salvar split no banco:', dbError)
+      // Continuar mesmo se der erro no banco
+    }
+    
     return c.json({
       ok: true,
       data: {
@@ -936,6 +960,7 @@ app.post('/api/pix/static', async (c) => {
         description,
         payload,
         qrCodeBase64,
+        pixId,
         type: 'STATIC',
         splitConfig: {
           subAccount: 20,
@@ -3471,22 +3496,71 @@ async function handlePaymentCreated(c: any, payload: any) {
 async function handlePaymentReceived(c: any, payload: any) {
   console.log('Pagamento recebido:', payload.payment?.id)
   
+  const payment = payload.payment
+  const paymentValue = parseFloat(payment?.value || 0)
+  
   // Registrar no log de atividades
   await c.env.DB.prepare(`
     INSERT INTO activity_logs (user_id, action, details, ip_address)
     VALUES (NULL, 'PAYMENT_RECEIVED', ?, 'webhook')
   `).bind(
     JSON.stringify({
-      paymentId: payload.payment?.id,
-      value: payload.payment?.value,
-      customer: payload.payment?.customer
+      paymentId: payment?.id,
+      value: paymentValue,
+      customer: payment?.customer,
+      pixTransaction: payment?.pixTransaction
     })
   ).run()
   
-  // Aqui você pode:
-  // - Enviar email de confirmação
-  // - Liberar produto/serviço
-  // - Atualizar status no seu sistema
+  // APLICAR SPLIT AUTOMÁTICO 20/80
+  // Buscar configuração de split baseada no valor do pagamento
+  try {
+    const splitConfig = await c.env.DB.prepare(`
+      SELECT * FROM pix_splits 
+      WHERE value = ? 
+      ORDER BY created_at DESC 
+      LIMIT 1
+    `).bind(paymentValue).first()
+    
+    if (splitConfig && splitConfig.account_id) {
+      const accountId = splitConfig.account_id as string
+      const splitPercentage = (splitConfig.split_percentage as number) || 20
+      const transferValue = (paymentValue * splitPercentage / 100)
+      
+      console.log(`Aplicando split de ${splitPercentage}%: R$ ${transferValue} para conta ${accountId}`)
+      
+      // Criar transferência para a subconta
+      const transferData = {
+        value: transferValue,
+        walletId: accountId
+      }
+      
+      const transferResult = await asaasRequest(c, '/transfers', 'POST', transferData)
+      
+      if (transferResult.ok) {
+        console.log('Split aplicado com sucesso:', transferResult.data)
+        
+        // Registrar split no log
+        await c.env.DB.prepare(`
+          INSERT INTO activity_logs (user_id, action, details, ip_address)
+          VALUES (NULL, 'SPLIT_APPLIED', ?, 'webhook')
+        `).bind(
+          JSON.stringify({
+            paymentId: payment?.id,
+            accountId,
+            transferValue,
+            transferId: transferResult.data?.id,
+            splitPercentage
+          })
+        ).run()
+      } else {
+        console.error('Erro ao aplicar split:', transferResult.data)
+      }
+    }
+  } catch (splitError: any) {
+    console.error('Erro ao processar split:', splitError)
+    // Não falhar o webhook se o split der erro
+  }
 }
 
 async function handlePaymentOverdue(c: any, payload: any) {
