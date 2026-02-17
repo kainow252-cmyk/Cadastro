@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assinar Mensalidade - Corretora Corporate</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gradient-to-br from-purple-50 to-pink-50 min-h-screen">
+    <!-- Header -->
+    <div class="bg-white shadow-md">
+        <div class="max-w-4xl mx-auto px-4 py-4">
+            <h1 class="text-2xl font-bold text-gray-800">
+                <i class="fas fa-building text-purple-600 mr-2"></i>
+                Corretora Corporate
+            </h1>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <div class="max-w-2xl mx-auto px-4 py-8">
+        <!-- Loading State -->
+        <div id="loading" class="text-center py-12">
+            <i class="fas fa-spinner fa-spin text-4xl text-purple-600 mb-4"></i>
+            <p class="text-gray-600">Carregando...</p>
+        </div>
+
+        <!-- Error State -->
+        <div id="error" class="hidden">
+            <div class="bg-red-50 border-2 border-red-200 rounded-lg p-6 text-center">
+                <i class="fas fa-times-circle text-red-600 text-4xl mb-4"></i>
+                <h2 class="text-xl font-bold text-red-800 mb-2">Link Inválido ou Expirado</h2>
+                <p class="text-red-600 mb-4" id="error-message"></p>
+                <a href="/" class="inline-block px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold">
+                    <i class="fas fa-home mr-2"></i>Voltar ao Início
+                </a>
+            </div>
+        </div>
+
+        <!-- Form State -->
+        <div id="form-container" class="hidden">
+            <div class="bg-white rounded-lg shadow-xl p-8">
+                <!-- Header -->
+                <div class="text-center mb-8">
+                    <div class="inline-block p-4 bg-purple-100 rounded-full mb-4">
+                        <i class="fas fa-calendar-check text-purple-600 text-3xl"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold text-gray-800 mb-2">Assinatura Mensal PIX</h2>
+                    <p class="text-gray-600">Preencha seus dados para assinar</p>
+                </div>
+
+                <!-- Plan Info -->
+                <div class="bg-gradient-to-r from-purple-100 to-pink-100 rounded-lg p-6 mb-8">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-gray-600 text-sm mb-1">Valor Mensal</p>
+                            <p class="text-3xl font-bold text-purple-600" id="plan-value">R$ 0,00</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-gray-600 text-sm mb-1">Descrição</p>
+                            <p class="font-semibold text-gray-800" id="plan-description">-</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Form -->
+                <form id="signup-form" class="space-y-6">
+                    <!-- Name -->
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">
+                            <i class="fas fa-user mr-1"></i>Nome Completo *
+                        </label>
+                        <input type="text" id="customer-name" required
+                            class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
+                            placeholder="João Silva">
+                    </div>
+
+                    <!-- Email -->
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">
+                            <i class="fas fa-envelope mr-1"></i>Email *
+                        </label>
+                        <input type="email" id="customer-email" required
+                            class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
+                            placeholder="joao@example.com">
+                    </div>
+
+                    <!-- CPF -->
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">
+                            <i class="fas fa-id-card mr-1"></i>CPF (somente números) *
+                        </label>
+                        <input type="text" id="customer-cpf" required maxlength="11" pattern="[0-9]{11}"
+                            class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-purple-500 focus:outline-none"
+                            placeholder="12345678900">
+                        <p class="text-xs text-gray-500 mt-1">Digite apenas os números do CPF</p>
+                    </div>
+
+                    <!-- Split Info -->
+                    <div class="bg-blue-50 border-2 border-blue-200 rounded-lg p-4">
+                        <h4 class="font-bold text-blue-900 mb-2 flex items-center">
+                            <i class="fas fa-chart-pie mr-2"></i>
+                            Divisão de Pagamento (Split 20/80)
+                        </h4>
+                        <div class="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                                <p class="text-blue-700">Corretor (20%)</p>
+                                <p class="font-bold text-green-600 text-lg" id="split-broker">R$ 0,00</p>
+                            </div>
+                            <div>
+                                <p class="text-blue-700">Empresa (80%)</p>
+                                <p class="font-bold text-blue-600 text-lg" id="split-company">R$ 0,00</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Info -->
+                    <div class="bg-yellow-50 border-2 border-yellow-200 rounded-lg p-4">
+                        <p class="text-sm text-yellow-800">
+                            <i class="fas fa-info-circle mr-1"></i>
+                            Ao confirmar, você criará uma assinatura mensal. O primeiro pagamento será via PIX agora, 
+                            e os próximos mensalmente no mesmo dia.
+                        </p>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <button type="submit" 
+                        class="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-700 hover:to-pink-700 font-bold text-lg shadow-lg">
+                        <i class="fas fa-check-circle mr-2"></i>Confirmar e Gerar QR Code PIX
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Success State (QR Code) -->
+        <div id="success-container" class="hidden">
+            <div class="bg-white rounded-lg shadow-xl p-8">
+                <!-- Success Header -->
+                <div class="text-center mb-6">
+                    <div class="inline-block p-4 bg-green-100 rounded-full mb-4">
+                        <i class="fas fa-check-circle text-green-600 text-4xl"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold text-green-800 mb-2">Assinatura Criada com Sucesso!</h2>
+                    <p class="text-gray-600">Escaneie o QR Code para pagar a primeira mensalidade</p>
+                </div>
+
+                <!-- QR Code -->
+                <div class="bg-white p-6 rounded-lg border-4 border-purple-600 mb-6">
+                    <div class="flex justify-center mb-4">
+                        <img id="qr-code-image" src="" alt="QR Code PIX" class="w-80 h-80">
+                    </div>
+                </div>
+
+                <!-- PIX Payload -->
+                <div class="mb-6">
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">
+                        <i class="fas fa-copy mr-1"></i>Chave PIX (Copia e Cola)
+                    </label>
+                    <div class="flex gap-2">
+                        <textarea readonly id="pix-payload" rows="3"
+                            class="flex-1 px-3 py-2 border-2 border-gray-300 rounded-lg bg-gray-50 font-mono text-xs"></textarea>
+                        <button onclick="copyPixPayload()" 
+                            class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Subscription Info -->
+                <div class="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-6 mb-6">
+                    <h3 class="font-bold text-gray-800 mb-4">
+                        <i class="fas fa-info-circle mr-2"></i>Informações da Assinatura
+                    </h3>
+                    <div class="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                            <p class="text-gray-600 mb-1">Valor Mensal</p>
+                            <p class="font-bold text-purple-600 text-lg" id="success-value">R$ 0,00</p>
+                        </div>
+                        <div>
+                            <p class="text-gray-600 mb-1">Próximo Vencimento</p>
+                            <p class="font-bold text-gray-800" id="success-next-due">-</p>
+                        </div>
+                        <div>
+                            <p class="text-gray-600 mb-1">Status</p>
+                            <span class="px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs font-bold">
+                                <i class="fas fa-check-circle mr-1"></i>ATIVA
+                            </span>
+                        </div>
+                        <div>
+                            <p class="text-gray-600 mb-1">Ciclo</p>
+                            <p class="font-bold text-gray-800">Mensal</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Split Info -->
+                <div class="bg-blue-50 border-2 border-blue-200 rounded-lg p-4 mb-6">
+                    <h4 class="font-bold text-blue-900 mb-2">
+                        <i class="fas fa-chart-pie mr-2"></i>Split Automático 20/80
+                    </h4>
+                    <div class="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                            <p class="text-blue-700">Corretor (20%)</p>
+                            <p class="font-bold text-green-600 text-lg" id="success-split-broker">R$ 0,00</p>
+                        </div>
+                        <div>
+                            <p class="text-blue-700">Empresa (80%)</p>
+                            <p class="font-bold text-blue-600 text-lg" id="success-split-company">R$ 0,00</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Instructions -->
+                <div class="bg-yellow-50 border-2 border-yellow-200 rounded-lg p-4 mb-6">
+                    <h4 class="font-bold text-yellow-900 mb-2">
+                        <i class="fas fa-mobile-alt mr-2"></i>Como Pagar
+                    </h4>
+                    <ol class="text-sm text-yellow-800 space-y-2 ml-4 list-decimal">
+                        <li>Abra o app do seu banco</li>
+                        <li>Vá em <strong>PIX → Ler QR Code</strong></li>
+                        <li>Escaneie o QR Code acima ou copie e cole a chave PIX</li>
+                        <li>Confirme o valor e complete o pagamento</li>
+                        <li>Pronto! Nos próximos meses você receberá notificação automática</li>
+                    </ol>
+                </div>
+
+                <!-- Close Button -->
+                <button onclick="window.close()" 
+                    class="w-full py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 font-semibold">
+                    <i class="fas fa-times mr-2"></i>Fechar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const linkId = window.location.pathname.split('/').pop();
+        let linkData = null;
+
+        async function loadLink() {
+            try {
+                const response = await fetch(`/api/pix/subscription-link/${linkId}`);
+                const data = await response.json();
+
+                if (!data.ok) {
+                    showError(data.error || 'Link inválido');
+                    return;
+                }
+
+                linkData = data.data;
+                
+                // Preencher informações do plano
+                document.getElementById('plan-value').textContent = `R$ ${linkData.value.toFixed(2)}`;
+                document.getElementById('plan-description').textContent = linkData.description;
+                
+                // Calcular split
+                const splitBroker = linkData.value * 0.20;
+                const splitCompany = linkData.value * 0.80;
+                document.getElementById('split-broker').textContent = `R$ ${splitBroker.toFixed(2)}`;
+                document.getElementById('split-company').textContent = `R$ ${splitCompany.toFixed(2)}`;
+
+                // Mostrar formulário
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('form-container').classList.remove('hidden');
+            } catch (error) {
+                console.error('Erro:', error);
+                showError('Erro ao carregar link');
+            }
+        }
+
+        function showError(message) {
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('error').classList.remove('hidden');
+            document.getElementById('error-message').textContent = message;
+        }
+
+        document.getElementById('signup-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const customerName = document.getElementById('customer-name').value.trim();
+            const customerEmail = document.getElementById('customer-email').value.trim();
+            const customerCpf = document.getElementById('customer-cpf').value.trim();
+
+            if (!customerName || !customerEmail || !customerCpf) {
+                alert('⚠️ Preencha todos os campos obrigatórios!');
+                return;
+            }
+
+            if (customerCpf.length !== 11 || !/^\d+$/.test(customerCpf)) {
+                alert('⚠️ CPF inválido! Digite apenas 11 números.');
+                return;
+            }
+
+            // Desabilitar botão
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Criando assinatura...';
+
+            try {
+                const response = await fetch(`/api/pix/subscription-signup/${linkId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ customerName, customerEmail, customerCpf })
+                });
+
+                const data = await response.json();
+
+                if (!data.ok) {
+                    alert(`❌ Erro: ${data.error}`);
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="fas fa-check-circle mr-2"></i>Confirmar e Gerar QR Code PIX';
+                    return;
+                }
+
+                // Mostrar QR Code
+                showSuccess(data);
+            } catch (error) {
+                console.error('Erro:', error);
+                alert('❌ Erro ao criar assinatura. Tente novamente.');
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-check-circle mr-2"></i>Confirmar e Gerar QR Code PIX';
+            }
+        });
+
+        function showSuccess(data) {
+            document.getElementById('form-container').classList.add('hidden');
+            document.getElementById('success-container').classList.remove('hidden');
+
+            // QR Code
+            if (data.firstPayment?.pix?.qrCodeBase64) {
+                document.getElementById('qr-code-image').src = data.firstPayment.pix.qrCodeBase64;
+                document.getElementById('pix-payload').value = data.firstPayment.pix.payload;
+            }
+
+            // Subscription info
+            document.getElementById('success-value').textContent = `R$ ${data.subscription.value.toFixed(2)}`;
+            document.getElementById('success-next-due').textContent = new Date(data.subscription.nextDueDate).toLocaleDateString('pt-BR');
+
+            // Split
+            const splitBroker = data.subscription.value * 0.20;
+            const splitCompany = data.subscription.value * 0.80;
+            document.getElementById('success-split-broker').textContent = `R$ ${splitBroker.toFixed(2)}`;
+            document.getElementById('success-split-company').textContent = `R$ ${splitCompany.toFixed(2)}`;
+        }
+
+        function copyPixPayload() {
+            const textarea = document.getElementById('pix-payload');
+            textarea.select();
+            document.execCommand('copy');
+            alert('✅ Chave PIX copiada!');
+        }
+
+        // Carregar link ao iniciar
+        loadLink();
+    </script>
+</body>
+</html>

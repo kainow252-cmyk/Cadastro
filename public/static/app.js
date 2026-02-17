@@ -2172,6 +2172,11 @@ function displayAccounts(accounts) {
                         class="px-4 py-3 bg-gradient-to-r from-indigo-500 to-cyan-500 text-white rounded-lg hover:from-indigo-600 hover:to-cyan-600 font-semibold shadow-md transition">
                         <i class="fas fa-robot mr-2"></i>PIX Automático
                     </button>
+                    <button onclick="toggleSignupLinkForm('${account.id}', '${account.walletId}')" 
+                        id="btn-signup-link-${account.id}"
+                        class="px-4 py-3 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-lg hover:from-orange-600 hover:to-red-600 font-semibold shadow-md transition">
+                        <i class="fas fa-link mr-2"></i>Link Auto-Cadastro
+                    </button>
                 </div>
                 
                 <!-- Iframe embutido (inicialmente escondido) -->
@@ -2329,6 +2334,51 @@ function displayAccounts(accounts) {
                     
                     <!-- Resultado da Autorização -->
                     <div id="automatic-result-${account.id}" class="hidden p-4 bg-gray-50"></div>
+                </div>
+                
+                <!-- Formulário de Link de Auto-Cadastro -->
+                <div id="signup-link-frame-${account.id}" class="hidden mt-4 border-2 border-orange-300 rounded-lg overflow-hidden shadow-lg">
+                    <div class="bg-gradient-to-r from-orange-500 to-red-500 p-3 flex justify-between items-center">
+                        <h4 class="text-white font-bold">
+                            <i class="fas fa-link mr-2"></i>Gerar Link de Auto-Cadastro
+                        </h4>
+                        <button onclick="closeSignupLinkFrame('${account.id}')" 
+                            class="text-white hover:text-gray-200 font-bold text-xl">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    
+                    <!-- Formulário -->
+                    <div id="signup-link-form-${account.id}" class="p-4 bg-white">
+                        <div class="bg-yellow-50 border border-yellow-200 rounded p-3 mb-4">
+                            <p class="text-sm text-yellow-800">
+                                <i class="fas fa-magic mr-1"></i>
+                                <strong>Link de Auto-Cadastro:</strong> Cliente lê QR Code → Preenche dados → Paga primeira parcela → Assinatura mensal criada automaticamente com Split 80/20!
+                            </p>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <input type="number" 
+                                id="signup-value-${account.id}" 
+                                placeholder="Valor mensal (R$)" 
+                                step="0.01" 
+                                min="1"
+                                required
+                                class="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-orange-500">
+                            <input type="text" 
+                                id="signup-desc-${account.id}" 
+                                placeholder="Descrição" 
+                                value="Mensalidade"
+                                class="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-orange-500">
+                        </div>
+                        <button onclick="generateSignupLink('${account.id}', '${account.walletId}')" 
+                            class="w-full mt-3 px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700 font-semibold">
+                            <i class="fas fa-magic mr-2"></i>Gerar Link e QR Code
+                        </button>
+                    </div>
+                    
+                    <!-- Resultado do Link -->
+                    <div id="signup-link-result-${account.id}" class="hidden p-4 bg-gray-50"></div>
                 </div>
             </div>
         ` : '';
@@ -3340,5 +3390,230 @@ function copyToClipboard(text) {
         document.execCommand('copy');
         document.body.removeChild(textarea);
         alert('Link copiado!');
+    });
+}
+
+// ========================================
+// FUNÇÕES DE LINK DE AUTO-CADASTRO
+// ========================================
+
+function toggleSignupLinkForm(accountId, walletId) {
+    const frame = document.getElementById(`signup-link-frame-${accountId}`);
+    if (!frame) {
+        console.error('Frame de link de auto-cadastro não encontrado:', accountId);
+        return;
+    }
+    
+    // Esconder outros frames
+    hideAllFrames(accountId);
+    
+    // Toggle este frame
+    frame.classList.toggle('hidden');
+    
+    // Atualizar botão
+    const btn = document.getElementById(`btn-signup-link-${accountId}`);
+    if (btn) {
+        if (frame.classList.contains('hidden')) {
+            btn.innerHTML = '<i class="fas fa-link mr-2"></i>Link Auto-Cadastro';
+            btn.classList.remove('from-gray-500', 'to-gray-600');
+            btn.classList.add('from-orange-500', 'to-red-500');
+        } else {
+            btn.innerHTML = '<i class="fas fa-times mr-2"></i>Fechar';
+            btn.classList.remove('from-orange-500', 'to-red-500');
+            btn.classList.add('from-gray-500', 'to-gray-600');
+        }
+    }
+}
+
+function closeSignupLinkFrame(accountId) {
+    const frame = document.getElementById(`signup-link-frame-${accountId}`);
+    if (frame) {
+        frame.classList.add('hidden');
+    }
+    
+    // Resetar botão
+    const btn = document.getElementById(`btn-signup-link-${accountId}`);
+    if (btn) {
+        btn.innerHTML = '<i class="fas fa-link mr-2"></i>Link Auto-Cadastro';
+        btn.classList.remove('from-gray-500', 'to-gray-600');
+        btn.classList.add('from-orange-500', 'to-red-500');
+    }
+    
+    // Resetar formulário
+    const form = document.getElementById(`signup-link-form-${accountId}`);
+    if (form) {
+        form.querySelectorAll('input').forEach(input => {
+            if (input.id.includes('desc')) {
+                input.value = 'Mensalidade';
+            } else {
+                input.value = '';
+            }
+        });
+    }
+}
+
+async function generateSignupLink(accountId, walletId) {
+    const resultDiv = document.getElementById(`signup-link-result-${accountId}`);
+    const formDiv = document.getElementById(`signup-link-form-${accountId}`);
+    
+    const value = parseFloat(document.getElementById(`signup-value-${accountId}`).value);
+    const description = document.getElementById(`signup-desc-${accountId}`).value.trim();
+    
+    if (!value || value <= 0) {
+        alert('⚠️ Digite um valor válido maior que zero!');
+        return;
+    }
+    
+    formDiv.classList.add('hidden');
+    resultDiv.classList.remove('hidden');
+    resultDiv.innerHTML = `
+        <p class="text-gray-500 text-sm py-4">
+            <i class="fas fa-spinner fa-spin mr-2"></i>
+            Gerando link de auto-cadastro...
+        </p>
+    `;
+    
+    try {
+        const response = await fetch('/api/pix/subscription-link', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                walletId,
+                accountId,
+                value,
+                description
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.ok) {
+            const link = data.data;
+            
+            // Gerar QR Code do link
+            const qrCodeBase64 = await generateQRCodeFromText(link.linkUrl);
+            
+            resultDiv.innerHTML = `
+                <div class="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-4 mb-4">
+                    <h4 class="text-lg font-bold text-green-800 mb-3">
+                        <i class="fas fa-check-circle mr-2"></i>
+                        Link de Auto-Cadastro Criado!
+                    </h4>
+                    
+                    <div class="grid md:grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <p class="text-sm text-gray-600 mb-1">Valor Mensal:</p>
+                            <p class="text-xl font-bold text-green-600">R$ ${value.toFixed(2)}</p>
+                        </div>
+                        <div>
+                            <p class="text-sm text-gray-600 mb-1">Descrição:</p>
+                            <p class="font-semibold text-gray-800">${description}</p>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white rounded-lg p-4 mb-4 text-center">
+                        <p class="text-sm text-gray-600 mb-3 font-semibold">
+                            <i class="fas fa-qrcode mr-2"></i>
+                            Cliente escaneia este QR Code para se cadastrar:
+                        </p>
+                        <img src="${qrCodeBase64}" alt="QR Code" class="w-48 h-48 mx-auto border-4 border-white shadow-lg rounded-lg mb-3">
+                        <button onclick="downloadQRCode('${qrCodeBase64}', 'qrcode-auto-cadastro-${accountId}.png')" 
+                            class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">
+                            <i class="fas fa-download mr-2"></i>Baixar QR Code
+                        </button>
+                    </div>
+                    
+                    <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+                        <p class="text-sm text-yellow-800">
+                            <i class="fas fa-info-circle mr-2"></i>
+                            <strong>Como funciona:</strong>
+                        </p>
+                        <ol class="text-sm text-yellow-800 mt-2 space-y-1 ml-4">
+                            <li>1️⃣ Cliente escaneia o QR Code</li>
+                            <li>2️⃣ Preenche nome, email e CPF</li>
+                            <li>3️⃣ Paga primeira parcela via PIX</li>
+                            <li>4️⃣ <strong>Assinatura mensal criada automaticamente!</strong></li>
+                            <li>5️⃣ <strong>Split 80/20 aplicado em todas as mensalidades</strong></li>
+                        </ol>
+                    </div>
+                    
+                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-3">
+                        <p class="text-xs text-gray-600 mb-2 font-semibold">Link de Auto-Cadastro:</p>
+                        <div class="flex gap-2">
+                            <input type="text" value="${link.linkUrl}" readonly 
+                                class="flex-1 text-xs bg-white border border-gray-300 rounded px-3 py-2 font-mono">
+                            <button onclick="copyToClipboard('${link.linkUrl}')" 
+                                class="px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700 transition">
+                                <i class="fas fa-copy"></i>
+                            </button>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-2">
+                            <i class="fas fa-clock mr-1"></i>
+                            Válido até: ${new Date(link.expiresAt).toLocaleDateString('pt-BR')}
+                        </p>
+                    </div>
+                    
+                    <button onclick="closeSignupLinkFrame('${accountId}')" 
+                        class="w-full px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition">
+                        <i class="fas fa-check mr-2"></i>Fechar
+                    </button>
+                </div>
+            `;
+        } else {
+            throw new Error(data.error || 'Erro ao gerar link');
+        }
+    } catch (error) {
+        console.error('Erro ao gerar link:', error);
+        resultDiv.innerHTML = `
+            <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+                <h4 class="text-red-800 font-bold mb-2">
+                    <i class="fas fa-exclamation-triangle mr-2"></i>Erro
+                </h4>
+                <p class="text-red-700 text-sm mb-3">${error.message}</p>
+                <button onclick="closeSignupLinkFrame('${accountId}')" 
+                    class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
+                    <i class="fas fa-times mr-2"></i>Fechar
+                </button>
+            </div>
+        `;
+    }
+}
+
+async function generateQRCodeFromText(text) {
+    try {
+        const response = await fetch('https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(text));
+        const blob = await response.blob();
+        return new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.readAsDataURL(blob);
+        });
+    } catch (error) {
+        console.error('Erro ao gerar QR Code:', error);
+        return '';
+    }
+}
+
+function downloadQRCode(base64Data, filename) {
+    const link = document.createElement('a');
+    link.href = base64Data;
+    link.download = filename;
+    link.click();
+}
+
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        alert('✅ Link copiado para a área de transferência!');
+    }).catch(() => {
+        // Fallback
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        alert('✅ Link copiado!');
     });
 }

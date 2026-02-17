@@ -1288,6 +1288,263 @@ app.post('/api/pix/subscription', async (c) => {
   }
 })
 
+// ========================================
+// FLUXO DE AUTO-CADASTRO DE ASSINATURA PIX MENSAL
+// Cliente lê QR Code → Preenche dados → Paga → Assinatura mensal criada
+// Split 80/20 aplicado automaticamente
+// ========================================
+
+// 1. Criar link de auto-cadastro para assinatura mensal
+app.post('/api/pix/subscription-link', async (c) => {
+  try {
+    // Verificar autenticação
+    const token = getCookie(c, 'auth_token')
+    if (!token) {
+      return c.json({ error: 'Não autorizado' }, 401)
+    }
+    
+    try {
+      await verifyToken(token, c.env.JWT_SECRET)
+    } catch {
+      return c.json({ error: 'Token inválido' }, 401)
+    }
+    
+    const { walletId, accountId, value, description, maxUses } = await c.req.json()
+    
+    if (!walletId || !accountId || !value || value <= 0) {
+      return c.json({ error: 'walletId, accountId e value (> 0) são obrigatórios' }, 400)
+    }
+    
+    // Gerar ID único para o link
+    const linkId = crypto.randomUUID()
+    
+    // Expiração: 30 dias
+    const expiresAt = new Date(Date.now() + 30*24*60*60*1000).toISOString()
+    
+    // Salvar no banco
+    await c.env.DB.prepare(`
+      INSERT INTO subscription_signup_links (id, wallet_id, account_id, value, description, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(linkId, walletId, accountId || '', value, description || 'Mensalidade', expiresAt).run()
+    
+    // URL do link de auto-cadastro
+    const linkUrl = `${new URL(c.req.url).origin}/subscription-signup/${linkId}`
+    
+    return c.json({
+      ok: true,
+      data: {
+        linkId,
+        linkUrl,
+        qrCodeData: linkUrl, // Para gerar QR Code no frontend
+        value,
+        description,
+        expiresAt,
+        walletId,
+        accountId
+      }
+    })
+  } catch (error: any) {
+    console.error('Erro ao criar link:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Obter dados do link de auto-cadastro (público)
+app.get('/api/pix/subscription-link/:linkId', async (c) => {
+  try {
+    const linkId = c.req.param('linkId')
+    
+    const result = await c.env.DB.prepare(`
+      SELECT * FROM subscription_signup_links WHERE id = ? AND active = 1
+    `).bind(linkId).first()
+    
+    if (!result) {
+      return c.json({ error: 'Link não encontrado ou expirado' }, 404)
+    }
+    
+    // Verificar expiração
+    if (new Date(result.expires_at as string) < new Date()) {
+      return c.json({ error: 'Link expirado' }, 410)
+    }
+    
+    return c.json({
+      ok: true,
+      data: {
+        linkId: result.id,
+        value: result.value,
+        description: result.description,
+        walletId: result.wallet_id,
+        accountId: result.account_id
+      }
+    })
+  } catch (error: any) {
+    console.error('Erro ao buscar link:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Cliente completa auto-cadastro e cria assinatura (público)
+app.post('/api/pix/subscription-signup/:linkId', async (c) => {
+  try {
+    const linkId = c.req.param('linkId')
+    const { customerName, customerEmail, customerCpf } = await c.req.json()
+    
+    if (!customerName || !customerEmail || !customerCpf) {
+      return c.json({ error: 'Nome, email e CPF são obrigatórios' }, 400)
+    }
+    
+    // Buscar link
+    const link = await c.env.DB.prepare(`
+      SELECT * FROM subscription_signup_links WHERE id = ? AND active = 1
+    `).bind(linkId).first()
+    
+    if (!link) {
+      return c.json({ error: 'Link não encontrado ou inativo' }, 404)
+    }
+    
+    // Verificar expiração
+    if (new Date(link.expires_at as string) < new Date()) {
+      return c.json({ error: 'Link expirado' }, 410)
+    }
+    
+    const walletId = link.wallet_id as string
+    const value = link.value as number
+    const description = link.description as string
+    
+    // 1. Buscar ou criar customer
+    const searchResult = await asaasRequest(c, `/customers?cpfCnpj=${customerCpf}`)
+    
+    let customerId
+    if (searchResult.ok && searchResult.data?.data?.[0]?.id) {
+      customerId = searchResult.data.data[0].id
+    } else {
+      const customerData = {
+        name: customerName,
+        cpfCnpj: customerCpf,
+        email: customerEmail,
+        notificationDisabled: false
+      }
+      
+      const createResult = await asaasRequest(c, '/customers', 'POST', customerData)
+      if (!createResult.ok || !createResult.data?.id) {
+        return c.json({ 
+          error: 'Erro ao criar cadastro',
+          details: createResult.data 
+        }, 400)
+      }
+      
+      customerId = createResult.data.id
+    }
+    
+    // 2. Criar assinatura mensal com split
+    const subscriptionData = {
+      customer: customerId,
+      billingType: 'PIX',
+      value: value,
+      nextDueDate: new Date(Date.now() + 24*60*60*1000).toISOString().split('T')[0],
+      cycle: 'MONTHLY',
+      description: description,
+      split: [{
+        walletId: walletId,
+        percentualValue: 20
+      }]
+    }
+    
+    const subscriptionResult = await asaasRequest(c, '/subscriptions', 'POST', subscriptionData)
+    
+    if (!subscriptionResult.ok) {
+      return c.json({ 
+        error: 'Erro ao criar assinatura',
+        details: subscriptionResult.data 
+      }, 400)
+    }
+    
+    const subscription = subscriptionResult.data
+    
+    // 3. Buscar primeiro pagamento
+    const paymentsResult = await asaasRequest(c, `/payments?subscription=${subscription.id}`)
+    
+    if (!paymentsResult.ok || !paymentsResult.data?.data?.[0]) {
+      return c.json({
+        ok: true,
+        subscription: {
+          id: subscription.id,
+          status: subscription.status,
+          value: subscription.value,
+          nextDueDate: subscription.nextDueDate
+        },
+        warning: 'Assinatura criada, aguardando primeiro pagamento'
+      })
+    }
+    
+    const firstPayment = paymentsResult.data.data[0]
+    
+    // 4. Buscar QR Code PIX
+    const qrCodeResult = await asaasRequest(c, `/payments/${firstPayment.id}/pixQrCode`)
+    
+    let pixData = null
+    if (qrCodeResult.ok && qrCodeResult.data) {
+      const asaasPayload = qrCodeResult.data.payload
+      const valueField = `54${value.toFixed(2).length.toString().padStart(2, '0')}${value.toFixed(2)}`
+      const pos58 = asaasPayload.indexOf('5802')
+      
+      if (pos58 !== -1) {
+        const payloadWithValue = asaasPayload.substring(0, pos58) + valueField + asaasPayload.substring(pos58)
+        const payloadWithoutCrc = payloadWithValue.substring(0, payloadWithValue.length - 8)
+        const payloadWithCrcPlaceholder = payloadWithoutCrc + '6304'
+        const crc = calculateCRC16(payloadWithCrcPlaceholder)
+        const finalPayload = payloadWithCrcPlaceholder + crc
+        
+        const qrCodeBase64Image = await generateQRCodeBase64(finalPayload)
+        
+        pixData = {
+          payload: finalPayload,
+          qrCodeBase64: qrCodeBase64Image,
+          expirationDate: firstPayment.dueDate
+        }
+      }
+    }
+    
+    // 5. Registrar conversão
+    await c.env.DB.prepare(`
+      INSERT INTO subscription_conversions (link_id, customer_id, subscription_id, customer_name, customer_email, customer_cpf)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(linkId, customerId, subscription.id, customerName, customerEmail, customerCpf).run()
+    
+    // 6. Incrementar contador de usos
+    await c.env.DB.prepare(`
+      UPDATE subscription_signup_links SET uses_count = uses_count + 1 WHERE id = ?
+    `).bind(linkId).run()
+    
+    return c.json({
+      ok: true,
+      subscription: {
+        id: subscription.id,
+        status: subscription.status,
+        value: subscription.value,
+        cycle: subscription.cycle,
+        nextDueDate: subscription.nextDueDate,
+        description: subscription.description
+      },
+      firstPayment: {
+        id: firstPayment.id,
+        status: firstPayment.status,
+        dueDate: firstPayment.dueDate,
+        invoiceUrl: firstPayment.invoiceUrl,
+        pix: pixData
+      },
+      splitConfig: {
+        subAccount: 20,
+        mainAccount: 80
+      }
+    })
+    
+  } catch (error: any) {
+    console.error('Erro no auto-cadastro:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 // Criar autorização PIX Automático (débito automático)
 app.post('/api/pix/automatic-authorization', async (c) => {
   try {
@@ -2773,6 +3030,11 @@ app.get('/login', (c) => {
     </body>
     </html>
   `)
+})
+// Página pública de auto-cadastro de assinatura
+app.get('/subscription-signup/:linkId', async (c) => {
+  const html = await Bun.file('./public/static/subscription-signup.html').text()
+  return c.html(html)
 })
 
 // Homepage
