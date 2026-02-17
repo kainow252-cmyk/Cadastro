@@ -3567,10 +3567,16 @@ async function generateSignupLink(accountId, walletId) {
                             Cliente escaneia este QR Code para se cadastrar:
                         </p>
                         <img src="${qrCodeBase64}" alt="QR Code" class="w-48 h-48 mx-auto border-4 border-white shadow-lg rounded-lg mb-3">
-                        <button onclick="downloadQRCode('${qrCodeBase64}', 'qrcode-auto-cadastro-${accountId}.png')" 
-                            class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">
-                            <i class="fas fa-download mr-2"></i>Baixar QR Code
-                        </button>
+                        <div class="flex gap-2 justify-center">
+                            <button onclick="downloadQRCode('${qrCodeBase64}', 'qrcode-auto-cadastro-${accountId}.png')" 
+                                class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">
+                                <i class="fas fa-download mr-2"></i>Baixar QR Code
+                            </button>
+                            <button onclick="generateHTML('${link.linkUrl}', '${qrCodeBase64}', ${value}, '${description}')" 
+                                class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition">
+                                <i class="fas fa-code mr-2"></i>Gerar HTML
+                            </button>
+                        </div>
                     </div>
                     
                     <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
@@ -3664,4 +3670,336 @@ function copyToClipboard(text) {
         document.body.removeChild(textarea);
         alert('✅ Link copiado!');
     });
+}
+
+// Gerar HTML completo para compartilhamento
+function generateHTML(linkUrl, qrCodeBase64, value, description) {
+    const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assinatura Mensal - ${description}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 500px;
+            width: 100%;
+            padding: 40px;
+            text-align: center;
+        }
+        .icon {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+            font-size: 40px;
+        }
+        h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #666;
+            font-size: 16px;
+            margin-bottom: 30px;
+        }
+        .price-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+        }
+        .price {
+            font-size: 48px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .price-label {
+            font-size: 18px;
+            opacity: 0.9;
+        }
+        .qr-container {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+        }
+        .qr-code {
+            width: 250px;
+            height: 250px;
+            margin: 0 auto;
+            border: 4px solid white;
+            border-radius: 10px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .instructions {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: left;
+            margin-bottom: 20px;
+        }
+        .instructions h3 {
+            color: #856404;
+            font-size: 18px;
+            margin-bottom: 15px;
+        }
+        .step {
+            display: flex;
+            align-items: start;
+            margin-bottom: 12px;
+            color: #856404;
+        }
+        .step-number {
+            background: #ffc107;
+            color: white;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+            margin-right: 12px;
+            flex-shrink: 0;
+        }
+        .btn {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 40px;
+            border-radius: 30px;
+            text-decoration: none;
+            font-weight: bold;
+            font-size: 18px;
+            margin-top: 20px;
+            transition: transform 0.3s, box-shadow 0.3s;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+        .features {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin: 30px 0;
+        }
+        .feature {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+        .feature-icon {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+        @media (max-width: 600px) {
+            .container {
+                padding: 30px 20px;
+            }
+            .price {
+                font-size: 36px;
+            }
+            .qr-code {
+                width: 200px;
+                height: 200px;
+            }
+            .features {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">📋</div>
+        <h1>Assinatura Mensal</h1>
+        <p class="subtitle">${description}</p>
+        
+        <div class="price-box">
+            <div class="price">R$ ${value.toFixed(2)}</div>
+            <div class="price-label">por mês</div>
+        </div>
+        
+        <div class="qr-container">
+            <p style="color: #666; margin-bottom: 15px; font-weight: 600;">Escaneie o QR Code para se cadastrar:</p>
+            <img src="${qrCodeBase64}" alt="QR Code" class="qr-code">
+        </div>
+        
+        <div class="instructions">
+            <h3>🎯 Como funciona:</h3>
+            <div class="step">
+                <div class="step-number">1</div>
+                <div>Escaneie o QR Code acima com a câmera do seu celular</div>
+            </div>
+            <div class="step">
+                <div class="step-number">2</div>
+                <div>Preencha seus dados (nome, email e CPF)</div>
+            </div>
+            <div class="step">
+                <div class="step-number">3</div>
+                <div>Pague a primeira parcela via PIX</div>
+            </div>
+            <div class="step">
+                <div class="step-number">4</div>
+                <div><strong>Pronto!</strong> Sua assinatura mensal estará ativa</div>
+            </div>
+        </div>
+        
+        <div class="features">
+            <div class="feature">
+                <div class="feature-icon">✅</div>
+                <strong>Pagamento Automático</strong><br>
+                Débito mensal sem complicação
+            </div>
+            <div class="feature">
+                <div class="feature-icon">🔒</div>
+                <strong>100% Seguro</strong><br>
+                Pode cancelar quando quiser
+            </div>
+            <div class="feature">
+                <div class="feature-icon">📧</div>
+                <strong>Notificações</strong><br>
+                Receba email todo mês
+            </div>
+            <div class="feature">
+                <div class="feature-icon">⚡</div>
+                <strong>Rápido</strong><br>
+                Cadastro em 2 minutos
+            </div>
+        </div>
+        
+        <a href="${linkUrl}" class="btn">Acessar Formulário de Cadastro</a>
+        
+        <p style="color: #999; font-size: 12px; margin-top: 30px;">
+            Link de auto-cadastro válido por 30 dias
+        </p>
+    </div>
+</body>
+</html>`;
+
+    // Criar blob e fazer download
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = \`assinatura-mensal-\${value.toFixed(2).replace('.', '-')}.html\`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    // Mostrar modal com prévia
+    showHTMLPreview(html);
+}
+
+// Mostrar prévia do HTML gerado
+function showHTMLPreview(html) {
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+        padding: 20px;
+    `;
+    
+    modal.innerHTML = \`
+        <div style="background: white; border-radius: 15px; max-width: 800px; width: 100%; max-height: 90vh; overflow: hidden; display: flex; flex-direction: column;">
+            <div style="padding: 20px; border-bottom: 2px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="margin: 0; font-size: 20px; color: #333;">
+                    <i class="fas fa-eye mr-2"></i>Prévia do HTML Gerado
+                </h3>
+                <button onclick="this.closest('[style*=fixed]').remove()" 
+                    style="background: #ef4444; color: white; border: none; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 20px;">
+                    ×
+                </button>
+            </div>
+            
+            <div style="flex: 1; overflow: auto; padding: 20px; background: #f9fafb;">
+                <div style="background: white; border-radius: 10px; padding: 15px; margin-bottom: 15px;">
+                    <h4 style="margin: 0 0 10px 0; color: #16a34a; display: flex; align-items: center;">
+                        <i class="fas fa-check-circle mr-2"></i>Arquivo baixado com sucesso!
+                    </h4>
+                    <p style="margin: 0; color: #666; font-size: 14px;">
+                        O arquivo HTML foi salvo no seu computador. Você pode enviá-lo por email, WhatsApp ou hospedar em seu servidor.
+                    </p>
+                </div>
+                
+                <div style="background: white; border-radius: 10px; padding: 15px; margin-bottom: 15px;">
+                    <h4 style="margin: 0 0 10px 0; color: #2563eb;">
+                        <i class="fas fa-lightbulb mr-2"></i>Como usar:
+                    </h4>
+                    <ul style="margin: 0; padding-left: 20px; color: #666; font-size: 14px;">
+                        <li style="margin-bottom: 8px;">📧 <strong>Email:</strong> Anexe o arquivo HTML e envie para seus clientes</li>
+                        <li style="margin-bottom: 8px;">💬 <strong>WhatsApp:</strong> Envie o arquivo como documento</li>
+                        <li style="margin-bottom: 8px;">🌐 <strong>Servidor:</strong> Faça upload para seu site e compartilhe o link</li>
+                        <li style="margin-bottom: 8px;">💾 <strong>Drive:</strong> Salve no Google Drive/Dropbox e compartilhe</li>
+                    </ul>
+                </div>
+                
+                <iframe srcdoc="\${html.replace(/"/g, '&quot;')}" 
+                    style="width: 100%; height: 500px; border: 2px solid #e5e7eb; border-radius: 10px; background: white;">
+                </iframe>
+            </div>
+            
+            <div style="padding: 20px; border-top: 2px solid #e5e7eb; display: flex; gap: 10px; justify-content: flex-end;">
+                <button onclick="copyHTMLCode()" 
+                    style="background: #8b5cf6; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                    <i class="fas fa-copy mr-2"></i>Copiar Código HTML
+                </button>
+                <button onclick="this.closest('[style*=fixed]').remove()" 
+                    style="background: #6b7280; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: 600;">
+                    <i class="fas fa-times mr-2"></i>Fechar
+                </button>
+            </div>
+        </div>
+    \`;
+    
+    document.body.appendChild(modal);
+    
+    // Salvar HTML para copiar
+    window.generatedHTML = html;
+}
+
+// Copiar código HTML
+function copyHTMLCode() {
+    if (window.generatedHTML) {
+        copyToClipboard(window.generatedHTML);
+    }
 }
