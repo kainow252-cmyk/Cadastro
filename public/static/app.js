@@ -1302,6 +1302,54 @@ function resetPixForm(accountId) {
 }
 
 // Abre o iframe do PIX dentro do card da subconta
+// Função auxiliar para esconder todos os frames de uma subconta
+function hideAllFrames(accountId) {
+    // Esconder frame de PIX avulso
+    const pixFrame = document.getElementById(`pix-frame-${accountId}`);
+    if (pixFrame) pixFrame.classList.add('hidden');
+    
+    // Esconder frame de assinatura
+    const subscriptionFrame = document.getElementById(`subscription-frame-${accountId}`);
+    if (subscriptionFrame) subscriptionFrame.classList.add('hidden');
+    
+    // Esconder frame de PIX Automático
+    const automaticFrame = document.getElementById(`automatic-frame-${accountId}`);
+    if (automaticFrame) automaticFrame.classList.add('hidden');
+    
+    // Esconder frame de link de auto-cadastro
+    const signupLinkFrame = document.getElementById(`signup-link-frame-${accountId}`);
+    if (signupLinkFrame) signupLinkFrame.classList.add('hidden');
+    
+    // Resetar botões
+    const pixBtn = document.getElementById(`btn-toggle-${accountId}`);
+    if (pixBtn) {
+        pixBtn.innerHTML = '<i class="fas fa-qrcode mr-2"></i>QR Code Avulso';
+        pixBtn.classList.remove('from-gray-500', 'to-gray-600');
+        pixBtn.classList.add('from-green-500', 'to-blue-500');
+    }
+    
+    const subscriptionBtn = document.getElementById(`btn-subscription-${accountId}`);
+    if (subscriptionBtn) {
+        subscriptionBtn.innerHTML = '<i class="fas fa-calendar-check mr-2"></i>Assinatura Mensal';
+        subscriptionBtn.classList.remove('from-gray-500', 'to-gray-600');
+        subscriptionBtn.classList.add('from-purple-500', 'to-pink-500');
+    }
+    
+    const automaticBtn = document.getElementById(`btn-automatic-${accountId}`);
+    if (automaticBtn) {
+        automaticBtn.innerHTML = '<i class="fas fa-robot mr-2"></i>PIX Automático';
+        automaticBtn.classList.remove('from-gray-500', 'to-gray-600');
+        automaticBtn.classList.add('from-indigo-500', 'to-cyan-500');
+    }
+    
+    const signupLinkBtn = document.getElementById(`btn-signup-link-${accountId}`);
+    if (signupLinkBtn) {
+        signupLinkBtn.innerHTML = '<i class="fas fa-link mr-2"></i>Link Auto-Cadastro';
+        signupLinkBtn.classList.remove('from-gray-500', 'to-gray-600');
+        signupLinkBtn.classList.add('from-orange-500', 'to-red-500');
+    }
+}
+
 function togglePixForm(accountId, walletId) {
     const frame = document.getElementById(`pix-frame-${accountId}`);
     const btn = document.getElementById(`btn-toggle-${accountId}`);
