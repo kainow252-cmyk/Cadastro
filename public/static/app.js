@@ -3912,7 +3912,7 @@ function generateHTML(linkUrl, qrCodeBase64, value, description) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = \`assinatura-mensal-\${value.toFixed(2).replace('.', '-')}.html\`;
+    a.download = 'assinatura-mensal-' + value.toFixed(2).replace('.', '-') + '.html';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -3939,7 +3939,7 @@ function showHTMLPreview(html) {
         padding: 20px;
     `;
     
-    modal.innerHTML = \`
+    modal.innerHTML = `
         <div style="background: white; border-radius: 15px; max-width: 800px; width: 100%; max-height: 90vh; overflow: hidden; display: flex; flex-direction: column;">
             <div style="padding: 20px; border-bottom: 2px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center;">
                 <h3 style="margin: 0; font-size: 20px; color: #333;">
@@ -3973,7 +3973,7 @@ function showHTMLPreview(html) {
                     </ul>
                 </div>
                 
-                <iframe srcdoc="\${html.replace(/"/g, '&quot;')}" 
+                <iframe srcdoc="${html.replace(/"/g, '&quot;')}" 
                     style="width: 100%; height: 500px; border: 2px solid #e5e7eb; border-radius: 10px; background: white;">
                 </iframe>
             </div>
@@ -3989,7 +3989,7 @@ function showHTMLPreview(html) {
                 </button>
             </div>
         </div>
-    \`;
+    `;
     
     document.body.appendChild(modal);
     
