@@ -4053,15 +4053,15 @@ async function generatePixAutomaticLink() {
             accountId: currentPixAutoAccountId,
             value: value,
             description: description,
-            daysToExpire: days
+            expirationDays: days
         });
         
         if (response.data.ok) {
             const linkData = response.data;
-            currentPixAutoLink = linkData.url;
+            currentPixAutoLink = linkData.linkUrl;
             
             // Preencher informações do link
-            document.getElementById('generated-pix-auto-link').value = linkData.url;
+            document.getElementById('generated-pix-auto-link').value = linkData.linkUrl;
             document.getElementById('pix-auto-display-value').textContent = `R$ ${value.toFixed(2)}`;
             
             // Formatar data de expiração
@@ -4076,7 +4076,7 @@ async function generatePixAutomaticLink() {
             // Gerar QR Code
             const qrContainer = document.getElementById('pix-auto-qr-container');
             const qrSize = 200;
-            const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${qrSize}x${qrSize}&data=${encodeURIComponent(linkData.url)}`;
+            const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${qrSize}x${qrSize}&data=${encodeURIComponent(linkData.linkUrl)}`;
             qrContainer.innerHTML = `<img src="${qrUrl}" alt="QR Code" class="mx-auto border-2 border-gray-300 rounded-lg" style="width: ${qrSize}px; height: ${qrSize}px;">`;
             
             // Mostrar conteúdo
