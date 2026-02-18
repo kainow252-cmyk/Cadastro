@@ -2285,10 +2285,14 @@ app.post('/api/pix/automatic-signup/:linkId', async (c) => {
     }
     
     // 2. Criar autorização PIX Automático com QR Code imediato (Jornada 3)
-    // Documentação: https://docs.asaas.com/reference/criar-uma-autorizacao-pix-automatico
+    // IMPORTANTE: PIX Automático requer habilitação prévia com time de sucesso Asaas
+    // Email: [email protected]
+    // Se não habilitado, faz fallback para assinatura recorrente PIX
+    
     const nextDueDate = new Date()
     nextDueDate.setDate(nextDueDate.getDate() + 1)
     
+    // Tentar PIX Automático primeiro
     const authorizationData = {
       customer: customerId,
       value: value,
@@ -2306,26 +2310,76 @@ app.post('/api/pix/automatic-signup/:linkId', async (c) => {
       }]
     }
     
-    const authorizationResult = await asaasRequest(c, '/v3/pix/automatic/authorizations', 'POST', authorizationData)
+    let authorizationResult = await asaasRequest(c, '/v3/pix/automatic/authorizations', 'POST', authorizationData)
     
+    console.log('📊 Resposta Asaas PIX Automático:', JSON.stringify(authorizationResult, null, 2))
+    
+    let authorization: any = null
+    let authorizationId: string = ''
+    let qrCodeData: any = null
+    let useFallback = false
+    
+    // Se PIX Automático falhar (não habilitado na conta), usar fallback
     if (!authorizationResult.ok || !authorizationResult.data?.id) {
-      return c.json({ 
-        error: 'Erro ao criar autorização PIX Automático',
-        details: authorizationResult.data 
-      }, 400)
-    }
-    
-    const authorization = authorizationResult.data
-    const authorizationId = authorization.id
-    
-    // 3. Extrair QR Code do primeiro pagamento (já vem na resposta da autorização)
-    let qrCodeData = null
-    if (authorization.immediateQrCode) {
-      qrCodeData = {
-        payload: authorization.immediateQrCode.payload,
-        encodedImage: authorization.immediateQrCode.encodedImage,
-        expirationDate: authorization.immediateQrCode.expirationDate,
-        conciliationIdentifier: authorization.immediateQrCode.conciliationIdentifier
+      console.warn('⚠️ PIX Automático não disponível, usando fallback (assinatura recorrente)')
+      useFallback = true
+      
+      // Fallback: Criar assinatura PIX recorrente
+      const subscriptionData = {
+        customer: customerId,
+        billingType: 'PIX',
+        value: value,
+        nextDueDate: nextDueDate.toISOString().split('T')[0],
+        cycle: frequency,
+        description: `${description} - Débito Automático Mensal`,
+        split: [{
+          walletId: walletId,
+          fixedValue: value * 0.20
+        }]
+      }
+      
+      const subscriptionResult = await asaasRequest(c, '/subscriptions', 'POST', subscriptionData)
+      
+      if (!subscriptionResult.ok || !subscriptionResult.data?.id) {
+        return c.json({ 
+          error: 'Erro ao criar autorização (fallback também falhou)',
+          details: subscriptionResult.data,
+          pixAutomaticError: authorizationResult.data,
+          note: 'PIX Automático requer habilitação prévia. Contate [email protected]'
+        }, 400)
+      }
+      
+      authorization = subscriptionResult.data
+      authorizationId = authorization.id
+      
+      // Buscar primeira cobrança e QR Code
+      const paymentsResult = await asaasRequest(c, `/payments?subscription=${authorizationId}`)
+      
+      if (paymentsResult.ok && paymentsResult.data?.data?.[0]?.id) {
+        const firstPayment = paymentsResult.data.data[0]
+        const qrCodeResult = await asaasRequest(c, `/payments/${firstPayment.id}/pixQrCode`)
+        
+        if (qrCodeResult.ok && qrCodeResult.data) {
+          qrCodeData = {
+            payload: qrCodeResult.data.payload,
+            encodedImage: qrCodeResult.data.encodedImage,
+            expirationDate: qrCodeResult.data.expirationDate
+          }
+        }
+      }
+    } else {
+      // PIX Automático funcionou
+      authorization = authorizationResult.data
+      authorizationId = authorization.id
+      
+      // Extrair QR Code do primeiro pagamento (já vem na resposta)
+      if (authorization.immediateQrCode) {
+        qrCodeData = {
+          payload: authorization.immediateQrCode.payload,
+          encodedImage: authorization.immediateQrCode.encodedImage,
+          expirationDate: authorization.immediateQrCode.expirationDate,
+          conciliationIdentifier: authorization.immediateQrCode.conciliationIdentifier
+        }
       }
     }
     
@@ -2361,13 +2415,14 @@ app.post('/api/pix/automatic-signup/:linkId', async (c) => {
     
     return c.json({
       ok: true,
+      mode: useFallback ? 'FALLBACK_SUBSCRIPTION' : 'PIX_AUTOMATIC',
       authorization: {
         id: authorizationId,
-        status: authorization.status || 'PENDING_IMMEDIATE_CHARGE',
+        status: authorization.status || (useFallback ? 'ACTIVE' : 'PENDING_IMMEDIATE_CHARGE'),
         value: authorization.value || value,
         description: authorization.description || description,
-        frequency: authorization.recurrence?.type || frequency,
-        recurrenceType: authorization.recurrence?.type,
+        frequency: authorization.recurrence?.type || authorization.cycle || frequency,
+        recurrenceType: authorization.recurrence?.type || authorization.cycle,
         conciliationIdentifier: qrCodeData?.conciliationIdentifier,
         customer: {
           id: customerId,
@@ -2379,11 +2434,12 @@ app.post('/api/pix/automatic-signup/:linkId', async (c) => {
       qrCode: qrCodeData,
       instructions: {
         step1: 'Escaneie o QR Code com o app do seu banco',
-        step2: 'Autorize o débito automático PIX',
+        step2: useFallback ? 'Autorize o pagamento PIX' : 'Autorize o débito automático PIX',
         step3: 'Pague a primeira parcela imediatamente (R$ ' + value.toFixed(2) + ')',
         step4: 'Autorização será ativada após confirmação do pagamento',
-        step5: 'Cobranças futuras ocorrerão automaticamente no vencimento',
-        note: 'Taxa de apenas 1,99% por transação (muito menor que boleto ou cartão)'
+        step5: useFallback ? 'Cobranças futuras serão enviadas por email' : 'Cobranças futuras ocorrerão automaticamente no vencimento',
+        note: useFallback ? 'Taxa de 3-5% por transação (modo fallback)' : 'Taxa de apenas 1,99% por transação',
+        warning: useFallback ? '⚠️ PIX Automático não habilitado. Usando assinatura recorrente como fallback.' : null
       },
       splitConfig: {
         subAccount: 20,
