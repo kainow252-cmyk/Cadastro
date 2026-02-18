@@ -96,7 +96,8 @@ app.use('/api/*', async (c, next) => {
   // Public routes with pattern match
   if (path.startsWith('/api/pix/subscription-link/') || 
       path.startsWith('/api/pix/subscription-signup/') ||
-      path.startsWith('/api/payment-status/')) {
+      path.startsWith('/api/payment-status/') ||
+      path.startsWith('/api/webhooks/')) {
     return next()
   }
   
@@ -1005,6 +1006,44 @@ app.post('/api/admin/init-db', async (c) => {
       ok: false, 
       error: error.message 
     }, 500)
+  }
+})
+
+// Webhook do Asaas para notificações de pagamento
+app.post('/api/webhooks/asaas', async (c) => {
+  try {
+    const webhook = await c.req.json()
+    console.log('Webhook recebido:', webhook)
+    
+    // Verificar tipo de evento
+    if (webhook.event === 'PAYMENT_RECEIVED' || webhook.event === 'PAYMENT_CONFIRMED') {
+      const payment = webhook.payment
+      const db = c.env.DB
+      
+      // Atualizar status do pagamento no banco D1
+      await db.prepare(`
+        UPDATE transactions 
+        SET status = ?, payment_date = ? 
+        WHERE id = ?
+      `).bind(
+        'RECEIVED',
+        payment.paymentDate || new Date().toISOString().split('T')[0],
+        payment.id
+      ).run()
+      
+      console.log(`Pagamento ${payment.id} confirmado via webhook`)
+      
+      return c.json({ 
+        ok: true, 
+        message: 'Webhook processado',
+        paymentId: payment.id
+      })
+    }
+    
+    return c.json({ ok: true, message: 'Evento ignorado' })
+  } catch (error: any) {
+    console.error('Erro ao processar webhook:', error)
+    return c.json({ ok: false, error: error.message }, 500)
   }
 })
 
@@ -3318,6 +3357,31 @@ app.get('/subscription-signup/:linkId', async (c) => {
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+    <style>
+        @keyframes pulse-slow {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        .animate-pulse-slow {
+            animation: pulse-slow 2s ease-in-out infinite;
+        }
+        @keyframes bounce-in {
+            0% { transform: scale(0); opacity: 0; }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .animate-bounce-in {
+            animation: bounce-in 0.6s ease-out;
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-10px); }
+            20%, 40%, 60%, 80% { transform: translateX(10px); }
+        }
+        .animate-shake {
+            animation: shake 0.5s ease-in-out;
+        }
+    </style>
 </head>
 <body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
     <div class="container mx-auto px-4 py-8">
@@ -3397,13 +3461,23 @@ app.get('/subscription-signup/:linkId', async (c) => {
         </div>
         
         <!-- Payment Confirmed State -->
-        <div id="payment-confirmed-state" class="hidden max-w-2xl mx-auto bg-white rounded-2xl shadow-xl p-8">
+        <div id="payment-confirmed-state" class="hidden max-w-2xl mx-auto bg-white rounded-2xl shadow-xl p-8 animate-pulse-slow">
+            <!-- Confetti animation -->
+            <div id="confetti-canvas" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 9999;"></div>
+            
             <div class="text-center mb-6">
-                <div class="bg-gradient-to-r from-green-400 to-emerald-500 w-32 h-32 rounded-full flex items-center justify-center mx-auto mb-6 animate-bounce">
+                <div class="bg-gradient-to-r from-green-400 to-emerald-500 w-32 h-32 rounded-full flex items-center justify-center mx-auto mb-6 animate-bounce shadow-2xl" style="animation: bounce 1s ease-in-out infinite, pulse 2s ease-in-out infinite;">
                     <i class="fas fa-check-double text-white text-5xl"></i>
                 </div>
-                <h2 class="text-4xl font-bold text-gray-800 mb-3">Pagamento Confirmado!</h2>
+                <h2 class="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-600 to-emerald-600 mb-3 animate-pulse">🎉 Pagamento Confirmado! 🎉</h2>
                 <p class="text-xl text-green-600 font-semibold mb-4">✅ Sua assinatura foi ativada com sucesso</p>
+                <div class="bg-gradient-to-r from-yellow-200 via-green-200 to-blue-200 rounded-lg p-3 animate-pulse">
+                    <p class="text-lg font-bold text-gray-800">
+                        <i class="fas fa-star text-yellow-500 mr-2"></i>
+                        Bem-vindo à sua assinatura!
+                        <i class="fas fa-star text-yellow-500 ml-2"></i>
+                    </p>
+                </div>
             </div>
             
             <div class="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-6 mb-6 border-2 border-green-200">
@@ -3547,8 +3621,94 @@ app.get('/subscription-signup/:linkId', async (c) => {
         }
         
         function showPaymentConfirmed() {
+            // Tocar som de confirmação
+            playSuccessSound();
+            
+            // Criar efeito confetti
+            createConfetti();
+            
+            // Mostrar tela de confirmação
             document.getElementById('success-state').classList.add('hidden');
             document.getElementById('payment-confirmed-state').classList.remove('hidden');
+            
+            // Scroll suave para o topo
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        
+        function playSuccessSound() {
+            // Usar Web Audio API para criar som de sucesso
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            
+            // Primeira nota (Dó)
+            const oscillator1 = audioContext.createOscillator();
+            const gainNode1 = audioContext.createGain();
+            oscillator1.connect(gainNode1);
+            gainNode1.connect(audioContext.destination);
+            oscillator1.frequency.value = 523.25; // Dó
+            gainNode1.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode1.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+            oscillator1.start(audioContext.currentTime);
+            oscillator1.stop(audioContext.currentTime + 0.3);
+            
+            // Segunda nota (Mi)
+            const oscillator2 = audioContext.createOscillator();
+            const gainNode2 = audioContext.createGain();
+            oscillator2.connect(gainNode2);
+            gainNode2.connect(audioContext.destination);
+            oscillator2.frequency.value = 659.25; // Mi
+            gainNode2.gain.setValueAtTime(0.3, audioContext.currentTime + 0.15);
+            gainNode2.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.45);
+            oscillator2.start(audioContext.currentTime + 0.15);
+            oscillator2.stop(audioContext.currentTime + 0.45);
+            
+            // Terceira nota (Sol)
+            const oscillator3 = audioContext.createOscillator();
+            const gainNode3 = audioContext.createGain();
+            oscillator3.connect(gainNode3);
+            gainNode3.connect(audioContext.destination);
+            oscillator3.frequency.value = 783.99; // Sol
+            gainNode3.gain.setValueAtTime(0.3, audioContext.currentTime + 0.3);
+            gainNode3.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.6);
+            oscillator3.start(audioContext.currentTime + 0.3);
+            oscillator3.stop(audioContext.currentTime + 0.6);
+        }
+        
+        function createConfetti() {
+            const canvas = document.getElementById('confetti-canvas');
+            const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ffa500'];
+            
+            for (let i = 0; i < 50; i++) {
+                const confetti = document.createElement('div');
+                confetti.style.position = 'absolute';
+                confetti.style.width = '10px';
+                confetti.style.height = '10px';
+                confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                confetti.style.left = Math.random() * 100 + '%';
+                confetti.style.top = '-10px';
+                confetti.style.opacity = '1';
+                confetti.style.borderRadius = '50%';
+                canvas.appendChild(confetti);
+                
+                const duration = 2000 + Math.random() * 1000;
+                const startTime = Date.now();
+                const startLeft = parseFloat(confetti.style.left);
+                
+                function animate() {
+                    const elapsed = Date.now() - startTime;
+                    const progress = elapsed / duration;
+                    
+                    if (progress < 1) {
+                        confetti.style.top = (progress * 100) + '%';
+                        confetti.style.left = (startLeft + Math.sin(progress * 4 * Math.PI) * 10) + '%';
+                        confetti.style.opacity = String(1 - progress);
+                        requestAnimationFrame(animate);
+                    } else {
+                        confetti.remove();
+                    }
+                }
+                
+                setTimeout(() => animate(), Math.random() * 500);
+            }
         }
         
         loadLinkData();
