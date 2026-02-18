@@ -5560,14 +5560,22 @@ app.get('/', (c) => {
                         
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-2">
-                                <i class="fas fa-calendar mr-1 text-purple-600"></i>Validade (dias)
+                                <i class="fas fa-calendar mr-1 text-purple-600"></i>Validade do Link
                             </label>
-                            <input type="number" 
-                                id="pix-auto-days" 
-                                value="30"
-                                min="1"
-                                max="365"
-                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                            <select id="pix-auto-days" 
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white">
+                                <option value="7">7 dias (1 semana)</option>
+                                <option value="15">15 dias (2 semanas)</option>
+                                <option value="30" selected>30 dias (1 mês)</option>
+                                <option value="60">60 dias (2 meses)</option>
+                                <option value="90">90 dias (3 meses)</option>
+                                <option value="180">180 dias (6 meses)</option>
+                                <option value="365">365 dias (1 ano)</option>
+                            </select>
+                            <p class="text-xs text-gray-500 mt-1">
+                                <i class="fas fa-info-circle mr-1"></i>
+                                Após expirar, o link não funcionará mais
+                            </p>
                         </div>
                         
                         <button onclick="generatePixAutomaticLink()" 
