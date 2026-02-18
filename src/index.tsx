@@ -96,6 +96,8 @@ app.use('/api/*', async (c, next) => {
   // Public routes with pattern match
   if (path.startsWith('/api/pix/subscription-link/') || 
       path.startsWith('/api/pix/subscription-signup/') ||
+      path.startsWith('/api/pix/automatic-signup-link/') ||
+      path.startsWith('/api/pix/automatic-signup/') ||
       path.startsWith('/api/payment-status/') ||
       path.startsWith('/api/webhooks/')) {
     return next()
@@ -2084,6 +2086,248 @@ app.get('/api/pix/automatic-authorizations', async (c) => {
     
   } catch (error: any) {
     console.error('Erro ao listar autorizações:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// ============================================
+// PIX AUTOMÁTICO - AUTO-CADASTRO (NOVOS ENDPOINTS)
+// ============================================
+
+// Criar link de auto-cadastro PIX Automático
+app.post('/api/pix/automatic-signup-link', async (c) => {
+  try {
+    const token = getCookie(c, 'auth_token')
+    if (!token) {
+      return c.json({ error: 'Não autorizado' }, 401)
+    }
+    
+    try {
+      await verifyToken(token, c.env.JWT_SECRET)
+    } catch {
+      return c.json({ error: 'Token inválido' }, 401)
+    }
+    
+    const { walletId, accountId, value, description, frequency = 'MONTHLY', expirationDays = 30 } = await c.req.json()
+    
+    if (!walletId || !accountId || !value || value <= 0) {
+      return c.json({ error: 'walletId, accountId e value (> 0) são obrigatórios' }, 400)
+    }
+    
+    const linkId = crypto.randomUUID()
+    const expiresAt = new Date(Date.now() + expirationDays * 24 * 60 * 60 * 1000).toISOString()
+    
+    await c.env.DB.prepare(`
+      INSERT INTO pix_automatic_signup_links (id, wallet_id, account_id, value, description, frequency, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(linkId, walletId, accountId, value, description, frequency, expiresAt).run()
+    
+    const linkUrl = `${new URL(c.req.url).origin}/pix-automatic-signup/${linkId}`
+    
+    return c.json({
+      ok: true,
+      linkId,
+      linkUrl,
+      value,
+      description,
+      frequency,
+      expiresAt,
+      walletId,
+      accountId
+    })
+    
+  } catch (error: any) {
+    console.error('Erro ao criar link PIX Automático:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Obter dados do link de auto-cadastro PIX Automático (público)
+app.get('/api/pix/automatic-signup-link/:linkId', async (c) => {
+  try {
+    const linkId = c.req.param('linkId')
+    
+    const result = await c.env.DB.prepare(`
+      SELECT * FROM pix_automatic_signup_links WHERE id = ? AND active = 1
+    `).bind(linkId).first()
+    
+    if (!result) {
+      return c.json({ error: 'Link não encontrado ou expirado' }, 404)
+    }
+    
+    if (new Date(result.expires_at as string) < new Date()) {
+      return c.json({ error: 'Link expirado' }, 410)
+    }
+    
+    return c.json({
+      ok: true,
+      data: {
+        linkId: result.id,
+        value: result.value,
+        description: result.description,
+        frequency: result.frequency,
+        walletId: result.wallet_id,
+        accountId: result.account_id
+      }
+    })
+  } catch (error: any) {
+    console.error('Erro ao buscar link:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Cliente completa auto-cadastro PIX Automático (público)
+app.post('/api/pix/automatic-signup/:linkId', async (c) => {
+  try {
+    const linkId = c.req.param('linkId')
+    const { customerName, customerEmail, customerCpf } = await c.req.json()
+    
+    if (!customerName || !customerEmail || !customerCpf) {
+      return c.json({ error: 'Nome, email e CPF são obrigatórios' }, 400)
+    }
+    
+    // Buscar link
+    const link = await c.env.DB.prepare(`
+      SELECT * FROM pix_automatic_signup_links WHERE id = ? AND active = 1
+    `).bind(linkId).first()
+    
+    if (!link) {
+      return c.json({ error: 'Link não encontrado ou inativo' }, 404)
+    }
+    
+    if (new Date(link.expires_at as string) < new Date()) {
+      return c.json({ error: 'Link expirado' }, 410)
+    }
+    
+    const walletId = link.wallet_id as string
+    const value = link.value as number
+    const description = link.description as string
+    const frequency = link.frequency as string
+    const accountId = link.account_id as string
+    
+    // 1. Buscar ou criar customer
+    const searchResult = await asaasRequest(c, `/customers?cpfCnpj=${customerCpf}`)
+    
+    let customerId
+    if (searchResult.ok && searchResult.data?.data?.[0]?.id) {
+      customerId = searchResult.data.data[0].id
+    } else {
+      const customerData = {
+        name: customerName,
+        cpfCnpj: customerCpf,
+        email: customerEmail,
+        notificationDisabled: false
+      }
+      
+      const createResult = await asaasRequest(c, '/customers', 'POST', customerData)
+      if (!createResult.ok || !createResult.data?.id) {
+        return c.json({ 
+          error: 'Erro ao criar cadastro',
+          details: createResult.data 
+        }, 400)
+      }
+      
+      customerId = createResult.data.id
+    }
+    
+    // 2. Criar autorização PIX Automático
+    const authData = {
+      customer: customerId,
+      value: value,
+      description: description,
+      recurrenceType: frequency,
+      pixQrCodeType: 'WITH_AUTHORIZATION',
+      split: [{
+        walletId: walletId,
+        percentualValue: 20
+      }]
+    }
+    
+    const authResult = await asaasRequest(c, '/v3/pix/automatic/authorizations', 'POST', authData)
+    
+    if (!authResult.ok || !authResult.data?.id) {
+      return c.json({ 
+        error: 'Erro ao criar autorização',
+        details: authResult.data 
+      }, 400)
+    }
+    
+    const authorization = authResult.data
+    const authorizationId = authorization.id
+    
+    // 3. Buscar QR Code da autorização
+    const qrCodeResult = await asaasRequest(c, `/v3/pix/automatic/authorizations/${authorizationId}/qrCode`)
+    
+    let qrCodeData = null
+    if (qrCodeResult.ok && qrCodeResult.data) {
+      qrCodeData = {
+        payload: qrCodeResult.data.payload,
+        encodedImage: qrCodeResult.data.encodedImage,
+        expirationDate: qrCodeResult.data.expirationDate
+      }
+    }
+    
+    // 4. Salvar autorização no banco D1
+    await c.env.DB.prepare(`
+      INSERT INTO pix_automatic_authorizations (
+        id, link_id, authorization_id, customer_id, customer_name, customer_email, customer_cpf,
+        account_id, wallet_id, value, description, frequency, status, qr_code_payload, qr_code_image
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      crypto.randomUUID(),
+      linkId,
+      authorizationId,
+      customerId,
+      customerName,
+      customerEmail,
+      customerCpf,
+      accountId,
+      walletId,
+      value,
+      description,
+      frequency,
+      'PENDING',
+      qrCodeData?.payload || null,
+      qrCodeData?.encodedImage || null
+    ).run()
+    
+    // 5. Incrementar contador de usos do link
+    await c.env.DB.prepare(`
+      UPDATE pix_automatic_signup_links SET uses_count = uses_count + 1 WHERE id = ?
+    `).bind(linkId).run()
+    
+    return c.json({
+      ok: true,
+      authorization: {
+        id: authorizationId,
+        status: authorization.status,
+        value: authorization.value,
+        description: authorization.description,
+        frequency: authorization.recurrenceType,
+        customer: {
+          id: customerId,
+          name: customerName,
+          email: customerEmail,
+          cpf: customerCpf
+        }
+      },
+      qrCode: qrCodeData,
+      instructions: {
+        step1: 'Escaneie o QR Code com o app do seu banco',
+        step2: 'Autorize o débito automático',
+        step3: 'Pague a primeira parcela imediatamente',
+        step4: 'Autorização será ativada após o pagamento',
+        step5: 'Cobranças futuras ocorrerão automaticamente'
+      },
+      splitConfig: {
+        subAccount: 20,
+        mainAccount: 80
+      }
+    })
+    
+  } catch (error: any) {
+    console.error('Erro no auto-cadastro PIX Automático:', error)
     return c.json({ error: error.message }, 500)
   }
 })
