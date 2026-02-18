@@ -4164,3 +4164,268 @@ function downloadPixAutoQRCode() {
         document.body.removeChild(link);
     }
 }
+
+// Gerar HTML do PIX Automático (igual ao Link Auto-Cadastro)
+function downloadPixAutoHTML() {
+    if (!currentPixAutoLink) return;
+    
+    const value = parseFloat(document.getElementById('pix-auto-value').value);
+    const description = document.getElementById('pix-auto-description').value.trim();
+    const linkUrl = currentPixAutoLink;
+    
+    // Gerar QR Code em base64
+    const qrSize = 300;
+    const qrCodeBase64 = `https://api.qrserver.com/v1/create-qr-code/?size=${qrSize}x${qrSize}&data=${encodeURIComponent(linkUrl)}`;
+    
+    // Gerar HTML completo
+    const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PIX Automático - ${description}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            max-width: 600px;
+            width: 100%;
+            padding: 50px 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            text-align: center;
+        }
+        .icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            font-size: 32px;
+            color: #1a1a1a;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+        .subtitle {
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .price-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+        }
+        .price {
+            font-size: 48px;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+        .price-label {
+            font-size: 18px;
+            opacity: 0.9;
+        }
+        .qr-container {
+            background: #f8f9fa;
+            padding: 30px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+        }
+        .qr-code {
+            width: 300px;
+            height: 300px;
+            border-radius: 10px;
+            background: white;
+            padding: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .instructions {
+            text-align: left;
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+        }
+        .instructions h3 {
+            font-size: 20px;
+            margin-bottom: 20px;
+            color: #1a1a1a;
+        }
+        .step {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 15px;
+            gap: 15px;
+        }
+        .step-number {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+        .features {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .feature {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            font-size: 14px;
+        }
+        .feature-icon {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+        .btn {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 18px 40px;
+            border-radius: 10px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 16px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+        .highlight {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border-left: 4px solid #ffc107;
+        }
+        @media (max-width: 600px) {
+            .container {
+                padding: 30px 20px;
+            }
+            .price {
+                font-size: 36px;
+            }
+            .qr-code {
+                width: 200px;
+                height: 200px;
+            }
+            .features {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon">🤖</div>
+        <h1>PIX Automático</h1>
+        <p class="subtitle">${description}</p>
+        
+        <div class="price-box">
+            <div class="price">R$ ${value.toFixed(2)}</div>
+            <div class="price-label">débito automático mensal</div>
+        </div>
+        
+        <div class="highlight">
+            <strong>⚡ PIX Automático:</strong> Autorize uma única vez e o pagamento será debitado automaticamente todo mês! Sem necessidade de pagar manualmente.
+        </div>
+        
+        <div class="qr-container">
+            <p style="color: #666; margin-bottom: 15px; font-weight: 600;">Escaneie o QR Code para se cadastrar:</p>
+            <img src="${qrCodeBase64}" alt="QR Code" class="qr-code">
+        </div>
+        
+        <div class="instructions">
+            <h3>🎯 Como funciona:</h3>
+            <div class="step">
+                <div class="step-number">1</div>
+                <div>Escaneie o QR Code acima com a câmera do seu celular</div>
+            </div>
+            <div class="step">
+                <div class="step-number">2</div>
+                <div>Preencha seus dados (nome, email e CPF)</div>
+            </div>
+            <div class="step">
+                <div class="step-number">3</div>
+                <div>Autorize o débito automático no app do seu banco</div>
+            </div>
+            <div class="step">
+                <div class="step-number">4</div>
+                <div>Pague a primeira parcela via PIX</div>
+            </div>
+            <div class="step">
+                <div class="step-number">5</div>
+                <div><strong>Pronto!</strong> Os pagamentos futuros serão debitados automaticamente</div>
+            </div>
+        </div>
+        
+        <div class="features">
+            <div class="feature">
+                <div class="feature-icon">🤖</div>
+                <strong>100% Automático</strong><br>
+                Débito mensal sem intervenção
+            </div>
+            <div class="feature">
+                <div class="feature-icon">🔒</div>
+                <strong>Seguro</strong><br>
+                Autorização uma única vez
+            </div>
+            <div class="feature">
+                <div class="feature-icon">💰</div>
+                <strong>Taxa Baixa</strong><br>
+                Apenas 1,99% por transação
+            </div>
+            <div class="feature">
+                <div class="feature-icon">⚡</div>
+                <strong>Rápido</strong><br>
+                Cadastro em 2 minutos
+            </div>
+        </div>
+        
+        <a href="${linkUrl}" class="btn">Acessar Formulário de Cadastro</a>
+        
+        <p style="color: #999; font-size: 12px; margin-top: 30px;">
+            Link válido por ${document.getElementById('pix-auto-days').value} dias
+        </p>
+    </div>
+</body>
+</html>`;
+
+    // Criar blob e fazer download
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'pix-automatico-' + value.toFixed(2).replace('.', '-') + '.html';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    
+    // Feedback visual
+    alert('✅ HTML gerado com sucesso!');
+}

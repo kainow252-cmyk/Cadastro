@@ -5663,6 +5663,11 @@ app.get('/', (c) => {
                                     <i class="fas fa-download text-xl"></i>
                                     Baixar QR Code
                                 </button>
+                                <button onclick="downloadPixAutoHTML()" 
+                                    class="w-full px-4 py-3 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 font-semibold flex items-center justify-center gap-2">
+                                    <i class="fas fa-code text-xl"></i>
+                                    Gerar HTML
+                                </button>
                             </div>
                         </div>
                     </div>
