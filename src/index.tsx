@@ -2229,6 +2229,8 @@ app.get('/api/pix/automatic-signup-link/:linkId', async (c) => {
 })
 
 // Cliente completa auto-cadastro PIX Automático (público)
+// Implementação usando Jornada 3 do Asaas: QR Code único contém dados do primeiro pagamento + autorização de recorrência
+// Documentação: https://docs.asaas.com/docs/pix-automatico
 app.post('/api/pix/automatic-signup/:linkId', async (c) => {
   try {
     const linkId = c.req.param('linkId')
@@ -2282,53 +2284,48 @@ app.post('/api/pix/automatic-signup/:linkId', async (c) => {
       customerId = createResult.data.id
     }
     
-    // 2. Criar assinatura mensal PIX (DEMO - usando assinatura normal até PIX Automático estar disponível)
-    // TODO: Quando Asaas liberar PIX Automático, trocar para /v3/pix/automatic/authorizations
+    // 2. Criar autorização PIX Automático com QR Code imediato (Jornada 3)
+    // Documentação: https://docs.asaas.com/reference/criar-uma-autorizacao-pix-automatico
     const nextDueDate = new Date()
     nextDueDate.setDate(nextDueDate.getDate() + 1)
     
-    const subscriptionData = {
+    const authorizationData = {
       customer: customerId,
-      billingType: 'PIX',
       value: value,
-      nextDueDate: nextDueDate.toISOString().split('T')[0],
-      cycle: frequency,
       description: `${description} - Débito Automático Mensal`,
+      recurrence: {
+        type: frequency, // MONTHLY, WEEKLY, etc
+      },
+      immediateCharge: {
+        value: value,
+        dueDate: nextDueDate.toISOString().split('T')[0]
+      },
       split: [{
         walletId: walletId,
         fixedValue: value * 0.20
       }]
     }
     
-    const subscriptionResult = await asaasRequest(c, '/subscriptions', 'POST', subscriptionData)
+    const authorizationResult = await asaasRequest(c, '/v3/pix/automatic/authorizations', 'POST', authorizationData)
     
-    if (!subscriptionResult.ok || !subscriptionResult.data?.id) {
+    if (!authorizationResult.ok || !authorizationResult.data?.id) {
       return c.json({ 
-        error: 'Erro ao criar assinatura',
-        details: subscriptionResult.data 
+        error: 'Erro ao criar autorização PIX Automático',
+        details: authorizationResult.data 
       }, 400)
     }
     
-    const subscription = subscriptionResult.data
-    const authorizationId = subscription.id
+    const authorization = authorizationResult.data
+    const authorizationId = authorization.id
     
-    // 3. Buscar primeira cobrança da assinatura
-    const paymentsResult = await asaasRequest(c, `/payments?subscription=${authorizationId}`)
-    
+    // 3. Extrair QR Code do primeiro pagamento (já vem na resposta da autorização)
     let qrCodeData = null
-    if (paymentsResult.ok && paymentsResult.data?.data?.[0]?.id) {
-      const firstPayment = paymentsResult.data.data[0]
-      const paymentId = firstPayment.id
-      
-      // Buscar QR Code do primeiro pagamento
-      const qrCodeResult = await asaasRequest(c, `/payments/${paymentId}/pixQrCode`)
-      
-      if (qrCodeResult.ok && qrCodeResult.data) {
-        qrCodeData = {
-          payload: qrCodeResult.data.payload,
-          encodedImage: qrCodeResult.data.encodedImage,
-          expirationDate: qrCodeResult.data.expirationDate
-        }
+    if (authorization.immediateQrCode) {
+      qrCodeData = {
+        payload: authorization.immediateQrCode.payload,
+        encodedImage: authorization.immediateQrCode.encodedImage,
+        expirationDate: authorization.immediateQrCode.expirationDate,
+        conciliationIdentifier: authorization.immediateQrCode.conciliationIdentifier
       }
     }
     
@@ -2366,10 +2363,12 @@ app.post('/api/pix/automatic-signup/:linkId', async (c) => {
       ok: true,
       authorization: {
         id: authorizationId,
-        status: subscription.status || 'ACTIVE',
-        value: subscription.value || value,
-        description: subscription.description || description,
-        frequency: subscription.cycle || frequency,
+        status: authorization.status || 'PENDING_IMMEDIATE_CHARGE',
+        value: authorization.value || value,
+        description: authorization.description || description,
+        frequency: authorization.recurrence?.type || frequency,
+        recurrenceType: authorization.recurrence?.type,
+        conciliationIdentifier: qrCodeData?.conciliationIdentifier,
         customer: {
           id: customerId,
           name: customerName,
@@ -2380,14 +2379,16 @@ app.post('/api/pix/automatic-signup/:linkId', async (c) => {
       qrCode: qrCodeData,
       instructions: {
         step1: 'Escaneie o QR Code com o app do seu banco',
-        step2: 'Autorize o débito automático',
-        step3: 'Pague a primeira parcela imediatamente',
-        step4: 'Autorização será ativada após o pagamento',
-        step5: 'Cobranças futuras ocorrerão automaticamente'
+        step2: 'Autorize o débito automático PIX',
+        step3: 'Pague a primeira parcela imediatamente (R$ ' + value.toFixed(2) + ')',
+        step4: 'Autorização será ativada após confirmação do pagamento',
+        step5: 'Cobranças futuras ocorrerão automaticamente no vencimento',
+        note: 'Taxa de apenas 1,99% por transação (muito menor que boleto ou cartão)'
       },
       splitConfig: {
         subAccount: 20,
-        mainAccount: 80
+        mainAccount: 80,
+        description: '80% vai para conta principal, 20% para subconta'
       }
     })
     
