@@ -2277,40 +2277,53 @@ app.post('/api/pix/automatic-signup/:linkId', async (c) => {
       customerId = createResult.data.id
     }
     
-    // 2. Criar autorização PIX Automático
-    const authData = {
+    // 2. Criar assinatura mensal PIX (DEMO - usando assinatura normal até PIX Automático estar disponível)
+    // TODO: Quando Asaas liberar PIX Automático, trocar para /v3/pix/automatic/authorizations
+    const nextDueDate = new Date()
+    nextDueDate.setDate(nextDueDate.getDate() + 1)
+    
+    const subscriptionData = {
       customer: customerId,
+      billingType: 'PIX',
       value: value,
-      description: description,
-      recurrenceType: frequency,
-      pixQrCodeType: 'WITH_AUTHORIZATION',
+      nextDueDate: nextDueDate.toISOString().split('T')[0],
+      cycle: frequency,
+      description: `${description} - Débito Automático Mensal`,
       split: [{
         walletId: walletId,
-        percentualValue: 20
+        fixedValue: value * 0.20
       }]
     }
     
-    const authResult = await asaasRequest(c, '/v3/pix/automatic/authorizations', 'POST', authData)
+    const subscriptionResult = await asaasRequest(c, '/subscriptions', 'POST', subscriptionData)
     
-    if (!authResult.ok || !authResult.data?.id) {
+    if (!subscriptionResult.ok || !subscriptionResult.data?.id) {
       return c.json({ 
-        error: 'Erro ao criar autorização',
-        details: authResult.data 
+        error: 'Erro ao criar assinatura',
+        details: subscriptionResult.data 
       }, 400)
     }
     
-    const authorization = authResult.data
-    const authorizationId = authorization.id
+    const subscription = subscriptionResult.data
+    const authorizationId = subscription.id
     
-    // 3. Buscar QR Code da autorização
-    const qrCodeResult = await asaasRequest(c, `/v3/pix/automatic/authorizations/${authorizationId}/qrCode`)
+    // 3. Buscar primeira cobrança da assinatura
+    const paymentsResult = await asaasRequest(c, `/payments?subscription=${authorizationId}`)
     
     let qrCodeData = null
-    if (qrCodeResult.ok && qrCodeResult.data) {
-      qrCodeData = {
-        payload: qrCodeResult.data.payload,
-        encodedImage: qrCodeResult.data.encodedImage,
-        expirationDate: qrCodeResult.data.expirationDate
+    if (paymentsResult.ok && paymentsResult.data?.data?.[0]?.id) {
+      const firstPayment = paymentsResult.data.data[0]
+      const paymentId = firstPayment.id
+      
+      // Buscar QR Code do primeiro pagamento
+      const qrCodeResult = await asaasRequest(c, `/payments/${paymentId}/pixQrCode`)
+      
+      if (qrCodeResult.ok && qrCodeResult.data) {
+        qrCodeData = {
+          payload: qrCodeResult.data.payload,
+          encodedImage: qrCodeResult.data.encodedImage,
+          expirationDate: qrCodeResult.data.expirationDate
+        }
       }
     }
     
@@ -2348,10 +2361,10 @@ app.post('/api/pix/automatic-signup/:linkId', async (c) => {
       ok: true,
       authorization: {
         id: authorizationId,
-        status: authorization.status,
-        value: authorization.value,
-        description: authorization.description,
-        frequency: authorization.recurrenceType,
+        status: subscription.status || 'ACTIVE',
+        value: subscription.value || value,
+        description: subscription.description || description,
+        frequency: subscription.cycle || frequency,
         customer: {
           id: customerId,
           name: customerName,
