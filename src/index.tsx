@@ -521,13 +521,27 @@ app.get('/api/stats', async (c) => {
     const accountsResult = await asaasRequest(c, '/accounts')
     const accounts = accountsResult?.data?.data || []
     
-    // Buscar links de cadastro do banco D1
-    const linksResult = await c.env.DB.prepare(`
+    // Buscar links de auto-cadastro (assinatura recorrente)
+    const signupLinksResult = await c.env.DB.prepare(`
       SELECT 
         COUNT(*) as total,
         SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END) as active,
         SUM(uses_count) as total_uses
-      FROM signup_links
+      FROM subscription_signup_links
+    `).first()
+    
+    // Buscar links de PIX Automático
+    const pixAutoLinksResult = await c.env.DB.prepare(`
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END) as active,
+        SUM(uses_count) as total_uses
+      FROM pix_automatic_signup_links
+    `).first()
+    
+    // Buscar conversões de PIX Automático (autorizações criadas)
+    const pixAutoConversionsResult = await c.env.DB.prepare(`
+      SELECT COUNT(*) as total FROM pix_automatic_authorizations
     `).first()
     
     // Calcular estatísticas
@@ -535,13 +549,22 @@ app.get('/api/stats', async (c) => {
     const approvedAccounts = accounts.filter((a: any) => a.walletId).length
     const pendingAccounts = totalAccounts - approvedAccounts
     
-    // Links de cadastro
-    const totalLinks = linksResult?.total || 0
-    const activeLinks = linksResult?.active || 0
-    const totalConversions = linksResult?.total_uses || 0
+    // Links de cadastro (soma de ambos os tipos)
+    const signupLinksTotal = signupLinksResult?.total || 0
+    const signupLinksActive = signupLinksResult?.active || 0
+    const signupLinksUses = signupLinksResult?.total_uses || 0
+    
+    const pixAutoLinksTotal = pixAutoLinksResult?.total || 0
+    const pixAutoLinksActive = pixAutoLinksResult?.active || 0
+    const pixAutoLinksUses = pixAutoLinksResult?.total_uses || 0
+    const pixAutoConversions = pixAutoConversionsResult?.total || 0
+    
+    const totalLinks = signupLinksTotal + pixAutoLinksTotal
+    const activeLinks = signupLinksActive + pixAutoLinksActive
+    const totalConversions = signupLinksUses + pixAutoConversions
     
     // Taxa de conversão
-    const conversionRate = totalLinks > 0 ? ((totalConversions / totalLinks) * 100).toFixed(1) : '0'
+    const conversionRate = activeLinks > 0 ? ((totalConversions / activeLinks) * 100).toFixed(1) : '0.0'
     
     return c.json({
       ok: true,
