@@ -1633,27 +1633,8 @@ function viewSubscriptionDetails(subscriptionId) {
 
 // Controles do formulário de PIX Automático
 function toggleAutomaticForm(accountId, walletId) {
-    const frame = document.getElementById(`automatic-frame-${accountId}`);
-    const btn = document.getElementById(`btn-automatic-${accountId}`);
-    
-    if (!frame) {
-        console.error('Frame de PIX Automático não encontrado:', accountId);
-        return;
-    }
-    
-    if (frame.classList.contains('hidden')) {
-        frame.classList.remove('hidden');
-        btn.innerHTML = '<i class="fas fa-times mr-2"></i>Fechar';
-        btn.classList.remove('from-indigo-500', 'to-cyan-500');
-        btn.classList.add('from-gray-500', 'to-gray-600');
-        
-        setTimeout(() => {
-            const nameInput = document.getElementById(`auto-name-${accountId}`);
-            if (nameInput) nameInput.focus();
-        }, 100);
-    } else {
-        closeAutomaticFrame(accountId);
-    }
+    // Abrir modal PIX Automático
+    openPixAutomaticModal(accountId, walletId);
 }
 
 function closeAutomaticFrame(accountId) {
@@ -4004,5 +3985,182 @@ function showHTMLPreview(html) {
 function copyHTMLCode() {
     if (window.generatedHTML) {
         copyToClipboard(window.generatedHTML);
+    }
+}
+
+// ===== FUNÇÕES PIX AUTOMÁTICO =====
+let currentPixAutoLink = '';
+let currentPixAutoAccountId = '';
+let currentPixAutoWalletId = '';
+
+// Abrir modal PIX Automático
+async function openPixAutomaticModal(accountId, walletId) {
+    currentPixAutoAccountId = accountId;
+    currentPixAutoWalletId = walletId;
+    
+    const modal = document.getElementById('pix-automatic-modal');
+    const form = document.getElementById('pix-automatic-form');
+    const loading = document.getElementById('pix-automatic-loading');
+    const content = document.getElementById('pix-automatic-content');
+    
+    // Resetar formulário
+    document.getElementById('pix-auto-value').value = '';
+    document.getElementById('pix-auto-description').value = '';
+    document.getElementById('pix-auto-days').value = '30';
+    
+    // Mostrar modal com formulário
+    modal.classList.remove('hidden');
+    form.classList.remove('hidden');
+    loading.classList.add('hidden');
+    content.classList.add('hidden');
+}
+
+// Gerar link PIX Automático
+async function generatePixAutomaticLink() {
+    const value = parseFloat(document.getElementById('pix-auto-value').value);
+    const description = document.getElementById('pix-auto-description').value.trim();
+    const days = parseInt(document.getElementById('pix-auto-days').value);
+    
+    // Validações
+    if (!value || value <= 0) {
+        alert('❌ Por favor, informe um valor válido maior que zero');
+        return;
+    }
+    
+    if (!description) {
+        alert('❌ Por favor, informe uma descrição');
+        return;
+    }
+    
+    if (!days || days <= 0) {
+        alert('❌ Por favor, informe uma validade válida');
+        return;
+    }
+    
+    const form = document.getElementById('pix-automatic-form');
+    const loading = document.getElementById('pix-automatic-loading');
+    const content = document.getElementById('pix-automatic-content');
+    const btn = document.getElementById('generate-pix-auto-btn');
+    
+    // Desabilitar botão
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Gerando...';
+    
+    try {
+        // Gerar link via API
+        const response = await axios.post('/api/pix/automatic-signup-link', {
+            walletId: currentPixAutoWalletId,
+            accountId: currentPixAutoAccountId,
+            value: value,
+            description: description,
+            daysToExpire: days
+        });
+        
+        if (response.data.ok) {
+            const linkData = response.data;
+            currentPixAutoLink = linkData.url;
+            
+            // Preencher informações do link
+            document.getElementById('generated-pix-auto-link').value = linkData.url;
+            document.getElementById('pix-auto-display-value').textContent = `R$ ${value.toFixed(2)}`;
+            
+            // Formatar data de expiração
+            const expiresDate = new Date(linkData.expiresAt);
+            const expiresFormatted = expiresDate.toLocaleDateString('pt-BR', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric'
+            });
+            document.getElementById('pix-auto-expires').textContent = expiresFormatted;
+            
+            // Gerar QR Code
+            const qrContainer = document.getElementById('pix-auto-qr-container');
+            const qrSize = 200;
+            const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${qrSize}x${qrSize}&data=${encodeURIComponent(linkData.url)}`;
+            qrContainer.innerHTML = `<img src="${qrUrl}" alt="QR Code" class="mx-auto border-2 border-gray-300 rounded-lg" style="width: ${qrSize}px; height: ${qrSize}px;">`;
+            
+            // Mostrar conteúdo
+            form.classList.add('hidden');
+            loading.classList.add('hidden');
+            content.classList.remove('hidden');
+        } else {
+            throw new Error(response.data.error || 'Erro ao gerar link');
+        }
+    } catch (error) {
+        console.error('Erro ao gerar link PIX Automático:', error);
+        alert('❌ Erro ao gerar link: ' + (error.response?.data?.error || error.message));
+        
+        // Reabilitar botão
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-robot mr-2"></i>Gerar Link PIX Automático';
+    }
+}
+
+// Fechar modal PIX Automático
+function closePixAutomaticModal() {
+    const modal = document.getElementById('pix-automatic-modal');
+    modal.classList.add('hidden');
+    currentPixAutoLink = '';
+    currentPixAutoAccountId = '';
+    currentPixAutoWalletId = '';
+}
+
+// Copiar link PIX Automático
+function copyPixAutoLink() {
+    const input = document.getElementById('generated-pix-auto-link');
+    const btn = document.getElementById('copy-pix-auto-btn');
+    
+    input.select();
+    document.execCommand('copy');
+    
+    // Feedback visual
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-check"></i>';
+    btn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+    btn.classList.add('bg-green-600');
+    
+    setTimeout(() => {
+        btn.innerHTML = originalHtml;
+        btn.classList.remove('bg-green-600');
+        btn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+    }, 2000);
+}
+
+// Compartilhar via WhatsApp
+function sharePixAutoWhatsApp() {
+    if (currentPixAutoLink) {
+        const text = encodeURIComponent(`✨ Link PIX Automático - Débito Automático Mensal\n\nAutorize uma única vez e o pagamento será debitado automaticamente todo mês!\n\n🔗 ${currentPixAutoLink}`);
+        window.open(`https://wa.me/?text=${text}`, '_blank');
+    }
+}
+
+// Compartilhar via Email
+function sharePixAutoEmail() {
+    if (currentPixAutoLink) {
+        const subject = encodeURIComponent('Link PIX Automático - Débito Automático Mensal');
+        const body = encodeURIComponent(`Olá!\n\nAqui está o link para você se cadastrar no PIX Automático:\n\n${currentPixAutoLink}\n\nCom o PIX Automático, você autoriza o débito uma única vez e o pagamento será debitado automaticamente todo mês. Sem necessidade de pagar manualmente!\n\nAtenciosamente`);
+        window.location.href = `mailto:?subject=${subject}&body=${body}`;
+    }
+}
+
+// Compartilhar via Telegram
+function sharePixAutoTelegram() {
+    if (currentPixAutoLink) {
+        const text = encodeURIComponent(`✨ Link PIX Automático - Débito Automático Mensal\n\nAutorize uma única vez e o pagamento será debitado automaticamente todo mês!\n\n🔗 ${currentPixAutoLink}`);
+        window.open(`https://t.me/share/url?url=${currentPixAutoLink}&text=${text}`, '_blank');
+    }
+}
+
+// Baixar QR Code
+function downloadPixAutoQRCode() {
+    if (currentPixAutoLink) {
+        const qrSize = 500;
+        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${qrSize}x${qrSize}&data=${encodeURIComponent(currentPixAutoLink)}`;
+        const link = document.createElement('a');
+        link.href = qrUrl;
+        link.download = 'qrcode-pix-automatico.png';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     }
 }

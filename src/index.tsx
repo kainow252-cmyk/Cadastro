@@ -5429,6 +5429,181 @@ app.get('/', (c) => {
             </div>
         </div>
 
+        <!-- Modal PIX Automático -->
+        <div id="pix-automatic-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                <!-- Header -->
+                <div class="bg-gradient-to-r from-blue-500 to-purple-600 p-6 rounded-t-2xl">
+                    <div class="flex justify-between items-center">
+                        <h3 class="text-2xl font-bold text-white">
+                            <i class="fas fa-robot mr-2"></i>
+                            Link PIX Automático Gerado
+                        </h3>
+                        <button onclick="closePixAutomaticModal()" class="text-white hover:text-gray-200 text-2xl">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <p class="text-blue-100 text-sm mt-2">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        Compartilhe este link para débito automático mensal
+                    </p>
+                </div>
+
+                <!-- Body -->
+                <div class="p-6 space-y-6">
+                    <!-- Form State -->
+                    <div id="pix-automatic-form" class="space-y-4">
+                        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                            <p class="text-sm text-gray-700">
+                                <i class="fas fa-lightbulb text-yellow-600 mr-2"></i>
+                                <strong>PIX Automático:</strong> O cliente autoriza UMA VEZ e o débito ocorre automaticamente todo mês.
+                            </p>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                <i class="fas fa-dollar-sign mr-1 text-green-600"></i>Valor Mensal (R$)
+                            </label>
+                            <input type="number" 
+                                id="pix-auto-value" 
+                                step="0.01"
+                                min="1"
+                                placeholder="50.00"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                <i class="fas fa-align-left mr-1 text-blue-600"></i>Descrição
+                            </label>
+                            <input type="text" 
+                                id="pix-auto-description" 
+                                placeholder="Mensalidade Mensal"
+                                maxlength="100"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                <i class="fas fa-calendar mr-1 text-purple-600"></i>Validade (dias)
+                            </label>
+                            <input type="number" 
+                                id="pix-auto-days" 
+                                value="30"
+                                min="1"
+                                max="365"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        
+                        <button onclick="generatePixAutomaticLink()" 
+                            id="generate-pix-auto-btn"
+                            class="w-full py-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 font-bold text-lg">
+                            <i class="fas fa-robot mr-2"></i>Gerar Link PIX Automático
+                        </button>
+                    </div>
+
+                    <!-- Loading State -->
+                    <div id="pix-automatic-loading" class="hidden text-center py-8">
+                        <i class="fas fa-spinner fa-spin text-4xl text-blue-500 mb-4"></i>
+                        <p class="text-gray-600">Gerando link PIX Automático...</p>
+                    </div>
+
+                    <!-- Success State -->
+                    <div id="pix-automatic-content" class="hidden space-y-6">
+                        <!-- Link Display -->
+                        <div class="bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg p-4 border-2 border-blue-200">
+                            <label class="block text-sm font-bold text-gray-700 mb-2">
+                                <i class="fas fa-link mr-1"></i>
+                                Link PIX Automático:
+                            </label>
+                            <div class="flex gap-2">
+                                <input type="text" 
+                                    id="generated-pix-auto-link" 
+                                    readonly
+                                    class="flex-1 px-4 py-3 bg-white border border-gray-300 rounded-lg text-sm font-mono">
+                                <button onclick="copyPixAutoLink()" 
+                                    id="copy-pix-auto-btn"
+                                    class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Link Info -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="bg-green-50 rounded-lg p-4 border border-green-200">
+                                <p class="text-xs font-semibold text-green-900 mb-1">
+                                    <i class="fas fa-dollar-sign mr-1"></i>Valor Mensal
+                                </p>
+                                <p class="text-lg font-bold text-green-700" id="pix-auto-display-value">R$ 0,00</p>
+                            </div>
+                            <div class="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                                <p class="text-xs font-semibold text-blue-900 mb-1">
+                                    <i class="fas fa-clock mr-1"></i>Validade
+                                </p>
+                                <p class="text-lg font-bold text-blue-700" id="pix-auto-expires"></p>
+                            </div>
+                            <div class="bg-purple-50 rounded-lg p-4 border border-purple-200">
+                                <p class="text-xs font-semibold text-purple-900 mb-1">
+                                    <i class="fas fa-sync mr-1"></i>Frequência
+                                </p>
+                                <p class="text-lg font-bold text-purple-700">Mensal</p>
+                            </div>
+                        </div>
+
+                        <!-- QR Code -->
+                        <div class="text-center bg-white p-6 rounded-lg border-2 border-gray-200">
+                            <p class="text-sm font-semibold text-gray-700 mb-3">
+                                <i class="fas fa-qrcode mr-1"></i>QR Code do Link
+                            </p>
+                            <div id="pix-auto-qr-container" class="inline-block">
+                                <!-- QR Code will be inserted here -->
+                            </div>
+                            <p class="text-xs text-gray-500 mt-3">Escaneie este QR Code para acessar o link de auto-cadastro PIX Automático</p>
+                        </div>
+
+                        <!-- Share Options -->
+                        <div class="space-y-3">
+                            <p class="text-sm font-bold text-gray-700">
+                                <i class="fas fa-share-alt mr-1"></i>Compartilhar via:
+                            </p>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <button onclick="sharePixAutoWhatsApp()" 
+                                    class="w-full px-4 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 font-semibold flex items-center justify-center gap-2">
+                                    <i class="fab fa-whatsapp text-xl"></i>
+                                    WhatsApp
+                                </button>
+                                <button onclick="sharePixAutoEmail()" 
+                                    class="w-full px-4 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 font-semibold flex items-center justify-center gap-2">
+                                    <i class="fas fa-envelope text-xl"></i>
+                                    Email
+                                </button>
+                                <button onclick="sharePixAutoTelegram()" 
+                                    class="w-full px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 font-semibold flex items-center justify-center gap-2">
+                                    <i class="fab fa-telegram text-xl"></i>
+                                    Telegram
+                                </button>
+                                <button onclick="downloadPixAutoQRCode()" 
+                                    class="w-full px-4 py-3 bg-purple-500 text-white rounded-lg hover:bg-purple-600 font-semibold flex items-center justify-center gap-2">
+                                    <i class="fas fa-download text-xl"></i>
+                                    Baixar QR Code
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer -->
+                <div class="bg-gray-50 px-6 py-4 rounded-b-2xl flex justify-end">
+                    <button onclick="closePixAutomaticModal()" 
+                        class="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-semibold">
+                        <i class="fas fa-times mr-2"></i>
+                        Fechar
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
