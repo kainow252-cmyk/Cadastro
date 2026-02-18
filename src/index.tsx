@@ -83,7 +83,8 @@ app.use('/api/*', async (c, next) => {
     '/api/login', 
     '/api/check-auth', 
     '/api/public/signup',
-    '/api/proxy/payments' // Rota pública para subcontas
+    '/api/proxy/payments', // Rota pública para subcontas
+    '/api/debug/env' // Debug endpoint
   ]
   if (publicRoutes.includes(c.req.path)) {
     return next()
@@ -870,10 +871,31 @@ app.get('/api/payments', async (c) => {
   }
 })
 
+// Debug endpoint para verificar variáveis de ambiente
+app.get('/api/debug/env', async (c) => {
+  const hasApiKey = !!c.env.ASAAS_API_KEY
+  const hasApiUrl = !!c.env.ASAAS_API_URL
+  const apiKeyPrefix = c.env.ASAAS_API_KEY?.substring(0, 20) + '...'
+  
+  return c.json({
+    hasApiKey,
+    hasApiUrl,
+    apiKeyPrefix,
+    apiUrl: c.env.ASAAS_API_URL
+  })
+})
+
 // Listar subcontas
 app.get('/api/accounts', async (c) => {
   try {
+    console.log('Buscando contas...')
     const result = await asaasRequest(c, '/accounts')
+    console.log('Resultado da API:', {
+      ok: result.ok,
+      status: result.status,
+      totalCount: result.data?.totalCount,
+      hasData: !!result.data?.data
+    })
     
     // Transformar resposta para formato esperado pelo frontend
     if (result.ok && result.data && result.data.data) {
@@ -883,8 +905,11 @@ app.get('/api/accounts', async (c) => {
       })
     }
     
+    // Se não houver dados, retornar vazio
+    console.log('Retornando array vazio')
     return c.json({ accounts: [], totalCount: 0 })
   } catch (error: any) {
+    console.error('Erro ao buscar contas:', error)
     return c.json({ error: error.message }, 500)
   }
 })
