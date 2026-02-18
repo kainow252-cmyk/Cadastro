@@ -960,6 +960,53 @@ app.post('/api/admin/init-db', async (c) => {
     await db.prepare(`CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status)`).run()
     await db.prepare(`CREATE INDEX IF NOT EXISTS idx_transactions_created ON transactions(created_at)`).run()
     
+    // Criar tabela pix_automatic_signup_links para PIX Automático
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS pix_automatic_signup_links (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        wallet_id TEXT NOT NULL,
+        account_id TEXT NOT NULL,
+        value REAL NOT NULL,
+        description TEXT,
+        frequency TEXT DEFAULT 'MONTHLY',
+        expires_at DATETIME NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        active INTEGER DEFAULT 1,
+        uses_count INTEGER DEFAULT 0,
+        max_uses INTEGER DEFAULT NULL
+      )
+    `).run()
+    
+    // Criar índices para pix_automatic_signup_links
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_pix_auto_links_wallet ON pix_automatic_signup_links(wallet_id)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_pix_auto_links_active ON pix_automatic_signup_links(active)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_pix_auto_links_expires ON pix_automatic_signup_links(expires_at)`).run()
+    
+    // Criar tabela pix_automatic_authorizations
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS pix_automatic_authorizations (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        link_id TEXT NOT NULL,
+        customer_id TEXT,
+        customer_name TEXT,
+        customer_email TEXT,
+        customer_cpf TEXT,
+        value REAL NOT NULL,
+        frequency TEXT DEFAULT 'MONTHLY',
+        status TEXT DEFAULT 'PENDING',
+        authorization_data TEXT,
+        first_payment_id TEXT,
+        activated_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (link_id) REFERENCES pix_automatic_signup_links(id)
+      )
+    `).run()
+    
+    // Criar índices para pix_automatic_authorizations
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_pix_auto_auth_link ON pix_automatic_authorizations(link_id)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_pix_auto_auth_customer ON pix_automatic_authorizations(customer_id)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_pix_auto_auth_status ON pix_automatic_authorizations(status)`).run()
+    
     // Inserir transações de teste para as 2 subcontas
     const testTransactions = [
       // Franklin - Transações recebidas
@@ -999,7 +1046,7 @@ app.post('/api/admin/init-db', async (c) => {
     return c.json({ 
       ok: true, 
       message: 'Tabelas criadas com sucesso e dados de teste inseridos',
-      tables: ['subscription_signup_links', 'subscription_conversions', 'transactions'],
+      tables: ['subscription_signup_links', 'subscription_conversions', 'transactions', 'pix_automatic_signup_links', 'pix_automatic_authorizations'],
       testTransactionsInserted: testTransactions.length
     })
   } catch (error: any) {
@@ -3953,6 +4000,283 @@ app.get('/subscription-signup/:linkId', async (c) => {
                 
                 setTimeout(() => animate(), Math.random() * 500);
             }
+        }
+        
+        loadLinkData();
+    </script>
+</body>
+</html>`)
+})
+
+// Página pública de auto-cadastro PIX Automático
+app.get('/pix-automatic-signup/:linkId', async (c) => {
+  return c.html(`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PIX Automático - Auto-Cadastro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+    <style>
+        @keyframes pulse-slow {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        .animate-pulse-slow {
+            animation: pulse-slow 2s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div id="loading-state" class="max-w-md mx-auto bg-white rounded-2xl shadow-xl p-8 text-center">
+            <i class="fas fa-spinner fa-spin text-4xl text-indigo-600 mb-4"></i>
+            <p class="text-gray-600">Carregando informações...</p>
+        </div>
+        <div id="error-state" class="hidden max-w-md mx-auto bg-white rounded-2xl shadow-xl p-8 text-center">
+            <i class="fas fa-exclamation-triangle text-5xl text-red-500 mb-4"></i>
+            <h2 class="text-2xl font-bold text-gray-800 mb-2">Link Inválido ou Expirado</h2>
+            <p id="error-message" class="text-gray-600 mb-6"></p>
+        </div>
+        <div id="form-state" class="hidden max-w-md mx-auto bg-white rounded-2xl shadow-xl p-8">
+            <div class="text-center mb-6">
+                <div class="bg-gradient-to-r from-blue-500 to-purple-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i class="fas fa-robot text-white text-2xl"></i>
+                </div>
+                <h1 class="text-2xl font-bold text-gray-800 mb-2">PIX Automático</h1>
+                <p class="text-gray-600">Débito Automático Mensal</p>
+            </div>
+            <div class="bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl p-4 mb-6 border border-blue-200">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-gray-600 font-medium">Valor Mensal:</span>
+                    <span id="plan-value" class="text-2xl font-bold text-blue-600">R$ 0,00</span>
+                </div>
+                <p id="plan-description" class="text-sm text-gray-600 mb-3"></p>
+                <p id="plan-frequency" class="text-xs text-gray-500"></p>
+                <div class="mt-3 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                    <p class="text-xs text-gray-700">
+                        <i class="fas fa-info-circle text-yellow-600 mr-1"></i>
+                        <strong>PIX Automático:</strong> Você autoriza UMA VEZ e o débito ocorre automaticamente todo mês. Sem necessidade de pagar manualmente.
+                    </p>
+                </div>
+            </div>
+            <form id="signup-form" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-user mr-1 text-indigo-500"></i>Nome Completo
+                    </label>
+                    <input type="text" id="customer-name" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="João da Silva" required>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-envelope mr-1 text-indigo-500"></i>E-mail
+                    </label>
+                    <input type="email" id="customer-email" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="joao@email.com" required>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-id-card mr-1 text-indigo-500"></i>CPF
+                    </label>
+                    <input type="text" id="customer-cpf" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="000.000.000-00" maxlength="14" required>
+                </div>
+                <button type="submit" id="submit-btn" class="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold py-4 rounded-lg hover:from-blue-700 hover:to-purple-700">
+                    <i class="fas fa-robot mr-2"></i>Gerar Autorização PIX Automático
+                </button>
+            </form>
+        </div>
+        <div id="success-state" class="hidden max-w-2xl mx-auto bg-white rounded-2xl shadow-xl p-8">
+            <div class="text-center mb-6">
+                <div class="bg-blue-500 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+                    <i class="fas fa-robot text-white text-3xl"></i>
+                </div>
+                <h2 class="text-3xl font-bold text-gray-800 mb-2">Autorização PIX Automático Criada!</h2>
+                <p class="text-gray-600">Escaneie o QR Code para autorizar o débito automático</p>
+            </div>
+            <div class="bg-white border-2 border-blue-300 rounded-xl p-6 mb-6">
+                <div id="qr-code-container" class="flex justify-center mb-4">
+                    <img id="qr-code-image" src="" alt="QR Code PIX Automático" class="w-64 h-64 border-4 border-white shadow-lg rounded-lg">
+                </div>
+                <div class="bg-gray-50 rounded-lg p-4">
+                    <p class="text-xs text-gray-600 mb-2">Pix Copia e Cola:</p>
+                    <div class="flex gap-2">
+                        <input type="text" id="pix-payload" readonly class="flex-1 text-xs bg-white border border-gray-300 rounded px-3 py-2 font-mono">
+                        <button onclick="copyPixPayload()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h3 class="font-bold text-gray-800 mb-3">
+                    <i class="fas fa-info-circle text-blue-600 mr-2"></i>
+                    Como funciona?
+                </h3>
+                <ol class="text-sm text-gray-700 space-y-2">
+                    <li><strong>1.</strong> Escaneie o QR Code com o app do seu banco</li>
+                    <li><strong>2.</strong> Autorize o débito automático UMA VEZ</li>
+                    <li><strong>3.</strong> Pague a primeira parcela imediatamente</li>
+                    <li><strong>4.</strong> Autorização será ativada após o pagamento</li>
+                    <li><strong>5.</strong> Todo mês o valor será debitado automaticamente</li>
+                </ol>
+            </div>
+        </div>
+        
+        <!-- Payment Confirmed State -->
+        <div id="payment-confirmed-state" class="hidden max-w-2xl mx-auto bg-white rounded-2xl shadow-xl p-8 animate-pulse-slow">
+            <div class="text-center mb-6">
+                <div class="bg-gradient-to-r from-green-400 to-emerald-500 w-32 h-32 rounded-full flex items-center justify-center mx-auto mb-6 animate-bounce shadow-2xl">
+                    <i class="fas fa-check-double text-white text-5xl"></i>
+                </div>
+                <h2 class="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-600 to-emerald-600 mb-3 animate-pulse">🎉 Pagamento Confirmado! 🎉</h2>
+                <p class="text-xl text-green-600 font-semibold mb-4">✅ Sua assinatura foi ativada com sucesso</p>
+            </div>
+            
+            <div class="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-6 mb-6 border-2 border-green-200">
+                <h3 class="text-lg font-bold text-gray-800 mb-4 text-center">
+                    <i class="fas fa-calendar-check text-green-600 mr-2"></i>
+                    O que acontece agora?
+                </h3>
+                <div class="space-y-4">
+                    <div class="flex items-start">
+                        <div class="bg-green-500 text-white rounded-full w-8 h-8 flex items-center justify-center mr-4 flex-shrink-0 font-bold">1</div>
+                        <div>
+                            <p class="font-semibold text-gray-800">Pagamento Processado</p>
+                            <p class="text-sm text-gray-600">Seu pagamento foi confirmado e registrado</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start">
+                        <div class="bg-green-500 text-white rounded-full w-8 h-8 flex items-center justify-center mr-4 flex-shrink-0 font-bold">2</div>
+                        <div>
+                            <p class="font-semibold text-gray-800">Autorização Ativa</p>
+                            <p class="text-sm text-gray-600">Seu débito automático está ativo a partir de agora</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start">
+                        <div class="bg-green-500 text-white rounded-full w-8 h-8 flex items-center justify-center mr-4 flex-shrink-0 font-bold">3</div>
+                        <div>
+                            <p class="font-semibold text-gray-800">Cobranças Automáticas</p>
+                            <p class="text-sm text-gray-600">Todo mês o valor será debitado automaticamente - VOCÊ NÃO PRECISA FAZER NADA!</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+                <p class="text-sm text-gray-700">
+                    <i class="fas fa-envelope text-blue-500 mr-2"></i>
+                    Você receberá um email de confirmação em breve
+                </p>
+            </div>
+        </div>
+    </div>
+    <script>
+        const pathParts = window.location.pathname.split('/');
+        const linkId = pathParts[pathParts.length - 1];
+        let linkData = null;
+        
+        async function loadLinkData() {
+            try {
+                const response = await axios.get(\`/api/pix/automatic-signup-link/\${linkId}\`);
+                if (response.data.ok) {
+                    linkData = response.data.data;
+                    document.getElementById('loading-state').classList.add('hidden');
+                    document.getElementById('form-state').classList.remove('hidden');
+                    document.getElementById('plan-value').textContent = \`R$ \${linkData.value.toFixed(2)}\`;
+                    document.getElementById('plan-description').textContent = linkData.description;
+                    document.getElementById('plan-frequency').textContent = \`Frequência: \${linkData.frequency === 'MONTHLY' ? 'Mensal' : linkData.frequency}\`;
+                } else {
+                    showError(response.data.error || 'Link inválido');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showError('Erro ao carregar');
+            }
+        }
+        
+        function showError(message) {
+            document.getElementById('loading-state').classList.add('hidden');
+            document.getElementById('form-state').classList.add('hidden');
+            document.getElementById('error-state').classList.remove('hidden');
+            document.getElementById('error-message').textContent = message;
+        }
+        
+        document.getElementById('customer-cpf').addEventListener('input', function(e) {
+            let value = e.target.value.replace(/\\D/g, '');
+            if (value.length > 11) value = value.substring(0, 11);
+            if (value.length > 9) {
+                value = value.replace(/(\\d{3})(\\d{3})(\\d{3})(\\d{2})/, '$1.$2.$3-$4');
+            } else if (value.length > 6) {
+                value = value.replace(/(\\d{3})(\\d{3})(\\d{1,3})/, '$1.$2.$3');
+            } else if (value.length > 3) {
+                value = value.replace(/(\\d{3})(\\d{1,3})/, '$1.$2');
+            }
+            e.target.value = value;
+        });
+        
+        document.getElementById('signup-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const submitBtn = document.getElementById('submit-btn');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Criando...';
+            
+            try {
+                const response = await axios.post(\`/api/pix/automatic-signup/\${linkId}\`, {
+                    customerName: document.getElementById('customer-name').value,
+                    customerEmail: document.getElementById('customer-email').value,
+                    customerCpf: document.getElementById('customer-cpf').value.replace(/\\D/g, '')
+                });
+                
+                if (response.data.ok) {
+                    document.getElementById('form-state').classList.add('hidden');
+                    document.getElementById('success-state').classList.remove('hidden');
+                    if (response.data.qrCode) {
+                        document.getElementById('qr-code-image').src = response.data.qrCode.encodedImage;
+                        document.getElementById('pix-payload').value = response.data.qrCode.payload;
+                    }
+                    
+                    // Iniciar verificação de pagamento
+                    window.authorizationId = response.data.authorization.id;
+                    startPaymentCheck();
+                } else {
+                    alert('Erro: ' + response.data.error);
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="fas fa-robot mr-2"></i>Gerar Autorização PIX Automático';
+                }
+            } catch (error) {
+                alert('Erro: ' + (error.response?.data?.error || error.message));
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-robot mr-2"></i>Gerar Autorização PIX Automático';
+            }
+        });
+        
+        function copyPixPayload() {
+            const payload = document.getElementById('pix-payload');
+            payload.select();
+            document.execCommand('copy');
+            alert('PIX copiado!');
+        }
+        
+        // Verificar status da autorização/pagamento a cada 10 segundos
+        let checkInterval;
+        function startPaymentCheck() {
+            checkInterval = setInterval(async () => {
+                try {
+                    // TODO: Implementar verificação de status da autorização
+                    // Por enquanto, apenas simula
+                    console.log('Verificando status da autorização...');
+                } catch (error) {
+                    console.error('Erro ao verificar autorização:', error);
+                }
+            }, 10000); // Verifica a cada 10 segundos
+        }
+        
+        function showPaymentConfirmed() {
+            clearInterval(checkInterval);
+            document.getElementById('success-state').classList.add('hidden');
+            document.getElementById('payment-confirmed-state').classList.remove('hidden');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         }
         
         loadLinkData();
