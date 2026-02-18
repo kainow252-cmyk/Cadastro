@@ -79,16 +79,26 @@ async function authMiddleware(c: any, next: any) {
 
 // Apply auth middleware to all /api/* routes except public routes
 app.use('/api/*', async (c, next) => {
+  const path = c.req.path
   const publicRoutes = [
     '/api/login', 
     '/api/check-auth', 
     '/api/public/signup',
-    '/api/proxy/payments', // Rota pública para subcontas
-    '/api/debug/env' // Debug endpoint
+    '/api/proxy/payments',
+    '/api/debug/env'
   ]
-  if (publicRoutes.includes(c.req.path)) {
+  
+  // Public routes with exact match
+  if (publicRoutes.includes(path)) {
     return next()
   }
+  
+  // Public routes with pattern match
+  if (path.startsWith('/api/pix/subscription-link/') || 
+      path.startsWith('/api/pix/subscription-signup/')) {
+    return next()
+  }
+  
   return authMiddleware(c, next)
 })
 
@@ -3117,8 +3127,177 @@ app.get('/login', (c) => {
 })
 // Página pública de auto-cadastro de assinatura
 app.get('/subscription-signup/:linkId', async (c) => {
-  const html = await Bun.file('./public/static/subscription-signup.html').text()
-  return c.html(html)
+  // Serve the subscription signup HTML page
+  return c.html(`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assinatura Mensal PIX - Auto-Cadastro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div id="loading-state" class="max-w-md mx-auto bg-white rounded-2xl shadow-xl p-8 text-center">
+            <i class="fas fa-spinner fa-spin text-4xl text-indigo-600 mb-4"></i>
+            <p class="text-gray-600">Carregando informações...</p>
+        </div>
+        <div id="error-state" class="hidden max-w-md mx-auto bg-white rounded-2xl shadow-xl p-8 text-center">
+            <i class="fas fa-exclamation-triangle text-5xl text-red-500 mb-4"></i>
+            <h2 class="text-2xl font-bold text-gray-800 mb-2">Link Inválido ou Expirado</h2>
+            <p id="error-message" class="text-gray-600 mb-6"></p>
+        </div>
+        <div id="form-state" class="hidden max-w-md mx-auto bg-white rounded-2xl shadow-xl p-8">
+            <div class="text-center mb-6">
+                <div class="bg-gradient-to-r from-indigo-500 to-purple-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i class="fas fa-calendar-check text-white text-2xl"></i>
+                </div>
+                <h1 class="text-2xl font-bold text-gray-800 mb-2">Assinatura Mensal PIX</h1>
+                <p class="text-gray-600">Preencha seus dados para continuar</p>
+            </div>
+            <div class="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-4 mb-6 border border-green-200">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-gray-600 font-medium">Valor Mensal:</span>
+                    <span id="plan-value" class="text-2xl font-bold text-green-600">R$ 0,00</span>
+                </div>
+                <p id="plan-description" class="text-sm text-gray-600"></p>
+            </div>
+            <form id="signup-form" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-user mr-1 text-indigo-500"></i>Nome Completo
+                    </label>
+                    <input type="text" id="customer-name" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="João da Silva" required>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-envelope mr-1 text-indigo-500"></i>E-mail
+                    </label>
+                    <input type="email" id="customer-email" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="joao@email.com" required>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-id-card mr-1 text-indigo-500"></i>CPF
+                    </label>
+                    <input type="text" id="customer-cpf" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="000.000.000-00" maxlength="14" required>
+                </div>
+                <button type="submit" id="submit-btn" class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold py-4 rounded-lg hover:from-indigo-700 hover:to-purple-700">
+                    <i class="fas fa-check-circle mr-2"></i>Confirmar e Gerar PIX
+                </button>
+            </form>
+        </div>
+        <div id="success-state" class="hidden max-w-2xl mx-auto bg-white rounded-2xl shadow-xl p-8">
+            <div class="text-center mb-6">
+                <div class="bg-green-500 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i class="fas fa-check text-white text-3xl"></i>
+                </div>
+                <h2 class="text-3xl font-bold text-gray-800 mb-2">Assinatura Criada!</h2>
+                <p class="text-gray-600">Pague o PIX para ativar</p>
+            </div>
+            <div class="bg-white border-2 border-indigo-300 rounded-xl p-6">
+                <div id="qr-code-container" class="flex justify-center mb-4">
+                    <img id="qr-code-image" src="" alt="QR Code PIX" class="w-64 h-64 border-4 border-white shadow-lg rounded-lg">
+                </div>
+                <div class="bg-gray-50 rounded-lg p-4">
+                    <p class="text-xs text-gray-600 mb-2">Pix Copia e Cola:</p>
+                    <div class="flex gap-2">
+                        <input type="text" id="pix-payload" readonly class="flex-1 text-xs bg-white border border-gray-300 rounded px-3 py-2 font-mono">
+                        <button onclick="copyPixPayload()" class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        const pathParts = window.location.pathname.split('/');
+        const linkId = pathParts[pathParts.length - 1];
+        let linkData = null;
+        
+        async function loadLinkData() {
+            try {
+                const response = await axios.get(\`/api/pix/subscription-link/\${linkId}\`);
+                if (response.data.ok) {
+                    linkData = response.data.data;
+                    document.getElementById('loading-state').classList.add('hidden');
+                    document.getElementById('form-state').classList.remove('hidden');
+                    document.getElementById('plan-value').textContent = \`R$ \${linkData.value.toFixed(2)}\`;
+                    document.getElementById('plan-description').textContent = linkData.description;
+                } else {
+                    showError(response.data.error || 'Link inválido');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showError('Erro ao carregar');
+            }
+        }
+        
+        function showError(message) {
+            document.getElementById('loading-state').classList.add('hidden');
+            document.getElementById('form-state').classList.add('hidden');
+            document.getElementById('error-state').classList.remove('hidden');
+            document.getElementById('error-message').textContent = message;
+        }
+        
+        document.getElementById('customer-cpf').addEventListener('input', function(e) {
+            let value = e.target.value.replace(/\\D/g, '');
+            if (value.length > 11) value = value.substring(0, 11);
+            if (value.length > 9) {
+                value = value.replace(/(\\d{3})(\\d{3})(\\d{3})(\\d{2})/, '$1.$2.$3-$4');
+            } else if (value.length > 6) {
+                value = value.replace(/(\\d{3})(\\d{3})(\\d{1,3})/, '$1.$2.$3');
+            } else if (value.length > 3) {
+                value = value.replace(/(\\d{3})(\\d{1,3})/, '$1.$2');
+            }
+            e.target.value = value;
+        });
+        
+        document.getElementById('signup-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const submitBtn = document.getElementById('submit-btn');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Criando...';
+            
+            try {
+                const response = await axios.post(\`/api/pix/subscription-signup/\${linkId}\`, {
+                    customerName: document.getElementById('customer-name').value,
+                    customerEmail: document.getElementById('customer-email').value,
+                    customerCpf: document.getElementById('customer-cpf').value.replace(/\\D/g, '')
+                });
+                
+                if (response.data.ok) {
+                    document.getElementById('form-state').classList.add('hidden');
+                    document.getElementById('success-state').classList.remove('hidden');
+                    if (response.data.firstPayment.pix) {
+                        document.getElementById('qr-code-image').src = response.data.firstPayment.pix.qrCodeBase64;
+                        document.getElementById('pix-payload').value = response.data.firstPayment.pix.payload;
+                    }
+                } else {
+                    alert('Erro: ' + response.data.error);
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="fas fa-check-circle mr-2"></i>Confirmar e Gerar PIX';
+                }
+            } catch (error) {
+                alert('Erro: ' + (error.response?.data?.error || error.message));
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-check-circle mr-2"></i>Confirmar e Gerar PIX';
+            }
+        });
+        
+        function copyPixPayload() {
+            const payload = document.getElementById('pix-payload');
+            payload.select();
+            document.execCommand('copy');
+            alert('PIX copiado!');
+        }
+        
+        loadLinkData();
+    </script>
+</body>
+</html>`)
 })
 
 // Homepage
