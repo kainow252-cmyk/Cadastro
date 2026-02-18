@@ -885,6 +885,65 @@ app.get('/api/debug/env', async (c) => {
   })
 })
 
+// Endpoint para inicializar tabelas do banco D1 (executar uma vez)
+app.post('/api/admin/init-db', async (c) => {
+  try {
+    const db = c.env.DB
+    
+    // Criar tabela subscription_signup_links
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS subscription_signup_links (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        wallet_id TEXT NOT NULL,
+        account_id TEXT NOT NULL,
+        value REAL NOT NULL,
+        description TEXT,
+        expires_at DATETIME NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        active INTEGER DEFAULT 1,
+        uses_count INTEGER DEFAULT 0,
+        max_uses INTEGER DEFAULT NULL
+      )
+    `).run()
+    
+    // Criar índices
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_subscription_links_wallet ON subscription_signup_links(wallet_id)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_subscription_links_active ON subscription_signup_links(active)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_subscription_links_expires ON subscription_signup_links(expires_at)`).run()
+    
+    // Criar tabela subscription_conversions
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS subscription_conversions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        link_id TEXT NOT NULL,
+        customer_id TEXT,
+        subscription_id TEXT,
+        converted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        customer_name TEXT,
+        customer_email TEXT,
+        customer_cpf TEXT,
+        FOREIGN KEY (link_id) REFERENCES subscription_signup_links(id)
+      )
+    `).run()
+    
+    // Criar índices de conversions
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_subscription_conversions_link ON subscription_conversions(link_id)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_subscription_conversions_customer ON subscription_conversions(customer_id)`).run()
+    
+    return c.json({ 
+      ok: true, 
+      message: 'Tabelas criadas com sucesso',
+      tables: ['subscription_signup_links', 'subscription_conversions']
+    })
+  } catch (error: any) {
+    console.error('Erro ao criar tabelas:', error)
+    return c.json({ 
+      ok: false, 
+      error: error.message 
+    }, 500)
+  }
+})
+
 // Listar subcontas
 app.get('/api/accounts', async (c) => {
   try {

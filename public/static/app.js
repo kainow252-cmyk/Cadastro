@@ -194,7 +194,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     // Create Link
-    document.getElementById('create-link-form').addEventListener('submit', async (e) => {
+    const createLinkForm = document.getElementById('create-link-form');
+    if (createLinkForm) {
+        createLinkForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         
         const accountId = document.getElementById('link-account-id').value;
@@ -249,6 +251,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             alert('Erro ao criar link: ' + error.message);
         }
     });
+    }
 
     // Load dashboard on page load
     loadDashboard();
