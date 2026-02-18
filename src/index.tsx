@@ -95,7 +95,8 @@ app.use('/api/*', async (c, next) => {
   
   // Public routes with pattern match
   if (path.startsWith('/api/pix/subscription-link/') || 
-      path.startsWith('/api/pix/subscription-signup/')) {
+      path.startsWith('/api/pix/subscription-signup/') ||
+      path.startsWith('/api/payment-status/')) {
     return next()
   }
   
@@ -1004,6 +1005,43 @@ app.post('/api/admin/init-db', async (c) => {
       ok: false, 
       error: error.message 
     }, 500)
+  }
+})
+
+// Endpoint público para verificar status do pagamento
+app.get('/api/payment-status/:paymentId', async (c) => {
+  try {
+    const paymentId = c.req.param('paymentId')
+    
+    // Buscar status do pagamento no Asaas
+    const result = await asaasRequest(c, `/payments/${paymentId}`)
+    
+    if (result.ok && result.data) {
+      // Se o pagamento foi confirmado, atualizar no banco D1
+      if (result.data.status === 'RECEIVED' || result.data.status === 'CONFIRMED') {
+        const db = c.env.DB
+        await db.prepare(`
+          UPDATE transactions 
+          SET status = ?, payment_date = ? 
+          WHERE id = ?
+        `).bind(
+          result.data.status,
+          result.data.paymentDate || new Date().toISOString().split('T')[0],
+          paymentId
+        ).run()
+      }
+      
+      return c.json({
+        ok: true,
+        status: result.data.status,
+        paymentDate: result.data.paymentDate
+      })
+    }
+    
+    return c.json({ ok: false, error: 'Pagamento não encontrado' }, 404)
+  } catch (error: any) {
+    console.error('Erro ao verificar pagamento:', error)
+    return c.json({ ok: false, error: error.message }, 500)
   }
 })
 
@@ -3338,6 +3376,9 @@ app.get('/subscription-signup/:linkId', async (c) => {
                 </div>
                 <h2 class="text-3xl font-bold text-gray-800 mb-2">Assinatura Criada!</h2>
                 <p class="text-gray-600">Pague o PIX para ativar</p>
+                <p class="text-sm text-indigo-600 mt-2 animate-pulse">
+                    <i class="fas fa-sync fa-spin mr-2"></i>Aguardando pagamento...
+                </p>
             </div>
             <div class="bg-white border-2 border-indigo-300 rounded-xl p-6">
                 <div id="qr-code-container" class="flex justify-center mb-4">
@@ -3352,6 +3393,54 @@ app.get('/subscription-signup/:linkId', async (c) => {
                         </button>
                     </div>
                 </div>
+            </div>
+        </div>
+        
+        <!-- Payment Confirmed State -->
+        <div id="payment-confirmed-state" class="hidden max-w-2xl mx-auto bg-white rounded-2xl shadow-xl p-8">
+            <div class="text-center mb-6">
+                <div class="bg-gradient-to-r from-green-400 to-emerald-500 w-32 h-32 rounded-full flex items-center justify-center mx-auto mb-6 animate-bounce">
+                    <i class="fas fa-check-double text-white text-5xl"></i>
+                </div>
+                <h2 class="text-4xl font-bold text-gray-800 mb-3">Pagamento Confirmado!</h2>
+                <p class="text-xl text-green-600 font-semibold mb-4">✅ Sua assinatura foi ativada com sucesso</p>
+            </div>
+            
+            <div class="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-6 mb-6 border-2 border-green-200">
+                <h3 class="text-lg font-bold text-gray-800 mb-4 text-center">
+                    <i class="fas fa-calendar-check text-green-600 mr-2"></i>
+                    O que acontece agora?
+                </h3>
+                <div class="space-y-4">
+                    <div class="flex items-start">
+                        <div class="bg-green-500 text-white rounded-full w-8 h-8 flex items-center justify-center mr-4 flex-shrink-0 font-bold">1</div>
+                        <div>
+                            <p class="font-semibold text-gray-800">Pagamento Processado</p>
+                            <p class="text-sm text-gray-600">Seu pagamento foi confirmado e registrado</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start">
+                        <div class="bg-green-500 text-white rounded-full w-8 h-8 flex items-center justify-center mr-4 flex-shrink-0 font-bold">2</div>
+                        <div>
+                            <p class="font-semibold text-gray-800">Assinatura Ativa</p>
+                            <p class="text-sm text-gray-600">Sua assinatura mensal está ativa a partir de agora</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start">
+                        <div class="bg-green-500 text-white rounded-full w-8 h-8 flex items-center justify-center mr-4 flex-shrink-0 font-bold">3</div>
+                        <div>
+                            <p class="font-semibold text-gray-800">Cobranças Automáticas</p>
+                            <p class="text-sm text-gray-600">Todo mês você receberá um novo PIX por email</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+                <p class="text-sm text-gray-700">
+                    <i class="fas fa-envelope text-blue-500 mr-2"></i>
+                    Você receberá um email de confirmação em breve
+                </p>
             </div>
         </div>
     </div>
@@ -3418,6 +3507,10 @@ app.get('/subscription-signup/:linkId', async (c) => {
                         document.getElementById('qr-code-image').src = response.data.firstPayment.pix.qrCodeBase64;
                         document.getElementById('pix-payload').value = response.data.firstPayment.pix.payload;
                     }
+                    
+                    // Iniciar verificação de pagamento
+                    window.paymentId = response.data.firstPayment.id;
+                    startPaymentCheck();
                 } else {
                     alert('Erro: ' + response.data.error);
                     submitBtn.disabled = false;
@@ -3435,6 +3528,27 @@ app.get('/subscription-signup/:linkId', async (c) => {
             payload.select();
             document.execCommand('copy');
             alert('PIX copiado!');
+        }
+        
+        // Verificar status do pagamento a cada 5 segundos
+        let checkInterval;
+        function startPaymentCheck() {
+            checkInterval = setInterval(async () => {
+                try {
+                    const response = await axios.get(\`/api/payment-status/\${window.paymentId}\`);
+                    if (response.data.status === 'RECEIVED' || response.data.status === 'CONFIRMED') {
+                        clearInterval(checkInterval);
+                        showPaymentConfirmed();
+                    }
+                } catch (error) {
+                    console.error('Erro ao verificar pagamento:', error);
+                }
+            }, 5000); // Verifica a cada 5 segundos
+        }
+        
+        function showPaymentConfirmed() {
+            document.getElementById('success-state').classList.add('hidden');
+            document.getElementById('payment-confirmed-state').classList.remove('hidden');
         }
         
         loadLinkData();
