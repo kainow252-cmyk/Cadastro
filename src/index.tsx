@@ -1007,6 +1007,80 @@ app.post('/api/admin/init-db', async (c) => {
   }
 })
 
+// Endpoint para sincronizar transações do Asaas para o banco D1
+app.post('/api/admin/sync-transactions', async (c) => {
+  try {
+    const db = c.env.DB
+    
+    // Buscar todas as subcontas
+    const accountsResult = await asaasRequest(c, '/accounts')
+    if (!accountsResult.ok) {
+      return c.json({ error: 'Erro ao buscar subcontas' }, 500)
+    }
+    
+    const accounts = accountsResult.data?.data || []
+    let totalSynced = 0
+    
+    for (const account of accounts) {
+      try {
+        // Buscar pagamentos dos últimos 90 dias via API principal
+        // Usando filtro por wallet ID para pegar pagamentos com split
+        const paymentsUrl = `/payments?limit=100&dateCreated[ge]=${new Date(Date.now() - 90*24*60*60*1000).toISOString().split('T')[0]}`
+        const paymentsResult = await asaasRequest(c, paymentsUrl)
+        
+        if (paymentsResult.ok && paymentsResult.data?.data) {
+          const payments = paymentsResult.data.data
+          
+          // Filtrar pagamentos que têm split para esta subconta
+          for (const payment of payments) {
+            // Verificar se o pagamento tem split para o wallet desta subconta
+            if (payment.split && payment.split.length > 0) {
+              const splitForAccount = payment.split.find((s: any) => s.walletId === account.walletId)
+              
+              if (splitForAccount) {
+                // Salvar no banco D1
+                await db.prepare(`
+                  INSERT OR REPLACE INTO transactions 
+                  (id, account_id, wallet_id, value, description, status, billing_type, due_date, payment_date, created_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                `).bind(
+                  payment.id,
+                  account.id,
+                  account.walletId,
+                  splitForAccount.value || payment.value * 0.20, // Valor do split ou 20% do total
+                  payment.description || 'Pagamento',
+                  payment.status,
+                  payment.billingType,
+                  payment.dueDate,
+                  payment.paymentDate || null,
+                  payment.dateCreated
+                ).run()
+                
+                totalSynced++
+              }
+            }
+          }
+        }
+      } catch (accountError: any) {
+        console.error(`Erro ao sincronizar conta ${account.id}:`, accountError)
+      }
+    }
+    
+    return c.json({
+      ok: true,
+      message: 'Sincronização concluída',
+      accountsChecked: accounts.length,
+      transactionsSynced: totalSynced
+    })
+  } catch (error: any) {
+    console.error('Erro ao sincronizar transações:', error)
+    return c.json({ 
+      ok: false, 
+      error: error.message 
+    }, 500)
+  }
+})
+
 // Listar subcontas
 app.get('/api/accounts', async (c) => {
   try {
@@ -1658,7 +1732,23 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
       VALUES (?, ?, ?, ?, ?, ?)
     `).bind(linkId, customerId, subscription.id, customerName, customerEmail, customerCpf).run()
     
-    // 6. Incrementar contador de usos
+    // 6. Salvar transação no banco D1 local
+    const accountId = link.account_id as string
+    await c.env.DB.prepare(`
+      INSERT INTO transactions (id, account_id, wallet_id, value, description, status, billing_type, due_date, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `).bind(
+      firstPayment.id,
+      accountId,
+      walletId,
+      value,
+      description || 'Assinatura Mensal',
+      firstPayment.status,
+      'PIX',
+      firstPayment.dueDate
+    ).run()
+    
+    // 7. Incrementar contador de usos
     await c.env.DB.prepare(`
       UPDATE subscription_signup_links SET uses_count = uses_count + 1 WHERE id = ?
     `).bind(linkId).run()
