@@ -571,6 +571,7 @@ app.get('/api/stats', async (c) => {
 // Relatório de subconta
 app.get('/api/reports/:accountId', async (c) => {
   try {
+    const db = c.env.DB
     const accountId = c.req.param('accountId')
     const startDate = c.req.query('startDate')
     const endDate = c.req.query('endDate')
@@ -583,30 +584,23 @@ app.get('/api/reports/:accountId', async (c) => {
     
     const account = accountResult.data
     
-    // Buscar cobranças da subconta com filtro de data
-    // IMPORTANTE: Para buscar pagamentos de uma subconta, precisamos usar o header asaas-account-key
-    // Primeiro, buscar chave API da subconta
-    const keysResult = await asaasRequest(c, `/accounts/${accountId}/api-keys`)
-    const keys = keysResult.data?.data || []
+    // Buscar transações do banco D1 local
+    let query = `SELECT * FROM transactions WHERE account_id = ?`
+    const params = [accountId]
     
-    let payments: any[] = []
-    
-    if (keys.length > 0 && account.walletId) {
-      const activeKey = keys.find((k: any) => k.active)
-      if (activeKey) {
-        // Usar header para buscar pagamentos da subconta
-        const customHeaders = {
-          'asaas-account-key': activeKey.apiKey
-        }
-        
-        let paymentsUrl = `/payments?limit=100`
-        if (startDate) paymentsUrl += `&dateCreated[ge]=${startDate}`
-        if (endDate) paymentsUrl += `&dateCreated[le]=${endDate}`
-        
-        const paymentsResult = await asaasRequest(c, paymentsUrl, 'GET', undefined, customHeaders)
-        payments = paymentsResult?.data?.data || []
-      }
+    if (startDate) {
+      query += ` AND created_at >= ?`
+      params.push(startDate)
     }
+    if (endDate) {
+      query += ` AND created_at <= ?`
+      params.push(endDate + ' 23:59:59')
+    }
+    
+    query += ` ORDER BY created_at DESC`
+    
+    const result = await db.prepare(query).bind(...params).all()
+    const payments = result.results || []
     
     // Calcular estatísticas
     let totalReceived = 0
@@ -627,11 +621,11 @@ app.get('/api/reports/:accountId', async (c) => {
       id: p.id,
       value: parseFloat(p.value || 0),
       description: p.description || 'Sem descrição',
-      dueDate: p.dueDate,
+      dueDate: p.due_date,
       status: p.status,
-      dateCreated: p.dateCreated,
-      billingType: p.billingType,
-      invoiceUrl: p.invoiceUrl
+      dateCreated: p.created_at,
+      billingType: p.billing_type,
+      paymentDate: p.payment_date
     }))
     
     return c.json({
@@ -659,6 +653,7 @@ app.get('/api/reports/:accountId', async (c) => {
       }
     })
   } catch (error: any) {
+    console.error('Erro ao buscar relatório:', error)
     return c.json({ error: error.message }, 500)
   }
 })
@@ -940,10 +935,68 @@ app.post('/api/admin/init-db', async (c) => {
     await db.prepare(`CREATE INDEX IF NOT EXISTS idx_subscription_conversions_link ON subscription_conversions(link_id)`).run()
     await db.prepare(`CREATE INDEX IF NOT EXISTS idx_subscription_conversions_customer ON subscription_conversions(customer_id)`).run()
     
+    // Criar tabela de transações para relatórios
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS transactions (
+        id TEXT PRIMARY KEY,
+        account_id TEXT NOT NULL,
+        wallet_id TEXT,
+        value REAL NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL,
+        billing_type TEXT,
+        due_date DATE,
+        payment_date DATE,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `).run()
+    
+    // Criar índices
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_transactions_created ON transactions(created_at)`).run()
+    
+    // Inserir transações de teste para as 2 subcontas
+    const testTransactions = [
+      // Franklin - Transações recebidas
+      { id: 'pay_franklin_001', account_id: 'e59d37d7-2f9b-462c-b1c1-c730322c8236', wallet_id: 'b0e857ff-e03b-4b16-8492-f0431de088f8', value: 50.00, description: 'Mensalidade Janeiro', status: 'RECEIVED', billing_type: 'PIX', due_date: '2026-01-15', payment_date: '2026-01-15' },
+      { id: 'pay_franklin_002', account_id: 'e59d37d7-2f9b-462c-b1c1-c730322c8236', wallet_id: 'b0e857ff-e03b-4b16-8492-f0431de088f8', value: 50.00, description: 'Mensalidade Fevereiro', status: 'RECEIVED', billing_type: 'PIX', due_date: '2026-02-15', payment_date: '2026-02-16' },
+      { id: 'pay_franklin_003', account_id: 'e59d37d7-2f9b-462c-b1c1-c730322c8236', wallet_id: 'b0e857ff-e03b-4b16-8492-f0431de088f8', value: 100.00, description: 'Plano Premium', status: 'RECEIVED', billing_type: 'PIX', due_date: '2026-02-10', payment_date: '2026-02-10' },
+      
+      // Franklin - Transações pendentes
+      { id: 'pay_franklin_004', account_id: 'e59d37d7-2f9b-462c-b1c1-c730322c8236', wallet_id: 'b0e857ff-e03b-4b16-8492-f0431de088f8', value: 50.00, description: 'Mensalidade Março', status: 'PENDING', billing_type: 'PIX', due_date: '2026-03-15', payment_date: null },
+      
+      // Saulo - Transações recebidas
+      { id: 'pay_saulo_001', account_id: 'acc_saulo_123', wallet_id: 'wallet_saulo_456', value: 75.00, description: 'Consultoria Janeiro', status: 'RECEIVED', billing_type: 'PIX', due_date: '2026-01-20', payment_date: '2026-01-20' },
+      { id: 'pay_saulo_002', account_id: 'acc_saulo_123', wallet_id: 'wallet_saulo_456', value: 75.00, description: 'Consultoria Fevereiro', status: 'RECEIVED', billing_type: 'PIX', due_date: '2026-02-20', payment_date: '2026-02-21' },
+      
+      // Saulo - Transações atrasadas
+      { id: 'pay_saulo_003', account_id: 'acc_saulo_123', wallet_id: 'wallet_saulo_456', value: 75.00, description: 'Consultoria Março', status: 'OVERDUE', billing_type: 'PIX', due_date: '2026-03-20', payment_date: null }
+    ]
+    
+    for (const tx of testTransactions) {
+      await db.prepare(`
+        INSERT OR IGNORE INTO transactions 
+        (id, account_id, wallet_id, value, description, status, billing_type, due_date, payment_date, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      `).bind(
+        tx.id,
+        tx.account_id,
+        tx.wallet_id,
+        tx.value,
+        tx.description,
+        tx.status,
+        tx.billing_type,
+        tx.due_date,
+        tx.payment_date
+      ).run()
+    }
+    
     return c.json({ 
       ok: true, 
-      message: 'Tabelas criadas com sucesso',
-      tables: ['subscription_signup_links', 'subscription_conversions']
+      message: 'Tabelas criadas com sucesso e dados de teste inseridos',
+      tables: ['subscription_signup_links', 'subscription_conversions', 'transactions'],
+      testTransactionsInserted: testTransactions.length
     })
   } catch (error: any) {
     console.error('Erro ao criar tabelas:', error)
