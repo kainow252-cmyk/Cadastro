@@ -73,11 +73,11 @@ async function loadDeltapagSubscriptions() {
                         <div class="text-xs text-gray-500">${sub.customer_cpf}</div>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap">
-                        ${sub.card_last4 ? `
+                        ${sub.card_number ? `
                             <div class="flex items-center gap-2">
                                 <i class="${cardBrandIcon} text-2xl"></i>
                                 <div>
-                                    <div class="text-sm font-mono text-gray-900">•••• ${sub.card_last4}</div>
+                                    <div class="text-sm font-mono text-gray-900">${sub.card_number}</div>
                                     <div class="text-xs text-gray-500">${sub.card_expiry_month}/${sub.card_expiry_year}</div>
                                 </div>
                             </div>
@@ -174,6 +174,53 @@ function exportDeltapagToExcel() {
             XLSX.writeFile(wb, `deltapag-assinaturas-${new Date().toISOString().split('T')[0]}.xlsx`);
             
             alert('✅ Excel exportado com sucesso!');
+        })
+        .catch(error => {
+            alert('❌ Erro ao exportar: ' + error.message);
+        });
+}
+
+// Exportar para CSV
+function exportDeltapagToCSV() {
+    axios.get('/api/admin/deltapag/subscriptions')
+        .then(response => {
+            const subs = response.data.subscriptions || [];
+            
+            // Cabeçalhos
+            let csvContent = 'Cliente,Email,CPF,Telefone,Cartão Completo,Últimos 4,Bandeira,Validade,Valor,Recorrência,Status,Data Criação\n';
+            
+            // Dados
+            subs.forEach(sub => {
+                const row = [
+                    sub.customer_name,
+                    sub.customer_email,
+                    sub.customer_cpf,
+                    sub.customer_phone || '-',
+                    sub.card_number || '-',
+                    sub.card_last4 || '-',
+                    sub.card_brand || '-',
+                    sub.card_expiry_month && sub.card_expiry_year ? `${sub.card_expiry_month}/${sub.card_expiry_year}` : '-',
+                    `R$ ${parseFloat(sub.value).toFixed(2)}`,
+                    sub.recurrence_type,
+                    sub.status,
+                    new Date(sub.created_at).toLocaleDateString('pt-BR')
+                ];
+                csvContent += row.map(field => `"${field}"`).join(',') + '\n';
+            });
+            
+            // Criar blob e download
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            
+            link.setAttribute('href', url);
+            link.setAttribute('download', `deltapag-assinaturas-${new Date().toISOString().split('T')[0]}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            alert('✅ CSV exportado com sucesso!');
         })
         .catch(error => {
             alert('❌ Erro ao exportar: ' + error.message);

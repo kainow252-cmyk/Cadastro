@@ -6962,6 +6962,10 @@ app.get('/', (c) => {
                             class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold">
                             <i class="fas fa-file-excel mr-2"></i>Exportar Excel
                         </button>
+                        <button onclick="exportDeltapagToCSV()" 
+                            class="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 font-semibold">
+                            <i class="fas fa-file-csv mr-2"></i>Exportar CSV
+                        </button>
                     </div>
                 </div>
 
@@ -7979,7 +7983,7 @@ app.get('/', (c) => {
         <script src="/static/app.js?v=5.0"></script>
         <script src="/static/payment-links.js?v=4.2"></script>
         <script src="/static/payment-filters.js?v=4.2"></script>
-        <script src="/static/deltapag-section.js?v=3.7"></script>
+        <script src="/static/deltapag-section.js?v=4.0"></script>
     </body>
     </html>
   `)
