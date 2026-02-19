@@ -30,8 +30,11 @@ async function loadDeltapagStats() {
 // Carregar lista de assinaturas DeltaPag
 async function loadDeltapagSubscriptions() {
     try {
+        console.log('🔄 Carregando assinaturas DeltaPag...');
         const response = await axios.get('/api/admin/deltapag/subscriptions');
+        console.log('✅ Response:', response.data);
         const subs = response.data.subscriptions || [];
+        console.log(`📊 Total de assinaturas: ${subs.length}`);
         const tbody = document.getElementById('deltapag-subscriptions-tbody');
         
         if (subs.length === 0) {
@@ -95,13 +98,15 @@ async function loadDeltapagSubscriptions() {
         loadDeltapagStats();
         
     } catch (error) {
-        console.error('Erro ao carregar assinaturas DeltaPag:', error);
+        console.error('❌ Erro ao carregar assinaturas DeltaPag:', error);
+        console.error('Detalhes:', error.response?.data || error.message);
         const tbody = document.getElementById('deltapag-subscriptions-tbody');
         tbody.innerHTML = `
             <tr>
                 <td colspan="7" class="px-6 py-8 text-center text-red-600">
                     <i class="fas fa-exclamation-triangle text-3xl mb-2"></i>
                     <p>Erro ao carregar assinaturas</p>
+                    <p class="text-sm mt-2">${error.response?.data?.error || error.message}</p>
                 </td>
             </tr>
         `;
