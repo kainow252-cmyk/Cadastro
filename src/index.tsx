@@ -1076,6 +1076,7 @@ app.post('/api/admin/init-db', async (c) => {
         customer_name TEXT NOT NULL,
         customer_email TEXT NOT NULL,
         customer_cpf TEXT NOT NULL,
+        customer_phone TEXT,
         deltapag_subscription_id TEXT NOT NULL,
         deltapag_customer_id TEXT NOT NULL,
         value REAL NOT NULL,
@@ -1083,6 +1084,10 @@ app.post('/api/admin/init-db', async (c) => {
         recurrence_type TEXT DEFAULT 'MONTHLY',
         status TEXT DEFAULT 'ACTIVE',
         next_due_date TEXT,
+        card_last4 TEXT,
+        card_brand TEXT,
+        card_expiry_month TEXT,
+        card_expiry_year TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
@@ -2807,6 +2812,28 @@ app.post('/api/pix/automatic-signup/:linkId', async (c) => {
 // ===================================
 
 // Função auxiliar para fazer requests à API DeltaPag
+// Função auxiliar para detectar bandeira do cartão
+function detectCardBrand(cardNumber: string): string {
+  const patterns = {
+    'Visa': /^4/,
+    'Mastercard': /^(5[1-5]|2[2-7])/,
+    'Elo': /^(4011|4312|4389|4514|4576|5041|5066|5067|6277|6362|6363|6504|6505|6516)/,
+    'Amex': /^3[47]/,
+    'Diners': /^3(?:0[0-5]|[68])/,
+    'Discover': /^6(?:011|5)/,
+    'Hipercard': /^(384100|384140|384160|606282|637095|637568|60)/,
+    'JCB': /^35/
+  }
+  
+  for (const [brand, pattern] of Object.entries(patterns)) {
+    if (pattern.test(cardNumber)) {
+      return brand
+    }
+  }
+  
+  return 'Unknown'
+}
+
 async function deltapagRequest(c: any, endpoint: string, method: string, data?: any) {
   const apiUrl = c.env.DELTAPAG_API_URL
   const apiKey = c.env.DELTAPAG_API_KEY
@@ -2968,24 +2995,36 @@ app.post('/api/deltapag/create-subscription', async (c) => {
     // 3. Salvar no banco D1
     const subscriptionId = crypto.randomUUID()
     
+    // Extrair últimos 4 dígitos do cartão
+    const cardLast4 = cardNumberClean.slice(-4)
+    
+    // Detectar bandeira do cartão
+    const cardBrand = detectCardBrand(cardNumberClean)
+    
     await c.env.DB.prepare(`
       INSERT INTO deltapag_subscriptions 
-      (id, customer_id, customer_name, customer_email, customer_cpf, 
+      (id, customer_id, customer_name, customer_email, customer_cpf, customer_phone,
        deltapag_subscription_id, deltapag_customer_id, value, description, 
-       recurrence_type, status, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+       recurrence_type, status, card_last4, card_brand, card_expiry_month, card_expiry_year,
+       created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     `).bind(
       subscriptionId,
       customerId,
       customerName,
       customerEmail,
       cpfClean,
+      customerPhone || '',
       subscription.id,
       customerId,
       value,
       description || 'Cobrança Recorrente',
       recurrenceType || 'MONTHLY',
-      subscription.status || 'ACTIVE'
+      subscription.status || 'ACTIVE',
+      cardLast4,
+      cardBrand,
+      cardExpiryMonth,
+      cardExpiryYear
     ).run()
     
     console.log('💾 Assinatura salva no banco D1')
@@ -6609,6 +6648,7 @@ app.get('/', (c) => {
                             <tr>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cartão</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Valor</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Recorrência</th>
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
@@ -6618,7 +6658,7 @@ app.get('/', (c) => {
                         </thead>
                         <tbody id="deltapag-subscriptions-tbody" class="bg-white divide-y divide-gray-200">
                             <tr>
-                                <td colspan="7" class="px-6 py-12 text-center text-gray-500">
+                                <td colspan="8" class="px-6 py-12 text-center text-gray-500">
                                     <i class="fas fa-spinner fa-spin text-3xl mb-3"></i>
                                     <p>Carregando assinaturas...</p>
                                 </td>
@@ -7537,7 +7577,7 @@ app.get('/', (c) => {
         <script src="/static/app.js?v=5.0"></script>
         <script src="/static/payment-links.js?v=4.2"></script>
         <script src="/static/payment-filters.js?v=4.2"></script>
-        <script src="/static/deltapag-section.js?v=3.2"></script>
+        <script src="/static/deltapag-section.js?v=3.3"></script>
     </body>
     </html>
   `)

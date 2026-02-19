@@ -48,7 +48,21 @@ async function loadDeltapagSubscriptions() {
                 </tr>
             `;
         } else {
-            tbody.innerHTML = subs.map(sub => `
+            tbody.innerHTML = subs.map(sub => {
+                // Ícone da bandeira do cartão
+                const cardBrandIcon = {
+                    'Visa': 'fab fa-cc-visa text-blue-600',
+                    'Mastercard': 'fab fa-cc-mastercard text-orange-600',
+                    'Elo': 'fas fa-credit-card text-yellow-600',
+                    'Amex': 'fab fa-cc-amex text-blue-800',
+                    'Diners': 'fab fa-cc-diners-club text-blue-500',
+                    'Discover': 'fab fa-cc-discover text-orange-500',
+                    'Hipercard': 'fas fa-credit-card text-red-600',
+                    'JCB': 'fab fa-cc-jcb text-blue-700',
+                    'Unknown': 'fas fa-credit-card text-gray-400'
+                }[sub.card_brand] || 'fas fa-credit-card text-gray-400';
+                
+                return `
                 <tr class="hover:bg-gray-50">
                     <td class="px-6 py-4 whitespace-nowrap">
                         <div class="font-medium text-gray-900">${sub.customer_name}</div>
@@ -57,6 +71,17 @@ async function loadDeltapagSubscriptions() {
                     <td class="px-6 py-4 whitespace-nowrap">
                         <div class="text-sm text-gray-900">${sub.customer_email}</div>
                         <div class="text-xs text-gray-500">${sub.customer_cpf}</div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        ${sub.card_last4 ? `
+                            <div class="flex items-center gap-2">
+                                <i class="${cardBrandIcon} text-2xl"></i>
+                                <div>
+                                    <div class="text-sm font-mono text-gray-900">•••• ${sub.card_last4}</div>
+                                    <div class="text-xs text-gray-500">${sub.card_expiry_month}/${sub.card_expiry_year}</div>
+                                </div>
+                            </div>
+                        ` : '<span class="text-xs text-gray-400">-</span>'}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap">
                         <span class="text-sm font-semibold text-gray-900">R$ ${parseFloat(sub.value).toFixed(2)}</span>
@@ -91,7 +116,7 @@ async function loadDeltapagSubscriptions() {
                         `}
                     </td>
                 </tr>
-            `).join('');
+            `}).join('');
         }
         
         // Atualizar stats
@@ -106,7 +131,7 @@ async function loadDeltapagSubscriptions() {
         const tbody = document.getElementById('deltapag-subscriptions-tbody');
         tbody.innerHTML = `
             <tr>
-                <td colspan="7" class="px-6 py-8 text-center text-red-600">
+                <td colspan="8" class="px-6 py-8 text-center text-red-600">
                     <i class="fas fa-exclamation-triangle text-3xl mb-2"></i>
                     <p>Erro ao carregar assinaturas</p>
                     <p class="text-sm mt-2">${error.response?.data?.error || error.message}</p>
@@ -123,7 +148,7 @@ function exportDeltapagToExcel() {
             const subs = response.data.subscriptions || [];
             
             const ws_data = [
-                ['Cliente', 'Email', 'CPF', 'Valor', 'Recorrência', 'Status', 'Data Criação']
+                ['Cliente', 'Email', 'CPF', 'Telefone', 'Cartão', 'Bandeira', 'Validade', 'Valor', 'Recorrência', 'Status', 'Data Criação']
             ];
             
             subs.forEach(sub => {
@@ -131,6 +156,10 @@ function exportDeltapagToExcel() {
                     sub.customer_name,
                     sub.customer_email,
                     sub.customer_cpf,
+                    sub.customer_phone || '-',
+                    sub.card_last4 ? `•••• ${sub.card_last4}` : '-',
+                    sub.card_brand || '-',
+                    sub.card_expiry_month && sub.card_expiry_year ? `${sub.card_expiry_month}/${sub.card_expiry_year}` : '-',
                     `R$ ${parseFloat(sub.value).toFixed(2)}`,
                     sub.recurrence_type,
                     sub.status,
@@ -649,6 +678,13 @@ let currentQRData = null;
 async function showQRCodeModal(linkId, linkUrl, description, value, recurrence) {
     currentQRData = { linkId, linkUrl, description, value, recurrence };
     
+    // Verificar se biblioteca QRCode está carregada
+    if (typeof QRCode === 'undefined') {
+        console.error('Biblioteca QRCode não carregada');
+        alert('Erro: Biblioteca QR Code não foi carregada. Recarregue a página e tente novamente.');
+        return;
+    }
+    
     // Atualizar informações do link
     document.getElementById('qr-link-description').textContent = description;
     document.getElementById('qr-link-value').textContent = `R$ ${value}`;
@@ -675,7 +711,7 @@ async function showQRCodeModal(linkId, linkUrl, description, value, recurrence) 
         document.getElementById('qrcode-modal').classList.remove('hidden');
     } catch (error) {
         console.error('Erro ao gerar QR Code:', error);
-        alert('Erro ao gerar QR Code. Tente novamente.');
+        alert(`Erro ao gerar QR Code: ${error.message}\n\nTente recarregar a página.`);
     }
 }
 
