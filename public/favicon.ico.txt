@@ -1,6 +1,0 @@
-# Este é um arquivo placeholder
-# Em produção, você deve converter o favicon.svg para .ico
-# Ferramentas online: https://convertio.co/svg-ico/
-# 
-# Por enquanto, o navegador usará o favicon.svg que é suportado
-# pela maioria dos navegadores modernos
