@@ -1166,6 +1166,211 @@ app.post('/api/admin/init-db', async (c) => {
   }
 })
 
+// Endpoint para criar transações de teste DeltaPag
+app.post('/api/admin/seed-deltapag', authMiddleware, async (c) => {
+  try {
+    const db = c.env.DB
+    
+    // Dados de teste com cartões das operadoras Cielo e Rede
+    const testSubscriptions = [
+      // Cielo - Aprovadas (final 0, 1, 4)
+      {
+        id: `test_${Date.now()}_1`,
+        customer_id: 'test_cust_001',
+        customer_name: 'João da Silva',
+        customer_email: 'joao.silva@email.com',
+        customer_cpf: '123.456.789-00',
+        deltapag_subscription_id: 'dpag_sub_001',
+        deltapag_customer_id: 'dpag_cust_001',
+        value: 99.90,
+        description: 'Plano Premium Mensal',
+        recurrence_type: 'MONTHLY',
+        status: 'ACTIVE',
+        card_brand: 'Mastercard',
+        card_last4: '2340',
+        next_due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      },
+      {
+        id: `test_${Date.now()}_2`,
+        customer_id: 'test_cust_002',
+        customer_name: 'Maria Santos',
+        customer_email: 'maria.santos@email.com',
+        customer_cpf: '234.567.890-11',
+        deltapag_subscription_id: 'dpag_sub_002',
+        deltapag_customer_id: 'dpag_cust_002',
+        value: 149.90,
+        description: 'Plano Business Mensal',
+        recurrence_type: 'MONTHLY',
+        status: 'ACTIVE',
+        card_brand: 'Mastercard',
+        card_last4: '0761',
+        next_due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      },
+      {
+        id: `test_${Date.now()}_3`,
+        customer_id: 'test_cust_003',
+        customer_name: 'Pedro Oliveira',
+        customer_email: 'pedro.oliveira@email.com',
+        customer_cpf: '345.678.901-22',
+        deltapag_subscription_id: 'dpag_sub_003',
+        deltapag_customer_id: 'dpag_cust_003',
+        value: 79.90,
+        description: 'Plano Básico Mensal',
+        recurrence_type: 'MONTHLY',
+        status: 'ACTIVE',
+        card_brand: 'Mastercard',
+        card_last4: '8264',
+        next_due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      },
+      // Cielo - Não Autorizada (final 2)
+      {
+        id: `test_${Date.now()}_4`,
+        customer_id: 'test_cust_004',
+        customer_name: 'Ana Costa',
+        customer_email: 'ana.costa@email.com',
+        customer_cpf: '456.789.012-33',
+        deltapag_subscription_id: 'dpag_sub_004',
+        deltapag_customer_id: 'dpag_cust_004',
+        value: 199.90,
+        description: 'Plano Enterprise Mensal',
+        recurrence_type: 'MONTHLY',
+        status: 'CANCELLED',
+        card_brand: 'Mastercard',
+        card_last4: '5532',
+        next_due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      },
+      // Cielo - Cartão Bloqueado (final 5)
+      {
+        id: `test_${Date.now()}_5`,
+        customer_id: 'test_cust_005',
+        customer_name: 'Carlos Ferreira',
+        customer_email: 'carlos.ferreira@email.com',
+        customer_cpf: '567.890.123-44',
+        deltapag_subscription_id: 'dpag_sub_005',
+        deltapag_customer_id: 'dpag_cust_005',
+        value: 299.90,
+        description: 'Plano Ultimate Anual',
+        recurrence_type: 'YEARLY',
+        status: 'CANCELLED',
+        card_brand: 'Mastercard',
+        card_last4: '7415',
+        next_due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      },
+      // Rede - Mastercard Aprovada
+      {
+        id: `test_${Date.now()}_6`,
+        customer_id: 'test_cust_006',
+        customer_name: 'Juliana Lima',
+        customer_email: 'juliana.lima@email.com',
+        customer_cpf: '678.901.234-55',
+        deltapag_subscription_id: 'dpag_sub_006',
+        deltapag_customer_id: 'dpag_cust_006',
+        value: 49.90,
+        description: 'Plano Starter Mensal',
+        recurrence_type: 'MONTHLY',
+        status: 'ACTIVE',
+        card_brand: 'Mastercard',
+        card_last4: '0007',
+        next_due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      },
+      // Rede - Visa Aprovada
+      {
+        id: `test_${Date.now()}_7`,
+        customer_id: 'test_cust_007',
+        customer_name: 'Roberto Alves',
+        customer_email: 'roberto.alves@email.com',
+        customer_cpf: '789.012.345-66',
+        deltapag_subscription_id: 'dpag_sub_007',
+        deltapag_customer_id: 'dpag_cust_007',
+        value: 129.90,
+        description: 'Plano Pro Mensal',
+        recurrence_type: 'MONTHLY',
+        status: 'ACTIVE',
+        card_brand: 'Visa',
+        card_last4: '5682',
+        next_due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      },
+      // Rede - Hipercard Aprovada
+      {
+        id: `test_${Date.now()}_8`,
+        customer_id: 'test_cust_008',
+        customer_name: 'Fernanda Rocha',
+        customer_email: 'fernanda.rocha@email.com',
+        customer_cpf: '890.123.456-77',
+        deltapag_subscription_id: 'dpag_sub_008',
+        deltapag_customer_id: 'dpag_cust_008',
+        value: 89.90,
+        description: 'Plano Plus Mensal',
+        recurrence_type: 'MONTHLY',
+        status: 'ACTIVE',
+        card_brand: 'Hipercard',
+        card_last4: '4001',
+        next_due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      },
+      // Rede - Elo Aprovada
+      {
+        id: `test_${Date.now()}_9`,
+        customer_id: 'test_cust_009',
+        customer_name: 'Lucas Martins',
+        customer_email: 'lucas.martins@email.com',
+        customer_cpf: '901.234.567-88',
+        deltapag_subscription_id: 'dpag_sub_009',
+        deltapag_customer_id: 'dpag_cust_009',
+        value: 169.90,
+        description: 'Plano Advanced Mensal',
+        recurrence_type: 'MONTHLY',
+        status: 'ACTIVE',
+        card_brand: 'Elo',
+        card_last4: '0055',
+        next_due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      }
+    ]
+    
+    // Inserir assinaturas de teste
+    for (const sub of testSubscriptions) {
+      await db.prepare(`
+        INSERT INTO deltapag_subscriptions 
+        (id, customer_id, customer_name, customer_email, customer_cpf, 
+         deltapag_subscription_id, deltapag_customer_id, value, description, 
+         recurrence_type, status, next_due_date, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      `).bind(
+        sub.id,
+        sub.customer_id,
+        sub.customer_name,
+        sub.customer_email,
+        sub.customer_cpf,
+        sub.deltapag_subscription_id,
+        sub.deltapag_customer_id,
+        sub.value,
+        sub.description,
+        sub.recurrence_type,
+        sub.status,
+        sub.next_due_date
+      ).run()
+    }
+    
+    return c.json({
+      ok: true,
+      message: 'Transações de teste DeltaPag criadas com sucesso',
+      count: testSubscriptions.length,
+      subscriptions: testSubscriptions.map(s => ({
+        customer: s.customer_name,
+        value: s.value,
+        status: s.status,
+        card_brand: s.card_brand,
+        card_last4: s.card_last4
+      }))
+    })
+  } catch (error: any) {
+    console.error('Erro ao criar transações de teste:', error)
+    return c.json({
+      ok: false,
+      error: error.message
+    }, 500)
+  }
+})
+
 // Endpoint para inicializar Amazon SES
 app.post('/api/admin/configure-ses', async (c) => {
   try {

@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Criar Transações de Teste DeltaPag</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gradient-to-br from-purple-50 to-indigo-100 min-h-screen p-8">
+    <div class="max-w-4xl mx-auto">
+        <div class="bg-white rounded-xl shadow-2xl p-8">
+            <div class="text-center mb-8">
+                <i class="fas fa-credit-card text-6xl text-purple-600 mb-4"></i>
+                <h1 class="text-3xl font-bold text-gray-800 mb-2">
+                    Criar Transações de Teste DeltaPag
+                </h1>
+                <p class="text-gray-600">
+                    Popula o banco de dados com 9 assinaturas de teste usando cartões das operadoras Cielo e Rede
+                </p>
+            </div>
+
+            <div class="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6">
+                <div class="flex items-start">
+                    <i class="fas fa-info-circle text-blue-500 mt-1 mr-3"></i>
+                    <div>
+                        <p class="text-sm text-blue-800 font-semibold mb-2">Cartões de Teste Incluídos:</p>
+                        <ul class="text-xs text-blue-700 space-y-1">
+                            <li><strong>Cielo Aprovadas:</strong> 3 assinaturas (Mastercard finais 2340, 0761, 8264)</li>
+                            <li><strong>Cielo Não Autorizada:</strong> 1 assinatura (final 5532) - Status: CANCELADA</li>
+                            <li><strong>Cielo Bloqueado:</strong> 1 assinatura (final 7415) - Status: CANCELADA</li>
+                            <li><strong>Rede Mastercard:</strong> 1 assinatura (final 0007)</li>
+                            <li><strong>Rede Visa:</strong> 1 assinatura (final 5682)</li>
+                            <li><strong>Rede Hipercard:</strong> 1 assinatura (final 4001)</li>
+                            <li><strong>Rede Elo:</strong> 1 assinatura (final 0055)</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="space-y-4">
+                <button 
+                    onclick="createTestTransactions()"
+                    id="createBtn"
+                    class="w-full bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-4 rounded-lg font-bold text-lg hover:from-purple-700 hover:to-indigo-700 transition-all transform hover:scale-105 shadow-lg">
+                    <i class="fas fa-database mr-2"></i>
+                    Criar 9 Transações de Teste
+                </button>
+
+                <div id="result" class="hidden"></div>
+
+                <div class="text-center">
+                    <a href="/" class="text-purple-600 hover:text-purple-800 font-semibold">
+                        <i class="fas fa-arrow-left mr-2"></i>
+                        Voltar ao Sistema
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabela de Referência -->
+        <div class="bg-white rounded-xl shadow-xl p-8 mt-8">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">
+                <i class="fas fa-table mr-2 text-indigo-600"></i>
+                Referência dos Cartões de Teste
+            </h2>
+            
+            <div class="mb-6">
+                <h3 class="text-lg font-semibold text-gray-700 mb-3">Cielo</h3>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead class="bg-gray-100">
+                            <tr>
+                                <th class="px-4 py-2 text-left">Número do Cartão</th>
+                                <th class="px-4 py-2 text-left">Bandeira</th>
+                                <th class="px-4 py-2 text-left">Validade</th>
+                                <th class="px-4 py-2 text-left">CVV</th>
+                                <th class="px-4 py-2 text-left">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200">
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-4 py-2 font-mono">5428258051342340</td>
+                                <td class="px-4 py-2">Mastercard</td>
+                                <td class="px-4 py-2">01/2028</td>
+                                <td class="px-4 py-2">123</td>
+                                <td class="px-4 py-2"><span class="text-green-600 font-semibold">✓ Aprovada</span></td>
+                            </tr>
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-4 py-2 font-mono">5308547387340761</td>
+                                <td class="px-4 py-2">Mastercard</td>
+                                <td class="px-4 py-2">01/2028</td>
+                                <td class="px-4 py-2">123</td>
+                                <td class="px-4 py-2"><span class="text-green-600 font-semibold">✓ Aprovada</span></td>
+                            </tr>
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-4 py-2 font-mono">5328575787984264</td>
+                                <td class="px-4 py-2">Mastercard</td>
+                                <td class="px-4 py-2">01/2028</td>
+                                <td class="px-4 py-2">123</td>
+                                <td class="px-4 py-2"><span class="text-green-600 font-semibold">✓ Aprovada</span></td>
+                            </tr>
+                            <tr class="hover:bg-gray-50 bg-red-50">
+                                <td class="px-4 py-2 font-mono">5359439935515532</td>
+                                <td class="px-4 py-2">Mastercard</td>
+                                <td class="px-4 py-2">01/2028</td>
+                                <td class="px-4 py-2">123</td>
+                                <td class="px-4 py-2"><span class="text-red-600 font-semibold">✗ Não Autorizada</span></td>
+                            </tr>
+                            <tr class="hover:bg-gray-50 bg-orange-50">
+                                <td class="px-4 py-2 font-mono">5226524696667415</td>
+                                <td class="px-4 py-2">Mastercard</td>
+                                <td class="px-4 py-2">01/2028</td>
+                                <td class="px-4 py-2">123</td>
+                                <td class="px-4 py-2"><span class="text-orange-600 font-semibold">⊗ Cartão Bloqueado</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div>
+                <h3 class="text-lg font-semibold text-gray-700 mb-3">Rede</h3>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm">
+                        <thead class="bg-gray-100">
+                            <tr>
+                                <th class="px-4 py-2 text-left">Número do Cartão</th>
+                                <th class="px-4 py-2 text-left">Bandeira</th>
+                                <th class="px-4 py-2 text-left">Validade</th>
+                                <th class="px-4 py-2 text-left">CVV</th>
+                                <th class="px-4 py-2 text-left">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200">
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-4 py-2 font-mono">5448280000000007</td>
+                                <td class="px-4 py-2">Mastercard</td>
+                                <td class="px-4 py-2">01/2028</td>
+                                <td class="px-4 py-2">123</td>
+                                <td class="px-4 py-2"><span class="text-green-600 font-semibold">✓ Aprovada</span></td>
+                            </tr>
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-4 py-2 font-mono">4235647728025682</td>
+                                <td class="px-4 py-2">Visa</td>
+                                <td class="px-4 py-2">01/2028</td>
+                                <td class="px-4 py-2">123</td>
+                                <td class="px-4 py-2"><span class="text-green-600 font-semibold">✓ Aprovada</span></td>
+                            </tr>
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-4 py-2 font-mono">6062825624254001</td>
+                                <td class="px-4 py-2">Hipercard</td>
+                                <td class="px-4 py-2">01/2028</td>
+                                <td class="px-4 py-2">123</td>
+                                <td class="px-4 py-2"><span class="text-green-600 font-semibold">✓ Aprovada</span></td>
+                            </tr>
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-4 py-2 font-mono">4389351648020055</td>
+                                <td class="px-4 py-2">Elo</td>
+                                <td class="px-4 py-2">01/2028</td>
+                                <td class="px-4 py-2">123</td>
+                                <td class="px-4 py-2"><span class="text-green-600 font-semibold">✓ Aprovada</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+    <script>
+        async function createTestTransactions() {
+            const btn = document.getElementById('createBtn');
+            const result = document.getElementById('result');
+            
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Criando transações...';
+            
+            try {
+                const response = await axios.post('/api/admin/seed-deltapag');
+                
+                if (response.data.ok) {
+                    result.className = 'bg-green-50 border-l-4 border-green-500 p-4 rounded';
+                    result.innerHTML = `
+                        <div class="flex items-start">
+                            <i class="fas fa-check-circle text-green-500 text-2xl mr-3"></i>
+                            <div class="flex-1">
+                                <p class="text-green-800 font-bold mb-2">${response.data.message}</p>
+                                <p class="text-green-700 mb-3">Total: ${response.data.count} assinaturas criadas</p>
+                                <div class="bg-white rounded p-3 max-h-60 overflow-y-auto">
+                                    ${response.data.subscriptions.map(s => `
+                                        <div class="mb-2 pb-2 border-b last:border-b-0">
+                                            <p class="text-sm">
+                                                <strong>${s.customer}</strong> - 
+                                                R$ ${s.value.toFixed(2)} - 
+                                                <span class="px-2 py-1 rounded text-xs ${s.status === 'ACTIVE' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+                                                    ${s.status}
+                                                </span>
+                                                <br>
+                                                <span class="text-xs text-gray-500">
+                                                    ${s.card_brand} •••• ${s.card_last4}
+                                                </span>
+                                            </p>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                                <a href="/" class="inline-block mt-4 bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition">
+                                    <i class="fas fa-eye mr-2"></i>
+                                    Ver no Sistema
+                                </a>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    throw new Error(response.data.error || 'Erro desconhecido');
+                }
+            } catch (error) {
+                result.className = 'bg-red-50 border-l-4 border-red-500 p-4 rounded';
+                result.innerHTML = `
+                    <div class="flex items-start">
+                        <i class="fas fa-exclamation-circle text-red-500 text-2xl mr-3"></i>
+                        <div>
+                            <p class="text-red-800 font-bold">Erro ao criar transações</p>
+                            <p class="text-red-700 text-sm mt-1">${error.message}</p>
+                            <p class="text-red-600 text-xs mt-2">
+                                Certifique-se de estar logado no sistema: 
+                                <a href="/" class="underline hover:text-red-800">Fazer login</a>
+                            </p>
+                        </div>
+                    </div>
+                `;
+            } finally {
+                result.classList.remove('hidden');
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-database mr-2"></i>Criar 9 Transações de Teste';
+            }
+        }
+    </script>
+</body>
+</html>
