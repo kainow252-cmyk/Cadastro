@@ -1,0 +1,54 @@
+name: Build and Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Build and Deploy
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build project
+        run: npm run build
+        env:
+          NODE_ENV: production
+      
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: corretoracorporate
+          directory: dist
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          branch: main
+      
+      - name: Deployment Summary
+        run: |
+          echo "✅ Build e Deploy concluídos com sucesso!"
+          echo ""
+          echo "🔗 URLs:"
+          echo "- Produção: https://gerenciador.corretoracorporate.com.br"
+          echo "- Dashboard: https://gerenciador.corretoracorporate.com.br/dashboard"
+          echo ""
+          echo "📋 Próximos passos:"
+          echo "1. Login: admin / admin123"
+          echo "2. Abrir 'Cartão Crédito'"
+          echo "3. Clicar em 'Criar Evidências' (botão laranja)"
+          echo "4. Copiar os 5 IDs DeltaPag"
+          echo "5. Enviar para equipe DeltaPag"
