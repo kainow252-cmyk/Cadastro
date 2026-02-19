@@ -93,8 +93,7 @@ app.use('/api/*', async (c, next) => {
     '/api/check-auth', 
     '/api/public/signup',
     '/api/proxy/payments',
-    '/api/debug/env',
-    '/api/admin/init-db'
+    '/api/debug/env'
   ]
   
   // Public routes with exact match
