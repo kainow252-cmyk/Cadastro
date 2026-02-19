@@ -31,3 +31,13 @@ lerna-debug.log*
 
 # misc
 .DS_Store
+
+# security - prevent sensitive data leaks
+RESUMO*.md
+RESUMO*.txt
+VARIAVEIS*.txt
+*_SECRETS.md
+*_API_KEYS.txt
+*.backup
+*.sql
+!migrations/*.sql
