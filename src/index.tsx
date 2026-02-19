@@ -6030,6 +6030,11 @@ app.get('/pix-automatic-signup/:linkId', async (c) => {
 </html>`)
 })
 
+// Redirect /dashboard to root
+app.get('/dashboard', (c) => {
+  return c.redirect('/', 301)
+})
+
 // Homepage
 app.get('/', (c) => {
   return c.html(`
