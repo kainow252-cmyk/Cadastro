@@ -1555,10 +1555,16 @@ app.post('/api/admin/create-evidence-transactions', authMiddleware, async (c) =>
     
   } catch (error: any) {
     console.error('❌ Erro ao criar transações de evidência:', error)
+    console.error('Stack trace completo:', error.stack)
+    console.error('Erro tipo:', typeof error)
+    console.error('Erro objeto:', JSON.stringify(error, Object.getOwnPropertyNames(error)))
+    
     return c.json({ 
       ok: false, 
-      error: error.message,
-      details: error.stack 
+      error: error.message || 'Erro desconhecido',
+      errorType: error.constructor?.name || typeof error,
+      details: error.stack,
+      fullError: JSON.stringify(error, Object.getOwnPropertyNames(error))
     }, 500)
   }
 })
