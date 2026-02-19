@@ -1,0 +1,56 @@
+# COPIE ESTE CÓDIGO E COLE NO GITHUB
+
+## ATENÇÃO: O GitHub não permite criar workflows via API por segurança
+## Você precisa criar manualmente seguindo os passos abaixo:
+
+---
+
+## 🎯 PASSOS RÁPIDOS:
+
+1. Acesse: https://github.com/kainow252-cmyk/Cadastro/actions
+
+2. Clique em: "set up a workflow yourself" (link azul)
+
+3. Cole este código (copie TUDO abaixo da linha):
+
+---
+
+name: Build and Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - run: npm ci
+      
+      - run: npm run build
+        env:
+          NODE_ENV: production
+      
+      - uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: corretoracorporate
+          directory: dist
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+
+---
+
+4. Clique em "Commit changes" (botão verde)
+
+5. Depois siga os próximos passos em: CRIAR_WORKFLOW_MANUAL.md
+
