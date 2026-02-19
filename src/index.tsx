@@ -646,10 +646,10 @@ app.get('/api/stats', async (c) => {
         },
         recentAccounts: accounts.slice(0, 5).map((a: any) => ({
           id: a.id,
-          account_id: a.account_id,
-          url: a.url,
-          dateCreated: a.created_at,
-          status: a.active === 1 ? 'approved' : 'pending'
+          name: a.name || `Conta ${a.id?.substring(0, 8)}` || 'Sem nome',
+          email: a.email || 'N/A',
+          dateCreated: a.dateCreated || a.created_at,
+          status: a.walletId || a.active ? 'approved' : 'pending'
         }))
       }
     })
