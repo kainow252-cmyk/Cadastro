@@ -7312,7 +7312,7 @@ app.get('/', (c) => {
         <script src="/static/app.js?v=5.0"></script>
         <script src="/static/payment-links.js?v=4.2"></script>
         <script src="/static/payment-filters.js?v=4.2"></script>
-        <script src="/static/deltapag-section.js?v=2.1"></script>
+        <script src="/static/deltapag-section.js?v=2.2"></script>
     </body>
     </html>
   `)

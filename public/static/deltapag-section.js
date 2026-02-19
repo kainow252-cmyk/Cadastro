@@ -97,6 +97,9 @@ async function loadDeltapagSubscriptions() {
         // Atualizar stats
         loadDeltapagStats();
         
+        // Aplicar filtros após renderização
+        setTimeout(() => applyDeltapagFilters(), 100);
+        
     } catch (error) {
         console.error('❌ Erro ao carregar assinaturas DeltaPag:', error);
         console.error('Detalhes:', error.response?.data || error.message);
