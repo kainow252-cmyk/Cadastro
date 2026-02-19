@@ -6467,21 +6467,79 @@ app.get('/', (c) => {
 
                 <!-- Filters -->
                 <div class="p-6 border-b border-gray-200 bg-gray-50">
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <input type="text" id="deltapag-filter-name" placeholder="Buscar por nome..." 
-                            class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
-                        <input type="email" id="deltapag-filter-email" placeholder="Buscar por email..." 
-                            class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
-                        <select id="deltapag-filter-status" 
-                            class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
-                            <option value="">Todos os status</option>
-                            <option value="ACTIVE">Ativas</option>
-                            <option value="CANCELLED">Canceladas</option>
-                        </select>
-                        <button onclick="applyDeltapagFilters()" 
-                            class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold">
-                            <i class="fas fa-filter mr-2"></i>Filtrar
-                        </button>
+                    <div class="space-y-4">
+                        <!-- Linha 1: Filtros de texto e status -->
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <input type="text" id="deltapag-filter-name" placeholder="Buscar por nome..." 
+                                oninput="applyDeltapagFilters()"
+                                class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                            <input type="email" id="deltapag-filter-email" placeholder="Buscar por email..." 
+                                oninput="applyDeltapagFilters()"
+                                class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                            <select id="deltapag-filter-status" onchange="applyDeltapagFilters()"
+                                class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                                <option value="">Todos os status</option>
+                                <option value="ACTIVE">Ativas</option>
+                                <option value="CANCELLED">Canceladas</option>
+                            </select>
+                            <select id="deltapag-filter-recurrence" onchange="applyDeltapagFilters()"
+                                class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                                <option value="">Todas recorrências</option>
+                                <option value="DAILY">Diária</option>
+                                <option value="WEEKLY">Semanal</option>
+                                <option value="BIWEEKLY">Quinzenal</option>
+                                <option value="MONTHLY">Mensal</option>
+                                <option value="QUARTERLY">Trimestral</option>
+                                <option value="SEMIANNUAL">Semestral</option>
+                                <option value="YEARLY">Anual</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Linha 2: Filtros de data -->
+                        <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+                            <div class="relative">
+                                <label class="block text-xs font-medium text-gray-700 mb-1">Data Específica</label>
+                                <input type="date" id="deltapag-filter-date" onchange="applyDeltapagFilters()"
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                            </div>
+                            <div class="relative">
+                                <label class="block text-xs font-medium text-gray-700 mb-1">Mês/Ano</label>
+                                <input type="month" id="deltapag-filter-month" onchange="applyDeltapagFilters()"
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                            </div>
+                            <div class="relative">
+                                <label class="block text-xs font-medium text-gray-700 mb-1">Ano</label>
+                                <select id="deltapag-filter-year" onchange="applyDeltapagFilters()"
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                                    <option value="">Todos anos</option>
+                                    <option value="2026">2026</option>
+                                    <option value="2025">2025</option>
+                                    <option value="2024">2024</option>
+                                    <option value="2023">2023</option>
+                                </select>
+                            </div>
+                            <div class="relative">
+                                <label class="block text-xs font-medium text-gray-700 mb-1">Período - De</label>
+                                <input type="date" id="deltapag-filter-date-from" onchange="applyDeltapagFilters()"
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                            </div>
+                            <div class="relative">
+                                <label class="block text-xs font-medium text-gray-700 mb-1">Período - Até</label>
+                                <input type="date" id="deltapag-filter-date-to" onchange="applyDeltapagFilters()"
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                            </div>
+                        </div>
+                        
+                        <!-- Linha 3: Ações -->
+                        <div class="flex justify-between items-center">
+                            <button onclick="clearDeltapagFilters()" 
+                                class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-semibold transition">
+                                <i class="fas fa-times mr-2"></i>Limpar Filtros
+                            </button>
+                            <div class="text-sm text-gray-600">
+                                <span id="deltapag-filter-count">0 assinaturas visíveis</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -7312,7 +7370,7 @@ app.get('/', (c) => {
         <script src="/static/app.js?v=5.0"></script>
         <script src="/static/payment-links.js?v=4.2"></script>
         <script src="/static/payment-filters.js?v=4.2"></script>
-        <script src="/static/deltapag-section.js?v=2.2"></script>
+        <script src="/static/deltapag-section.js?v=3.0"></script>
     </body>
     </html>
   `)

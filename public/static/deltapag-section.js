@@ -150,11 +150,17 @@ function exportDeltapagToExcel() {
         });
 }
 
-// Aplicar filtros
+// Aplicar filtros avançados
 function applyDeltapagFilters() {
-    const name = document.getElementById('deltapag-filter-name').value.toLowerCase();
-    const email = document.getElementById('deltapag-filter-email').value.toLowerCase();
-    const status = document.getElementById('deltapag-filter-status').value;
+    const name = document.getElementById('deltapag-filter-name')?.value.toLowerCase() || '';
+    const email = document.getElementById('deltapag-filter-email')?.value.toLowerCase() || '';
+    const status = document.getElementById('deltapag-filter-status')?.value || '';
+    const recurrence = document.getElementById('deltapag-filter-recurrence')?.value || '';
+    const filterDate = document.getElementById('deltapag-filter-date')?.value || '';
+    const filterMonth = document.getElementById('deltapag-filter-month')?.value || '';
+    const filterYear = document.getElementById('deltapag-filter-year')?.value || '';
+    const dateFrom = document.getElementById('deltapag-filter-date-from')?.value || '';
+    const dateTo = document.getElementById('deltapag-filter-date-to')?.value || '';
     
     const rows = document.querySelectorAll('#deltapag-subscriptions-tbody tr');
     let visibleCount = 0;
@@ -165,13 +171,57 @@ function applyDeltapagFilters() {
         
         const rowName = cells[0]?.textContent.toLowerCase() || '';
         const rowEmail = cells[1]?.textContent.toLowerCase() || '';
+        const rowRecurrence = cells[3]?.textContent.trim() || '';
         const rowStatus = row.querySelector('.rounded-full')?.textContent.trim() || '';
+        const rowDateText = cells[5]?.textContent.trim() || '';
         
+        // Parse date (formato dd/mm/yyyy)
+        let rowDate = null;
+        if (rowDateText) {
+            const [day, month, year] = rowDateText.split('/');
+            if (day && month && year) {
+                rowDate = new Date(year, month - 1, day);
+            }
+        }
+        
+        // Filtros de texto
         const matchName = !name || rowName.includes(name);
         const matchEmail = !email || rowEmail.includes(email);
         const matchStatus = !status || rowStatus === status;
+        const matchRecurrence = !recurrence || rowRecurrence === recurrence;
         
-        if (matchName && matchEmail && matchStatus) {
+        // Filtros de data
+        let matchDate = true;
+        
+        if (filterDate && rowDate) {
+            const targetDate = new Date(filterDate);
+            matchDate = rowDate.toDateString() === targetDate.toDateString();
+        }
+        
+        if (filterMonth && rowDate) {
+            const [year, month] = filterMonth.split('-');
+            matchDate = matchDate && 
+                rowDate.getFullYear() === parseInt(year) && 
+                rowDate.getMonth() === parseInt(month) - 1;
+        }
+        
+        if (filterYear && rowDate) {
+            matchDate = matchDate && rowDate.getFullYear() === parseInt(filterYear);
+        }
+        
+        if (dateFrom && rowDate) {
+            const fromDate = new Date(dateFrom);
+            matchDate = matchDate && rowDate >= fromDate;
+        }
+        
+        if (dateTo && rowDate) {
+            const toDate = new Date(dateTo);
+            toDate.setHours(23, 59, 59, 999); // Incluir todo o dia
+            matchDate = matchDate && rowDate <= toDate;
+        }
+        
+        // Aplicar filtro
+        if (matchName && matchEmail && matchStatus && matchRecurrence && matchDate) {
             row.style.display = '';
             visibleCount++;
         } else {
@@ -179,7 +229,28 @@ function applyDeltapagFilters() {
         }
     });
     
+    // Atualizar contador
+    const countElement = document.getElementById('deltapag-filter-count');
+    if (countElement) {
+        countElement.textContent = `${visibleCount} assinatura${visibleCount !== 1 ? 's' : ''} visível${visibleCount !== 1 ? 'is' : ''}`;
+    }
+    
     console.log(`Filtro aplicado: ${visibleCount} assinaturas visíveis`);
+}
+
+// Limpar todos os filtros
+function clearDeltapagFilters() {
+    document.getElementById('deltapag-filter-name').value = '';
+    document.getElementById('deltapag-filter-email').value = '';
+    document.getElementById('deltapag-filter-status').value = '';
+    document.getElementById('deltapag-filter-recurrence').value = '';
+    document.getElementById('deltapag-filter-date').value = '';
+    document.getElementById('deltapag-filter-month').value = '';
+    document.getElementById('deltapag-filter-year').value = '';
+    document.getElementById('deltapag-filter-date-from').value = '';
+    document.getElementById('deltapag-filter-date-to').value = '';
+    
+    applyDeltapagFilters();
 }
 
 // Link Auto-Cadastro Modal
