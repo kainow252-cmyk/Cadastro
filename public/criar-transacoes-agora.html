@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚀 Criar Transações AGORA</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gradient-to-br from-indigo-500 to-purple-600 min-h-screen flex items-center justify-center p-4">
+    <div class="max-w-2xl w-full">
+        <!-- Card Principal -->
+        <div class="bg-white rounded-2xl shadow-2xl p-8 mb-6">
+            <div class="text-center mb-8">
+                <div class="inline-block bg-gradient-to-r from-indigo-500 to-purple-600 p-4 rounded-full mb-4">
+                    <i class="fas fa-rocket text-white text-4xl"></i>
+                </div>
+                <h1 class="text-3xl font-bold text-gray-800 mb-2">
+                    Criar Transações de Teste
+                </h1>
+                <p class="text-gray-600">
+                    Popule o banco com 9 assinaturas DeltaPag em segundos
+                </p>
+            </div>
+
+            <!-- Status -->
+            <div id="status" class="hidden mb-6"></div>
+
+            <!-- Botão Principal -->
+            <button 
+                onclick="criarTransacoes()"
+                id="btnCriar"
+                class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-4 px-6 rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200">
+                <i class="fas fa-magic mr-2"></i>
+                Criar 9 Transações Agora
+            </button>
+
+            <!-- Info -->
+            <div class="mt-6 p-4 bg-blue-50 rounded-lg border-l-4 border-blue-500">
+                <p class="text-sm text-blue-800">
+                    <i class="fas fa-info-circle mr-2"></i>
+                    <strong>O que será criado:</strong> 9 assinaturas (7 ativas, 2 canceladas) com valores entre R$ 49,90 e R$ 299,90
+                </p>
+            </div>
+
+            <!-- Progresso -->
+            <div id="progress" class="hidden mt-6">
+                <div class="flex items-center justify-center space-x-3">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                    <span class="text-gray-700 font-medium">Criando transações...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Resultado -->
+        <div id="resultado" class="hidden bg-white rounded-2xl shadow-2xl p-8"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+    <script>
+        async function criarTransacoes() {
+            const btn = document.getElementById('btnCriar');
+            const progress = document.getElementById('progress');
+            const resultado = document.getElementById('resultado');
+            const status = document.getElementById('status');
+            
+            // Desabilitar botão e mostrar progresso
+            btn.disabled = true;
+            btn.classList.add('opacity-50', 'cursor-not-allowed');
+            progress.classList.remove('hidden');
+            status.classList.add('hidden');
+            resultado.classList.add('hidden');
+            
+            try {
+                console.log('🚀 Iniciando criação de transações...');
+                
+                const response = await axios.post('/api/admin/seed-deltapag', {}, {
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                console.log('✅ Response:', response.data);
+                
+                if (response.data.ok) {
+                    // Sucesso!
+                    resultado.className = 'bg-white rounded-2xl shadow-2xl p-8';
+                    resultado.innerHTML = `
+                        <div class="text-center">
+                            <div class="inline-block bg-green-100 p-4 rounded-full mb-4">
+                                <i class="fas fa-check-circle text-green-600 text-5xl"></i>
+                            </div>
+                            <h2 class="text-2xl font-bold text-gray-800 mb-3">
+                                ✅ Sucesso!
+                            </h2>
+                            <p class="text-gray-600 mb-6">
+                                ${response.data.count} assinaturas criadas com sucesso
+                            </p>
+                            
+                            <!-- Stats -->
+                            <div class="grid grid-cols-3 gap-4 mb-6">
+                                <div class="bg-green-50 p-4 rounded-lg">
+                                    <div class="text-3xl font-bold text-green-600">${response.data.subscriptions.filter(s => s.status === 'ACTIVE').length}</div>
+                                    <div class="text-xs text-green-700 font-medium">ATIVAS</div>
+                                </div>
+                                <div class="bg-red-50 p-4 rounded-lg">
+                                    <div class="text-3xl font-bold text-red-600">${response.data.subscriptions.filter(s => s.status === 'CANCELLED').length}</div>
+                                    <div class="text-xs text-red-700 font-medium">CANCELADAS</div>
+                                </div>
+                                <div class="bg-blue-50 p-4 rounded-lg">
+                                    <div class="text-3xl font-bold text-blue-600">${response.data.count}</div>
+                                    <div class="text-xs text-blue-700 font-medium">TOTAL</div>
+                                </div>
+                            </div>
+                            
+                            <!-- Lista de assinaturas -->
+                            <div class="bg-gray-50 rounded-lg p-4 max-h-64 overflow-y-auto mb-6">
+                                ${response.data.subscriptions.map(s => `
+                                    <div class="flex items-center justify-between py-2 border-b last:border-b-0">
+                                        <div class="text-left">
+                                            <div class="font-medium text-gray-800">${s.customer}</div>
+                                            <div class="text-xs text-gray-500">${s.card_brand} •••• ${s.card_last4}</div>
+                                        </div>
+                                        <div class="text-right">
+                                            <div class="font-bold text-gray-800">R$ ${s.value.toFixed(2)}</div>
+                                            <span class="text-xs px-2 py-1 rounded-full ${s.status === 'ACTIVE' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+                                                ${s.status}
+                                            </span>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                            
+                            <!-- Botões -->
+                            <div class="flex gap-4">
+                                <a href="/" class="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3 px-6 rounded-lg font-semibold hover:shadow-lg transition-all text-center">
+                                    <i class="fas fa-arrow-right mr-2"></i>
+                                    Ir para DeltaPag
+                                </a>
+                                <button onclick="location.reload()" class="flex-1 bg-gray-100 text-gray-700 py-3 px-6 rounded-lg font-semibold hover:bg-gray-200 transition-all">
+                                    <i class="fas fa-redo mr-2"></i>
+                                    Criar Mais
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    resultado.classList.remove('hidden');
+                    
+                } else {
+                    throw new Error(response.data.error || 'Erro desconhecido');
+                }
+                
+            } catch (error) {
+                console.error('❌ Erro:', error);
+                
+                // Verificar se é erro de autenticação
+                if (error.response?.status === 401) {
+                    status.className = 'bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded-lg mb-6';
+                    status.innerHTML = `
+                        <div class="flex items-start">
+                            <i class="fas fa-exclamation-triangle text-yellow-600 text-2xl mr-3 mt-1"></i>
+                            <div class="flex-1">
+                                <p class="text-yellow-800 font-bold mb-2">⚠️ Você precisa fazer login primeiro</p>
+                                <p class="text-yellow-700 text-sm mb-3">
+                                    Esta ação requer autenticação. Por favor, faça login no sistema principal.
+                                </p>
+                                <a href="/" class="inline-block bg-yellow-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-yellow-700 transition-all text-sm">
+                                    <i class="fas fa-sign-in-alt mr-2"></i>
+                                    Fazer Login
+                                </a>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    status.className = 'bg-red-50 border-l-4 border-red-500 p-4 rounded-lg mb-6';
+                    status.innerHTML = `
+                        <div class="flex items-start">
+                            <i class="fas fa-times-circle text-red-600 text-2xl mr-3 mt-1"></i>
+                            <div class="flex-1">
+                                <p class="text-red-800 font-bold mb-2">❌ Erro ao criar transações</p>
+                                <p class="text-red-700 text-sm">${error.response?.data?.error || error.message}</p>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                status.classList.remove('hidden');
+                
+            } finally {
+                // Reabilitar botão
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                progress.classList.add('hidden');
+            }
+        }
+        
+        // Auto-executar se já estiver logado
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log('✅ Página carregada. Pronto para criar transações!');
+        });
+    </script>
+</body>
+</html>
