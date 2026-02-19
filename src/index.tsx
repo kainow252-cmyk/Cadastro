@@ -3592,9 +3592,21 @@ async function deltapagRequest(c: any, endpoint: string, method: string, data?: 
     console.log('📤 Payload:', JSON.stringify(data, null, 2))
     
     const response = await fetch(url, options)
-    const responseData = await response.json()
     
-    console.log(`📥 DeltaPag Response [${response.status}]:`, JSON.stringify(responseData, null, 2))
+    // Pegar o texto da resposta primeiro
+    const responseText = await response.text()
+    console.log(`📥 DeltaPag Response Text [${response.status}]:`, responseText)
+    
+    // Tentar parsear como JSON, se falhar retornar o texto
+    let responseData
+    try {
+      responseData = responseText ? JSON.parse(responseText) : {}
+    } catch (jsonError) {
+      console.warn('⚠️ Resposta não é JSON válido, retornando texto')
+      responseData = { rawResponse: responseText, parseError: 'Invalid JSON' }
+    }
+    
+    console.log(`📥 DeltaPag Response Parsed [${response.status}]:`, JSON.stringify(responseData, null, 2))
     
     return {
       ok: response.ok,
@@ -3607,7 +3619,7 @@ async function deltapagRequest(c: any, endpoint: string, method: string, data?: 
     return {
       ok: false,
       status: 500,
-      data: { error: error.message },
+      data: { error: error.message, errorStack: error.stack },
       headers: new Headers()
     }
   }
