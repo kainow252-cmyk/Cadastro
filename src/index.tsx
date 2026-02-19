@@ -7461,15 +7461,83 @@ app.get('/', (c) => {
             </div>
         </div>
 
+        <!-- Modal QR Code -->
+        <div id="qrcode-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+                <div class="bg-gradient-to-r from-purple-600 to-indigo-600 px-6 py-4 rounded-t-2xl">
+                    <h2 class="text-2xl font-bold text-white flex items-center">
+                        <i class="fas fa-qrcode mr-3"></i>
+                        QR Code do Link
+                    </h2>
+                </div>
+
+                <div class="p-6">
+                    <!-- Link Info -->
+                    <div class="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-6">
+                        <div class="flex items-start gap-3">
+                            <i class="fas fa-info-circle text-purple-600 text-xl mt-1"></i>
+                            <div>
+                                <p class="font-bold text-purple-900 mb-1" id="qr-link-description">-</p>
+                                <p class="text-sm text-purple-700">
+                                    <span id="qr-link-value">-</span> • <span id="qr-link-recurrence">-</span>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- QR Code -->
+                    <div class="bg-white border-4 border-purple-200 rounded-lg p-6 flex justify-center mb-6">
+                        <canvas id="qrcode-canvas"></canvas>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="space-y-3">
+                        <!-- Baixar PNG -->
+                        <button onclick="downloadQRCode()" 
+                            class="w-full px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-semibold flex items-center justify-center gap-2">
+                            <i class="fas fa-download"></i>
+                            Baixar QR Code (PNG)
+                        </button>
+
+                        <!-- Copiar HTML -->
+                        <button onclick="copyQRCodeHTML()" 
+                            class="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold flex items-center justify-center gap-2">
+                            <i class="fas fa-code"></i>
+                            Copiar Código HTML
+                        </button>
+
+                        <!-- Preview HTML -->
+                        <details class="bg-gray-50 rounded-lg border border-gray-200">
+                            <summary class="px-4 py-3 cursor-pointer font-semibold text-gray-700 hover:bg-gray-100 rounded-lg">
+                                <i class="fas fa-eye mr-2"></i>
+                                Visualizar Código HTML
+                            </summary>
+                            <div class="p-4 border-t border-gray-200">
+                                <pre id="qr-html-preview" class="bg-gray-900 text-green-400 p-4 rounded-lg overflow-x-auto text-xs font-mono"></pre>
+                            </div>
+                        </details>
+                    </div>
+                </div>
+
+                <div class="bg-gray-50 px-6 py-4 rounded-b-2xl flex justify-end">
+                    <button onclick="closeQRCodeModal()"
+                        class="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-semibold">
+                        <i class="fas fa-times mr-2"></i>Fechar
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
         <script src="/static/app.js?v=5.0"></script>
         <script src="/static/payment-links.js?v=4.2"></script>
         <script src="/static/payment-filters.js?v=4.2"></script>
-        <script src="/static/deltapag-section.js?v=3.1"></script>
+        <script src="/static/deltapag-section.js?v=3.2"></script>
     </body>
     </html>
   `)

@@ -556,7 +556,7 @@ async function showDeltapagLinksModal() {
                             <i class="fas fa-link text-blue-600"></i>
                             <span class="text-sm font-semibold text-gray-700">Link de Cadastro:</span>
                         </div>
-                        <div class="flex items-center gap-2">
+                        <div class="flex items-center gap-2 mb-3">
                             <input type="text" value="${linkUrl}" readonly 
                                 class="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm font-mono"
                                 id="link-url-${link.id}">
@@ -565,6 +565,11 @@ async function showDeltapagLinksModal() {
                                 <i class="fas fa-copy mr-1"></i>Copiar
                             </button>
                         </div>
+                        <button onclick="showQRCodeModal('${link.id}', '${linkUrl}', '${link.description.replace(/'/g, "\\'")}', '${parseFloat(link.value).toFixed(2)}', '${recurrenceMap[link.recurrence_type] || link.recurrence_type}')" 
+                            class="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition flex items-center justify-center gap-2">
+                            <i class="fas fa-qrcode"></i>
+                            Gerar QR Code
+                        </button>
                     </div>
                     
                     <div class="flex items-center justify-between text-sm">
@@ -633,6 +638,149 @@ async function deactivateLink(linkId) {
         console.error('Erro ao desativar link:', error);
         alert('Erro ao desativar link. Tente novamente.');
     }
+}
+
+// ==========================================
+// QR CODE MODAL
+// ==========================================
+
+let currentQRData = null;
+
+async function showQRCodeModal(linkId, linkUrl, description, value, recurrence) {
+    currentQRData = { linkId, linkUrl, description, value, recurrence };
+    
+    // Atualizar informações do link
+    document.getElementById('qr-link-description').textContent = description;
+    document.getElementById('qr-link-value').textContent = `R$ ${value}`;
+    document.getElementById('qr-link-recurrence').textContent = recurrence;
+    
+    // Gerar QR Code
+    const canvas = document.getElementById('qrcode-canvas');
+    try {
+        await QRCode.toCanvas(canvas, linkUrl, {
+            width: 280,
+            margin: 2,
+            color: {
+                dark: '#6b21a8',  // purple-800
+                light: '#ffffff'
+            }
+        });
+        
+        // Gerar preview HTML
+        const qrDataURL = canvas.toDataURL('image/png');
+        const htmlCode = generateQRCodeHTML(linkUrl, description, value, recurrence, qrDataURL);
+        document.getElementById('qr-html-preview').textContent = htmlCode;
+        
+        // Mostrar modal
+        document.getElementById('qrcode-modal').classList.remove('hidden');
+    } catch (error) {
+        console.error('Erro ao gerar QR Code:', error);
+        alert('Erro ao gerar QR Code. Tente novamente.');
+    }
+}
+
+function closeQRCodeModal() {
+    document.getElementById('qrcode-modal').classList.add('hidden');
+    currentQRData = null;
+}
+
+function downloadQRCode() {
+    const canvas = document.getElementById('qrcode-canvas');
+    const link = document.createElement('a');
+    const filename = `qrcode-${currentQRData.description.toLowerCase().replace(/\s+/g, '-')}.png`;
+    
+    link.download = filename;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+    
+    // Feedback visual
+    const btn = event.target.closest('button');
+    const originalHTML = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-check"></i> Baixado!';
+    btn.classList.add('bg-green-600');
+    btn.classList.remove('bg-purple-600');
+    
+    setTimeout(() => {
+        btn.innerHTML = originalHTML;
+        btn.classList.remove('bg-green-600');
+        btn.classList.add('bg-purple-600');
+    }, 2000);
+}
+
+function copyQRCodeHTML() {
+    const canvas = document.getElementById('qrcode-canvas');
+    const qrDataURL = canvas.toDataURL('image/png');
+    const htmlCode = generateQRCodeHTML(
+        currentQRData.linkUrl, 
+        currentQRData.description, 
+        currentQRData.value, 
+        currentQRData.recurrence,
+        qrDataURL
+    );
+    
+    navigator.clipboard.writeText(htmlCode).then(() => {
+        // Feedback visual
+        const btn = event.target.closest('button');
+        const originalHTML = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-check"></i> Copiado!';
+        btn.classList.add('bg-green-600');
+        btn.classList.remove('bg-indigo-600');
+        
+        setTimeout(() => {
+            btn.innerHTML = originalHTML;
+            btn.classList.remove('bg-green-600');
+            btn.classList.add('bg-indigo-600');
+        }, 2000);
+    }).catch(err => {
+        console.error('Erro ao copiar:', err);
+        alert('Erro ao copiar código HTML. Tente novamente.');
+    });
+}
+
+function generateQRCodeHTML(linkUrl, description, value, recurrence, qrDataURL) {
+    return `<!-- QR Code de Auto-Cadastro DeltaPag -->
+<div style="max-width: 400px; margin: 0 auto; padding: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+    <!-- Header -->
+    <div style="text-align: center; margin-bottom: 25px;">
+        <h2 style="color: white; font-size: 24px; font-weight: bold; margin: 0 0 10px 0;">
+            ${description}
+        </h2>
+        <p style="color: rgba(255,255,255,0.9); font-size: 18px; margin: 0;">
+            R$ ${value} • ${recurrence}
+        </p>
+    </div>
+    
+    <!-- QR Code -->
+    <div style="background: white; padding: 20px; border-radius: 15px; margin-bottom: 20px; text-align: center;">
+        <img src="${qrDataURL}" 
+             alt="QR Code de Cadastro" 
+             style="max-width: 100%; height: auto; display: block; margin: 0 auto;">
+    </div>
+    
+    <!-- Instructions -->
+    <div style="background: rgba(255,255,255,0.15); backdrop-filter: blur(10px); padding: 20px; border-radius: 15px; margin-bottom: 20px;">
+        <h3 style="color: white; font-size: 16px; font-weight: 600; margin: 0 0 12px 0;">
+            📱 Como usar:
+        </h3>
+        <ol style="color: rgba(255,255,255,0.95); font-size: 14px; margin: 0; padding-left: 20px; line-height: 1.8;">
+            <li>Aponte a câmera do seu celular para o QR Code</li>
+            <li>Toque na notificação que aparecer</li>
+            <li>Preencha seus dados de cartão</li>
+            <li>Confirme sua assinatura</li>
+        </ol>
+    </div>
+    
+    <!-- Link alternativo -->
+    <div style="text-align: center;">
+        <p style="color: rgba(255,255,255,0.8); font-size: 12px; margin: 0 0 10px 0;">
+            Ou acesse diretamente:
+        </p>
+        <a href="${linkUrl}" 
+           style="color: white; font-size: 14px; word-break: break-all; text-decoration: underline;">
+            ${linkUrl}
+        </a>
+    </div>
+</div>`;
 }
 
 // Log de carregamento
