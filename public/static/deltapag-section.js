@@ -422,14 +422,5 @@ async function importDeltapagCSV() {
     }, 2000);
 }
 
-// Sobrescrever showSection para carregar DeltaPag
-const originalShowSection = window.showSection;
-window.showSection = function(sectionId) {
-    originalShowSection(sectionId);
-    
-    if (sectionId === 'deltapag-section') {
-        loadDeltapagSubscriptions();
-    }
-};
-
+// Log de carregamento
 console.log('✅ DeltaPag Section JS carregado');

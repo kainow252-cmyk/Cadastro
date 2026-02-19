@@ -30,12 +30,29 @@ async function logout() {
 // Navigation
 function showSection(section) {
     document.querySelectorAll('.section').forEach(s => s.classList.add('hidden'));
-    document.getElementById(section + '-section').classList.remove('hidden');
+    
+    const targetSection = document.getElementById(section + '-section');
+    if (!targetSection) {
+        // Se seção não tem sufixo -section, tentar sem
+        const altSection = document.getElementById(section);
+        if (altSection) {
+            altSection.classList.remove('hidden');
+        } else {
+            console.warn('Seção não encontrada:', section);
+            return;
+        }
+    } else {
+        targetSection.classList.remove('hidden');
+    }
     
     if (section === 'accounts') {
         loadAccounts();
     } else if (section === 'dashboard') {
         loadDashboard();
+    } else if (section === 'deltapag') {
+        if (typeof loadDeltapagSubscriptions === 'function') {
+            loadDeltapagSubscriptions();
+        }
     } else if (section === 'pix') {
         loadSubaccountsForPix();
         loadRecentPayments();
