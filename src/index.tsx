@@ -926,6 +926,206 @@ app.get('/api/debug/env', async (c) => {
 })
 
 // Endpoint para inicializar tabelas do banco D1 (executar uma vez)
+// Criar 10 novas assinaturas com cartões de teste
+app.post('/api/admin/create-test-subscriptions', authMiddleware, async (c) => {
+  try {
+    const db = c.env.DB
+    
+    // 10 assinaturas novas com cartões de teste variados
+    const newSubscriptions = [
+      // Visa aprovadas
+      {
+        customer_name: 'Rafael Mendes',
+        customer_email: 'rafael.mendes@email.com',
+        customer_cpf: '111.222.333-44',
+        customer_phone: '(11) 91234-5678',
+        value: 59.90,
+        description: 'Plano Gold Mensal',
+        recurrence_type: 'MONTHLY',
+        card_last4: '2340',
+        card_brand: 'Visa',
+        card_expiry_month: '01',
+        card_expiry_year: '2028'
+      },
+      {
+        customer_name: 'Beatriz Almeida',
+        customer_email: 'beatriz.almeida@email.com',
+        customer_cpf: '222.333.444-55',
+        customer_phone: '(21) 92345-6789',
+        value: 89.90,
+        description: 'Plano Platinum Mensal',
+        recurrence_type: 'MONTHLY',
+        card_last4: '0761',
+        card_brand: 'Visa',
+        card_expiry_month: '03',
+        card_expiry_year: '2028'
+      },
+      {
+        customer_name: 'Thiago Rodrigues',
+        customer_email: 'thiago.rodrigues@email.com',
+        customer_cpf: '333.444.555-66',
+        customer_phone: '(31) 93456-7890',
+        value: 119.90,
+        description: 'Plano Diamond Mensal',
+        recurrence_type: 'MONTHLY',
+        card_last4: '8264',
+        card_brand: 'Visa',
+        card_expiry_month: '06',
+        card_expiry_year: '2028'
+      },
+      // Mastercard aprovadas
+      {
+        customer_name: 'Camila Souza',
+        customer_email: 'camila.souza@email.com',
+        customer_cpf: '444.555.666-77',
+        customer_phone: '(41) 94567-8901',
+        value: 199.90,
+        description: 'Plano Corporate Mensal',
+        recurrence_type: 'MONTHLY',
+        card_last4: '0007',
+        card_brand: 'Mastercard',
+        card_expiry_month: '09',
+        card_expiry_year: '2027'
+      },
+      {
+        customer_name: 'Diego Silva',
+        customer_email: 'diego.silva@email.com',
+        customer_cpf: '555.666.777-88',
+        customer_phone: '(51) 95678-9012',
+        value: 249.90,
+        description: 'Plano Executive Mensal',
+        recurrence_type: 'MONTHLY',
+        card_last4: '5682',
+        card_brand: 'Mastercard',
+        card_expiry_month: '12',
+        card_expiry_year: '2027'
+      },
+      // Hipercard e Elo
+      {
+        customer_name: 'Larissa Oliveira',
+        customer_email: 'larissa.oliveira@email.com',
+        customer_cpf: '666.777.888-99',
+        customer_phone: '(61) 96789-0123',
+        value: 69.90,
+        description: 'Plano Silver Mensal',
+        recurrence_type: 'MONTHLY',
+        card_last4: '4001',
+        card_brand: 'Hipercard',
+        card_expiry_month: '02',
+        card_expiry_year: '2028'
+      },
+      {
+        customer_name: 'Gustavo Costa',
+        customer_email: 'gustavo.costa@email.com',
+        customer_cpf: '777.888.999-00',
+        customer_phone: '(71) 97890-1234',
+        value: 139.90,
+        description: 'Plano Pro Mensal',
+        recurrence_type: 'MONTHLY',
+        card_last4: '0055',
+        card_brand: 'Elo',
+        card_expiry_month: '04',
+        card_expiry_year: '2028'
+      },
+      // Planos anuais
+      {
+        customer_name: 'Patricia Santos',
+        customer_email: 'patricia.santos@email.com',
+        customer_cpf: '888.999.000-11',
+        customer_phone: '(81) 98901-2345',
+        value: 499.90,
+        description: 'Plano Premium Anual',
+        recurrence_type: 'YEARLY',
+        card_last4: '2340',
+        card_brand: 'Visa',
+        card_expiry_month: '05',
+        card_expiry_year: '2029'
+      },
+      {
+        customer_name: 'Rodrigo Lima',
+        customer_email: 'rodrigo.lima@email.com',
+        customer_cpf: '999.000.111-22',
+        customer_phone: '(91) 99012-3456',
+        value: 799.90,
+        description: 'Plano Business Anual',
+        recurrence_type: 'YEARLY',
+        card_last4: '0007',
+        card_brand: 'Mastercard',
+        card_expiry_month: '07',
+        card_expiry_year: '2029'
+      },
+      {
+        customer_name: 'Amanda Pereira',
+        customer_email: 'amanda.pereira@email.com',
+        customer_cpf: '000.111.222-33',
+        customer_phone: '(85) 90123-4567',
+        value: 999.90,
+        description: 'Plano Enterprise Anual',
+        recurrence_type: 'YEARLY',
+        card_last4: '8264',
+        card_brand: 'Visa',
+        card_expiry_month: '10',
+        card_expiry_year: '2029'
+      }
+    ]
+    
+    const created = []
+    
+    for (const sub of newSubscriptions) {
+      const id = crypto.randomUUID()
+      const customerId = `cust_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      const deltapagSubId = `sub_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      
+      await db.prepare(`
+        INSERT INTO deltapag_subscriptions 
+        (id, customer_id, customer_name, customer_email, customer_cpf, customer_phone,
+         deltapag_subscription_id, deltapag_customer_id, value, description, 
+         recurrence_type, status, card_last4, card_brand, card_expiry_month, card_expiry_year,
+         next_due_date, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?, ?, datetime('now'))
+      `).bind(
+        id,
+        customerId,
+        sub.customer_name,
+        sub.customer_email,
+        sub.customer_cpf,
+        sub.customer_phone,
+        deltapagSubId,
+        customerId,
+        sub.value,
+        sub.description,
+        sub.recurrence_type,
+        sub.card_last4,
+        sub.card_brand,
+        sub.card_expiry_month,
+        sub.card_expiry_year,
+        new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      ).run()
+      
+      created.push({
+        name: sub.customer_name,
+        email: sub.customer_email,
+        value: sub.value,
+        card: `${sub.card_brand} •••• ${sub.card_last4}`,
+        status: 'ACTIVE'
+      })
+      
+      console.log(`✅ ${sub.customer_name}: ${sub.card_brand} •••• ${sub.card_last4}`)
+    }
+    
+    return c.json({
+      ok: true,
+      message: '10 novas assinaturas criadas com sucesso!',
+      count: created.length,
+      subscriptions: created
+    })
+    
+  } catch (error: any) {
+    console.error('❌ Erro ao criar assinaturas:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 // Sincronizar dados de cartão da API DeltaPag
 app.post('/api/admin/sync-deltapag-cards', authMiddleware, async (c) => {
   try {
@@ -6732,6 +6932,10 @@ app.get('/', (c) => {
                             class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold">
                             <i class="fas fa-sync-alt mr-2"></i>Atualizar
                         </button>
+                        <button onclick="createTestSubscriptions()" 
+                            class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold">
+                            <i class="fas fa-plus-circle mr-2"></i>+10 Testes
+                        </button>
                         <button onclick="syncDeltapagCards()" 
                             class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-semibold">
                             <i class="fas fa-credit-card mr-2"></i>Sincronizar Cartões
@@ -7757,7 +7961,7 @@ app.get('/', (c) => {
         <script src="/static/app.js?v=5.0"></script>
         <script src="/static/payment-links.js?v=4.2"></script>
         <script src="/static/payment-filters.js?v=4.2"></script>
-        <script src="/static/deltapag-section.js?v=3.4"></script>
+        <script src="/static/deltapag-section.js?v=3.5"></script>
     </body>
     </html>
   `)

@@ -820,6 +820,48 @@ function generateQRCodeHTML(linkUrl, description, value, recurrence, qrDataURL) 
 }
 
 // ==========================================
+// CRIAR 10 ASSINATURAS DE TESTE
+// ==========================================
+
+async function createTestSubscriptions() {
+    if (!confirm('Criar 10 novas assinaturas de teste com cartões variados?\n\n✓ Visa, Mastercard, Elo, Hipercard\n✓ Planos mensais e anuais\n✓ Valores de R$ 59,90 a R$ 999,90')) {
+        return;
+    }
+    
+    const btn = event.target.closest('button');
+    const originalHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Criando...';
+    
+    try {
+        const response = await axios.post('/api/admin/create-test-subscriptions');
+        
+        if (response.data.ok) {
+            const subs = response.data.subscriptions;
+            
+            // Mostrar detalhes das assinaturas criadas
+            let details = '✅ 10 assinaturas criadas com sucesso!\n\n';
+            subs.forEach((sub, i) => {
+                details += `${i + 1}. ${sub.name}\n   ${sub.card} - R$ ${sub.value.toFixed(2)}\n\n`;
+            });
+            
+            alert(details);
+            
+            // Recarregar lista
+            loadDeltapagSubscriptions();
+        } else {
+            alert('❌ Erro: ' + response.data.error);
+        }
+    } catch (error) {
+        console.error('Erro ao criar assinaturas:', error);
+        alert('❌ Erro ao criar assinaturas de teste:\n' + (error.response?.data?.error || error.message));
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalHTML;
+    }
+}
+
+// ==========================================
 // SINCRONIZAR DADOS DE CARTÃO DA API DELTAPAG
 // ==========================================
 
