@@ -1311,10 +1311,39 @@ app.post('/api/admin/sync-deltapag-cards', authMiddleware, async (c) => {
   }
 })
 
+// Endpoint de teste para verificar configuração DeltaPag
+app.get('/api/admin/test-deltapag-config', authMiddleware, async (c) => {
+  try {
+    const hasApiKey = !!c.env.DELTAPAG_API_KEY
+    const hasApiUrl = !!c.env.DELTAPAG_API_URL
+    
+    return c.json({
+      ok: true,
+      config: {
+        hasApiKey,
+        hasApiUrl,
+        apiKeyLength: c.env.DELTAPAG_API_KEY?.length || 0,
+        apiUrl: c.env.DELTAPAG_API_URL || 'not set',
+        apiKeyPrefix: c.env.DELTAPAG_API_KEY?.substring(0, 20) + '...' || 'not set'
+      }
+    })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 // Criar transações de evidência para DeltaPag (sandbox)
 app.post('/api/admin/create-evidence-transactions', authMiddleware, async (c) => {
   try {
     const db = c.env.DB
+    
+    // Verificar se as variáveis estão configuradas
+    if (!c.env.DELTAPAG_API_KEY) {
+      throw new Error('DELTAPAG_API_KEY não configurada. Configure no Cloudflare Dashboard.')
+    }
+    
+    console.log('✅ DELTAPAG_API_KEY configurada:', c.env.DELTAPAG_API_KEY.substring(0, 20) + '...')
+    console.log('✅ DELTAPAG_API_URL:', c.env.DELTAPAG_API_URL || 'usando fallback')
     
     // Dados de 5 transações de teste para evidência
     const evidenceTransactions = [
