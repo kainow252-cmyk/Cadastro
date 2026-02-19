@@ -502,3 +502,4 @@ curl -X POST http://localhost:3000/api/payments \
 
 Consulte o guia completo: [`GUIA_API_KEY.md`](./GUIA_API_KEY.md)
 
+# Force rebuild Thu Feb 19 20:57:31 UTC 2026
