@@ -525,9 +525,13 @@ app.post('/api/public/signup', async (c) => {
 // Estatísticas do dashboard
 app.get('/api/stats', async (c) => {
   try {
-    // Buscar subcontas
-    const accountsResult = await asaasRequest(c, '/accounts')
-    const accounts = accountsResult?.data?.data || []
+    // Buscar subcontas do D1 em vez da API Asaas
+    const accountsFromDB = await c.env.DB.prepare(`
+      SELECT id, account_id, url, created_at, active, uses_count
+      FROM signup_links
+      ORDER BY created_at DESC
+    `).all()
+    const accounts = accountsFromDB?.results || []
     
     // Buscar links de auto-cadastro (assinatura recorrente)
     const signupLinksResult = await c.env.DB.prepare(`
@@ -554,7 +558,7 @@ app.get('/api/stats', async (c) => {
     
     // Calcular estatísticas
     const totalAccounts = accounts.length
-    const approvedAccounts = accounts.filter((a: any) => a.walletId).length
+    const approvedAccounts = accounts.filter((a: any) => a.active === 1).length
     const pendingAccounts = totalAccounts - approvedAccounts
     
     // Links de cadastro (soma de ambos os tipos)
@@ -591,10 +595,10 @@ app.get('/api/stats', async (c) => {
         },
         recentAccounts: accounts.slice(0, 5).map((a: any) => ({
           id: a.id,
-          name: a.name,
-          email: a.email,
-          dateCreated: a.dateCreated,
-          status: a.walletId ? 'approved' : 'pending'
+          account_id: a.account_id,
+          url: a.url,
+          dateCreated: a.created_at,
+          status: a.active === 1 ? 'approved' : 'pending'
         }))
       }
     })
