@@ -525,13 +525,21 @@ app.post('/api/public/signup', async (c) => {
 // Estatísticas do dashboard
 app.get('/api/stats', async (c) => {
   try {
-    // Buscar subcontas do D1 em vez da API Asaas
-    const accountsFromDB = await c.env.DB.prepare(`
-      SELECT id, account_id, url, created_at, active, uses_count
-      FROM signup_links
-      ORDER BY created_at DESC
-    `).all()
-    const accounts = accountsFromDB?.results || []
+    // Buscar subcontas reais da API Asaas
+    let accounts = []
+    try {
+      const accountsResult = await asaasRequest(c, '/accounts')
+      accounts = accountsResult?.data?.data || []
+    } catch (apiError) {
+      console.error('❌ Erro ao buscar contas do Asaas:', apiError)
+      // Se API Asaas falhar, busca do D1 como fallback
+      const accountsFromDB = await c.env.DB.prepare(`
+        SELECT id, account_id, url, created_at, active, uses_count
+        FROM signup_links
+        ORDER BY created_at DESC
+      `).all()
+      accounts = accountsFromDB?.results || []
+    }
     
     // Buscar links de auto-cadastro (assinatura recorrente)
     const signupLinksResult = await c.env.DB.prepare(`
@@ -558,7 +566,7 @@ app.get('/api/stats', async (c) => {
     
     // Calcular estatísticas
     const totalAccounts = accounts.length
-    const approvedAccounts = accounts.filter((a: any) => a.active === 1).length
+    const approvedAccounts = accounts.filter((a: any) => a.walletId || a.active === 1).length
     const pendingAccounts = totalAccounts - approvedAccounts
     
     // Links de cadastro (soma de ambos os tipos)
