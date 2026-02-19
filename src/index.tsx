@@ -3532,13 +3532,21 @@ async function deltapagRequest(c: any, endpoint: string, method: string, data?: 
   let apiUrl = c.env.DELTAPAG_API_URL
   const apiKey = c.env.DELTAPAG_API_KEY
   
-  // Fallback: tentar URLs comuns se DELTAPAG_API_URL não estiver configurada
-  if (!apiUrl || apiUrl === 'undefined') {
+  // Lista de URLs para tentar (em ordem de prioridade)
+  const urlsToTry = [
+    apiUrl, // URL configurada (se existir)
+    'https://sandbox.bempaggo.com.br/api/v1',
+    'https://api-sandbox.bempaggo.com.br/v1',
+    'https://sandbox.bempaggo.com.br/api'
+  ].filter(url => url && url !== 'undefined')
+  
+  // Se nenhuma URL válida, usar primeira como fallback
+  if (urlsToTry.length === 0) {
     console.warn('⚠️ DELTAPAG_API_URL não configurada, usando sandbox padrão')
-    apiUrl = 'https://sandbox.bempaggo.com.br/api/v1'
+    urlsToTry.push('https://sandbox.bempaggo.com.br/api/v1')
   }
   
-  const url = `${apiUrl}${endpoint}`
+  const url = `${urlsToTry[0]}${endpoint}`
   
   const options: RequestInit = {
     method,
