@@ -917,6 +917,56 @@ async function createTestSubscriptions() {
 }
 
 // ==========================================
+// CRIAR TRANSAÇÕES DE EVIDÊNCIA DELTAPAG
+// ==========================================
+
+async function createEvidenceTransactions() {
+    if (!confirm('🎯 Criar 5 transações de EVIDÊNCIA via API DeltaPag Sandbox?\n\nEssas transações serão:\n✓ Criadas via API DeltaPag (sandbox)\n✓ Salvas no banco de dados\n✓ Usadas como evidência para validação\n\nClientes:\n1. João Silva Santos - R$ 149,90\n2. Maria Oliveira Costa - R$ 249,90\n3. Pedro Henrique Lima - R$ 399,90\n4. Ana Paula Rodrigues - R$ 599,90\n5. Carlos Eduardo Almeida - R$ 899,90\n\n⏱️ Tempo estimado: 30-60 segundos')) {
+        return;
+    }
+    
+    const btn = event.target.closest('button');
+    const originalHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Criando via API...';
+    
+    try {
+        const response = await axios.post('/api/admin/create-evidence-transactions');
+        
+        if (response.data.ok) {
+            const txs = response.data.transactions;
+            
+            // Mostrar detalhes das transações criadas
+            let details = `✅ ${response.data.count} transações de evidência criadas com sucesso!\n\n`;
+            details += '📋 Detalhes:\n\n';
+            txs.forEach((tx, i) => {
+                details += `${i + 1}. ${tx.customer}\n`;
+                details += `   Email: ${tx.email}\n`;
+                details += `   ${tx.card} - R$ ${tx.value.toFixed(2)}\n`;
+                details += `   Status: ${tx.status}\n`;
+                details += `   ID DeltaPag: ${tx.deltapag_id}\n\n`;
+            });
+            details += '\n✨ Todas as transações foram criadas via API DeltaPag Sandbox\n';
+            details += '💾 Dados salvos no banco de dados local\n';
+            details += '📧 Envie os IDs DeltaPag para a equipe DeltaPag como evidência';
+            
+            alert(details);
+            
+            // Recarregar lista
+            loadDeltapagSubscriptions();
+        } else {
+            alert('❌ Erro: ' + response.data.error + '\n\nDetalhes: ' + (response.data.details || 'Sem detalhes'));
+        }
+    } catch (error) {
+        console.error('Erro ao criar transações de evidência:', error);
+        alert('❌ Erro ao criar transações de evidência:\n' + (error.response?.data?.error || error.message));
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalHTML;
+    }
+}
+
+// ==========================================
 // SINCRONIZAR DADOS DE CARTÃO DA API DELTAPAG
 // ==========================================
 

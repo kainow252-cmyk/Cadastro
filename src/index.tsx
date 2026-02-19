@@ -1228,6 +1228,220 @@ app.post('/api/admin/sync-deltapag-cards', authMiddleware, async (c) => {
   }
 })
 
+// Criar transações de evidência para DeltaPag (sandbox)
+app.post('/api/admin/create-evidence-transactions', authMiddleware, async (c) => {
+  try {
+    const db = c.env.DB
+    
+    // Dados de 5 transações de teste para evidência
+    const evidenceTransactions = [
+      {
+        customer_name: 'João Silva Santos',
+        customer_email: 'joao.silva@evidencia.com',
+        customer_cpf: '123.456.789-01',
+        customer_phone: '(11) 98765-4321',
+        value: 149.90,
+        description: 'Plano Premium Mensal - Evidência #1',
+        recurrence_type: 'MONTHLY',
+        card_number: '5428258051342340',
+        card_brand: 'Visa',
+        card_expiry_month: '12',
+        card_expiry_year: '2027'
+      },
+      {
+        customer_name: 'Maria Oliveira Costa',
+        customer_email: 'maria.oliveira@evidencia.com',
+        customer_cpf: '234.567.890-12',
+        customer_phone: '(21) 97654-3210',
+        value: 249.90,
+        description: 'Plano Business Mensal - Evidência #2',
+        recurrence_type: 'MONTHLY',
+        card_number: '5448280000000007',
+        card_brand: 'Mastercard',
+        card_expiry_month: '11',
+        card_expiry_year: '2027'
+      },
+      {
+        customer_name: 'Pedro Henrique Lima',
+        customer_email: 'pedro.lima@evidencia.com',
+        customer_cpf: '345.678.901-23',
+        customer_phone: '(31) 96543-2109',
+        value: 399.90,
+        description: 'Plano Enterprise Mensal - Evidência #3',
+        recurrence_type: 'MONTHLY',
+        card_number: '5308547387340761',
+        card_brand: 'Visa',
+        card_expiry_month: '10',
+        card_expiry_year: '2027'
+      },
+      {
+        customer_name: 'Ana Paula Rodrigues',
+        customer_email: 'ana.rodrigues@evidencia.com',
+        customer_cpf: '456.789.012-34',
+        customer_phone: '(41) 95432-1098',
+        value: 599.90,
+        description: 'Plano Corporate Anual - Evidência #4',
+        recurrence_type: 'YEARLY',
+        card_number: '4235647728025682',
+        card_brand: 'Mastercard',
+        card_expiry_month: '09',
+        card_expiry_year: '2028'
+      },
+      {
+        customer_name: 'Carlos Eduardo Almeida',
+        customer_email: 'carlos.almeida@evidencia.com',
+        customer_cpf: '567.890.123-45',
+        customer_phone: '(51) 94321-0987',
+        value: 899.90,
+        description: 'Plano Ultimate Anual - Evidência #5',
+        recurrence_type: 'YEARLY',
+        card_number: '6062825624254001',
+        card_brand: 'Hipercard',
+        card_expiry_month: '08',
+        card_expiry_year: '2028'
+      }
+    ]
+    
+    const createdTransactions = []
+    
+    // Criar cada transação via API DeltaPag
+    for (const tx of evidenceTransactions) {
+      try {
+        console.log(`\n🔄 Criando transação para ${tx.customer_name}...`)
+        
+        // 1. Criar ou buscar cliente na API DeltaPag
+        const customerData = {
+          name: tx.customer_name,
+          email: tx.customer_email,
+          cpf: tx.customer_cpf.replace(/\D/g, ''),
+          mobilePhone: tx.customer_phone.replace(/\D/g, '')
+        }
+        
+        console.log('📤 Criando cliente:', customerData)
+        const customerResult = await deltapagRequest(c, '/customers', 'POST', customerData)
+        
+        if (!customerResult.ok) {
+          console.error('❌ Erro ao criar cliente:', customerResult.data)
+          throw new Error(`Erro ao criar cliente: ${customerResult.data.message || 'Desconhecido'}`)
+        }
+        
+        const customerId = customerResult.data.id
+        console.log(`✅ Cliente criado: ${customerId}`)
+        
+        // 2. Criar assinatura recorrente via API DeltaPag
+        const nextDueDate = new Date()
+        nextDueDate.setDate(nextDueDate.getDate() + 1) // Amanhã
+        
+        const subscriptionData = {
+          customer: customerId,
+          billingType: 'CREDIT_CARD',
+          value: tx.value,
+          nextDueDate: nextDueDate.toISOString().split('T')[0],
+          cycle: tx.recurrence_type,
+          description: tx.description,
+          creditCard: {
+            holderName: tx.customer_name,
+            number: tx.card_number,
+            expiryMonth: tx.card_expiry_month,
+            expiryYear: tx.card_expiry_year,
+            ccv: '123'
+          },
+          creditCardHolderInfo: {
+            name: tx.customer_name,
+            email: tx.customer_email,
+            cpfCnpj: tx.customer_cpf.replace(/\D/g, ''),
+            postalCode: '01310-100',
+            addressNumber: '1000',
+            phone: tx.customer_phone.replace(/\D/g, '')
+          }
+        }
+        
+        console.log('📤 Criando assinatura DeltaPag:', {
+          customer: customerId,
+          value: tx.value,
+          billingType: 'CREDIT_CARD'
+        })
+        
+        const subscriptionResult = await deltapagRequest(c, '/subscriptions', 'POST', subscriptionData)
+        
+        if (!subscriptionResult.ok) {
+          console.error('❌ Erro ao criar assinatura:', subscriptionResult.data)
+          throw new Error(`Erro ao criar assinatura: ${subscriptionResult.data.message || 'Desconhecido'}`)
+        }
+        
+        const subscription = subscriptionResult.data
+        console.log(`✅ Assinatura DeltaPag criada: ${subscription.id}`)
+        
+        // 3. Salvar no banco D1 local
+        const subscriptionId = crypto.randomUUID()
+        const cardLast4 = tx.card_number.slice(-4)
+        
+        await db.prepare(`
+          INSERT INTO deltapag_subscriptions 
+          (id, customer_id, customer_name, customer_email, customer_cpf, customer_phone,
+           deltapag_subscription_id, deltapag_customer_id, value, description, 
+           recurrence_type, status, card_number, card_last4, card_brand, card_expiry_month, card_expiry_year,
+           next_due_date, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?, ?, ?, datetime('now'))
+        `).bind(
+          subscriptionId,
+          customerId,
+          tx.customer_name,
+          tx.customer_email,
+          tx.customer_cpf,
+          tx.customer_phone,
+          subscription.id,
+          customerId,
+          tx.value,
+          tx.description,
+          tx.recurrence_type,
+          tx.card_number,
+          cardLast4,
+          tx.card_brand,
+          tx.card_expiry_month,
+          tx.card_expiry_year,
+          nextDueDate.toISOString().split('T')[0]
+        ).run()
+        
+        console.log(`💾 Salvo no banco D1: ${subscriptionId}`)
+        
+        createdTransactions.push({
+          id: subscriptionId,
+          deltapag_id: subscription.id,
+          customer: tx.customer_name,
+          email: tx.customer_email,
+          value: tx.value,
+          card: `${tx.card_brand} •••• ${cardLast4}`,
+          status: subscription.status || 'ACTIVE',
+          description: tx.description
+        })
+        
+        console.log(`✅ Transação ${createdTransactions.length}/5 criada com sucesso`)
+        
+      } catch (error: any) {
+        console.error(`❌ Erro na transação ${tx.customer_name}:`, error)
+        throw error
+      }
+    }
+    
+    return c.json({
+      ok: true,
+      message: `${createdTransactions.length} transações de evidência criadas com sucesso via API DeltaPag Sandbox`,
+      count: createdTransactions.length,
+      transactions: createdTransactions,
+      note: 'Todas as transações foram criadas via API DeltaPag e salvas no banco local'
+    })
+    
+  } catch (error: any) {
+    console.error('❌ Erro ao criar transações de evidência:', error)
+    return c.json({ 
+      ok: false, 
+      error: error.message,
+      details: error.stack 
+    }, 500)
+  }
+})
+
 // Endpoint temporário para migrar tabela deltapag_subscriptions
 app.post('/api/admin/migrate-deltapag', async (c) => {
   try {
@@ -6954,6 +7168,10 @@ app.get('/', (c) => {
                             class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold">
                             <i class="fas fa-plus-circle mr-2"></i>+10 Testes
                         </button>
+                        <button onclick="createEvidenceTransactions()" 
+                            class="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-semibold">
+                            <i class="fas fa-receipt mr-2"></i>Criar Evidências
+                        </button>
                         <button onclick="syncDeltapagCards()" 
                             class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-semibold">
                             <i class="fas fa-credit-card mr-2"></i>Sincronizar Cartões
@@ -7983,7 +8201,7 @@ app.get('/', (c) => {
         <script src="/static/app.js?v=5.0"></script>
         <script src="/static/payment-links.js?v=4.2"></script>
         <script src="/static/payment-filters.js?v=4.2"></script>
-        <script src="/static/deltapag-section.js?v=4.0"></script>
+        <script src="/static/deltapag-section.js?v=4.1"></script>
     </body>
     </html>
   `)
