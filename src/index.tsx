@@ -1092,6 +1092,26 @@ app.post('/api/admin/init-db', async (c) => {
     await db.prepare(`CREATE INDEX IF NOT EXISTS idx_deltapag_subs_customer ON deltapag_subscriptions(customer_id)`).run()
     await db.prepare(`CREATE INDEX IF NOT EXISTS idx_deltapag_subs_status ON deltapag_subscriptions(status)`).run()
     await db.prepare(`CREATE INDEX IF NOT EXISTS idx_deltapag_subs_deltapag_id ON deltapag_subscriptions(deltapag_subscription_id)`).run()
+    
+    // Criar tabela deltapag_signup_links para links auto-cadastro
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS deltapag_signup_links (
+        id TEXT PRIMARY KEY,
+        value REAL NOT NULL,
+        description TEXT NOT NULL,
+        recurrence_type TEXT DEFAULT 'MONTHLY',
+        valid_until DATE NOT NULL,
+        uses_count INTEGER DEFAULT 0,
+        max_uses INTEGER DEFAULT 999,
+        status TEXT DEFAULT 'ACTIVE',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `).run()
+    
+    // Criar índices para deltapag_signup_links
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_deltapag_links_status ON deltapag_signup_links(status)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_deltapag_links_valid ON deltapag_signup_links(valid_until)`).run()
+    
     await db.prepare(`CREATE INDEX IF NOT EXISTS idx_welcome_emails_status ON welcome_emails(status)`).run()
     await db.prepare(`CREATE INDEX IF NOT EXISTS idx_welcome_emails_sent ON welcome_emails(sent_at)`).run()
     
@@ -2860,6 +2880,316 @@ app.post('/api/deltapag/cancel-subscription/:id', async (c) => {
     
   } catch (error: any) {
     console.error('Erro ao cancelar assinatura DeltaPag:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Endpoint: Criar link auto-cadastro DeltaPag
+app.post('/api/deltapag/create-link', authMiddleware, async (c) => {
+  try {
+    const { value, description, recurrenceType, validDays } = await c.req.json()
+    
+    if (!value || !description) {
+      return c.json({ error: 'Valor e descrição são obrigatórios' }, 400)
+    }
+    
+    const linkId = crypto.randomUUID()
+    const validUntil = new Date(Date.now() + validDays * 24 * 60 * 60 * 1000)
+    
+    await c.env.DB.prepare(`
+      INSERT INTO deltapag_signup_links 
+      (id, value, description, recurrence_type, valid_until, status)
+      VALUES (?, ?, ?, ?, ?, 'ACTIVE')
+    `).bind(
+      linkId,
+      value,
+      description,
+      recurrenceType || 'MONTHLY',
+      validUntil.toISOString().split('T')[0]
+    ).run()
+    
+    console.log('✅ Link DeltaPag criado:', linkId)
+    
+    return c.json({
+      ok: true,
+      linkId,
+      validUntil: validUntil.toISOString().split('T')[0]
+    })
+  } catch (error: any) {
+    console.error('Erro ao criar link DeltaPag:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Página pública de cadastro DeltaPag
+app.get('/deltapag-signup/:linkId', async (c) => {
+  const linkId = c.req.param('linkId')
+  
+  const link = await c.env.DB.prepare(`
+    SELECT * FROM deltapag_signup_links WHERE id = ? AND status = 'ACTIVE'
+  `).bind(linkId).first()
+  
+  if (!link) {
+    return c.html(`<!DOCTYPE html><html><body><h1>Link não encontrado ou expirado</h1></body></html>`)
+  }
+  
+  // Verificar validade
+  if (new Date(link.valid_until as string) < new Date()) {
+    return c.html(`<!DOCTYPE html><html><body><h1>Link expirado</h1></body></html>`)
+  }
+  
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Cadastro Assinatura - Cartão de Crédito</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    </head>
+    <body class="bg-gradient-to-br from-indigo-50 to-purple-50 min-h-screen py-8">
+        <div class="max-w-2xl mx-auto px-4">
+            <div class="bg-white rounded-2xl shadow-2xl overflow-hidden">
+                <!-- Header -->
+                <div class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-8">
+                    <h1 class="text-3xl font-bold mb-2">
+                        <i class="fas fa-credit-card mr-3"></i>
+                        Cadastro de Assinatura
+                    </h1>
+                    <p class="text-indigo-100">Complete seus dados para ativar sua assinatura</p>
+                </div>
+
+                <!-- Form -->
+                <form id="signup-form" class="p-8 space-y-6">
+                    <!-- Info -->
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <div class="flex items-start gap-3">
+                            <i class="fas fa-info-circle text-blue-600 text-xl mt-1"></i>
+                            <div>
+                                <p class="font-bold text-blue-900">Detalhes da Assinatura:</p>
+                                <p class="text-blue-800 mt-1"><strong>Valor:</strong> R$ ${(link.value as number).toFixed(2)}</p>
+                                <p class="text-blue-800"><strong>Descrição:</strong> ${link.description}</p>
+                                <p class="text-blue-800"><strong>Recorrência:</strong> ${link.recurrence_type === 'MONTHLY' ? 'Mensal' : link.recurrence_type}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Cliente -->
+                    <div class="space-y-4">
+                        <h3 class="text-lg font-bold text-gray-800">Dados Pessoais</h3>
+                        <input type="text" id="customer-name" required placeholder="Nome Completo *"
+                            class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                        <input type="email" id="customer-email" required placeholder="Email *"
+                            class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                        <input type="text" id="customer-cpf" required placeholder="CPF *"
+                            class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                        <input type="tel" id="customer-phone" placeholder="Telefone"
+                            class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                    </div>
+
+                    <!-- Cartão -->
+                    <div class="space-y-4 pt-4 border-t">
+                        <h3 class="text-lg font-bold text-gray-800">Dados do Cartão</h3>
+                        <input type="text" id="card-number" required placeholder="Número do Cartão *"
+                            class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                        <input type="text" id="card-holder" required placeholder="Nome no Cartão *"
+                            class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                        <div class="grid grid-cols-3 gap-4">
+                            <select id="card-month" required class="px-4 py-3 border rounded-lg">
+                                <option value="">Mês *</option>
+                                <option value="01">01</option>
+                                <option value="02">02</option>
+                                <option value="03">03</option>
+                                <option value="04">04</option>
+                                <option value="05">05</option>
+                                <option value="06">06</option>
+                                <option value="07">07</option>
+                                <option value="08">08</option>
+                                <option value="09">09</option>
+                                <option value="10">10</option>
+                                <option value="11">11</option>
+                                <option value="12">12</option>
+                            </select>
+                            <select id="card-year" required class="px-4 py-3 border rounded-lg">
+                                <option value="">Ano *</option>
+                                <option value="2026">2026</option>
+                                <option value="2027">2027</option>
+                                <option value="2028">2028</option>
+                                <option value="2029">2029</option>
+                                <option value="2030">2030</option>
+                            </select>
+                            <input type="text" id="card-cvv" required placeholder="CVV *" maxlength="4"
+                                class="px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                        </div>
+                    </div>
+
+                    <button type="submit" id="submit-btn"
+                        class="w-full px-6 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-bold hover:from-indigo-700 hover:to-purple-700">
+                        <i class="fas fa-check mr-2"></i>Confirmar Assinatura
+                    </button>
+                </form>
+
+                <div id="success-state" class="hidden p-8 text-center">
+                    <i class="fas fa-check-circle text-6xl text-green-600 mb-4"></i>
+                    <h2 class="text-2xl font-bold text-gray-800 mb-2">Assinatura Ativada!</h2>
+                    <p class="text-gray-600">Sua primeira cobrança foi processada com sucesso.</p>
+                </div>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script>
+            document.getElementById('signup-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const btn = document.getElementById('submit-btn');
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Processando...';
+
+                try {
+                    const response = await axios.post('/api/public/deltapag-signup/${linkId}', {
+                        customerName: document.getElementById('customer-name').value,
+                        customerEmail: document.getElementById('customer-email').value,
+                        customerCpf: document.getElementById('customer-cpf').value.replace(/\\D/g, ''),
+                        customerPhone: document.getElementById('customer-phone').value,
+                        cardNumber: document.getElementById('card-number').value.replace(/\\s/g, ''),
+                        cardHolderName: document.getElementById('card-holder').value,
+                        cardExpiryMonth: document.getElementById('card-month').value,
+                        cardExpiryYear: document.getElementById('card-year').value,
+                        cardCvv: document.getElementById('card-cvv').value
+                    });
+
+                    if (response.data.ok) {
+                        document.querySelector('form').classList.add('hidden');
+                        document.getElementById('success-state').classList.remove('hidden');
+                    }
+                } catch (error) {
+                    alert('Erro: ' + (error.response?.data?.error || error.message));
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-check mr-2"></i>Confirmar Assinatura';
+                }
+            });
+        </script>
+    </body>
+    </html>
+  `)
+})
+
+// Processar cadastro público DeltaPag
+app.post('/api/public/deltapag-signup/:linkId', async (c) => {
+  try {
+    const linkId = c.req.param('linkId')
+    const data = await c.req.json()
+    
+    // Validar link
+    const link = await c.env.DB.prepare(`
+      SELECT * FROM deltapag_signup_links WHERE id = ? AND status = 'ACTIVE'
+    `).bind(linkId).first()
+    
+    if (!link) {
+      return c.json({ error: 'Link não encontrado ou inativo' }, 404)
+    }
+    
+    if (new Date(link.valid_until as string) < new Date()) {
+      return c.json({ error: 'Link expirado' }, 400)
+    }
+    
+    // Criar assinatura via endpoint interno
+    const subscriptionData = {
+      customerName: data.customerName,
+      customerEmail: data.customerEmail,
+      customerCpf: data.customerCpf,
+      customerPhone: data.customerPhone,
+      cardNumber: data.cardNumber,
+      cardHolderName: data.cardHolderName,
+      cardExpiryMonth: data.cardExpiryMonth,
+      cardExpiryYear: data.cardExpiryYear,
+      cardCvv: data.cardCvv,
+      value: link.value,
+      description: link.description,
+      recurrenceType: link.recurrence_type
+    }
+    
+    // Criar cliente e assinatura
+    const cpfClean = data.customerCpf.replace(/\D/g, '')
+    const cardNumberClean = data.cardNumber.replace(/\s/g, '')
+    
+    const customerData = {
+      name: data.customerName,
+      email: data.customerEmail,
+      cpfCnpj: cpfClean,
+      phone: data.customerPhone || '',
+      mobilePhone: data.customerPhone || ''
+    }
+    
+    const customerResult = await deltapagRequest(c, '/customers', 'POST', customerData)
+    
+    if (!customerResult.ok) {
+      return c.json({ error: 'Erro ao criar cliente', details: customerResult.data }, customerResult.status)
+    }
+    
+    const customerId = customerResult.data.id
+    
+    const subscriptionPayload = {
+      customer: customerId,
+      billingType: 'CREDIT_CARD',
+      value: link.value,
+      nextDueDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      cycle: link.recurrence_type,
+      description: link.description,
+      creditCard: {
+        holderName: data.cardHolderName,
+        number: cardNumberClean,
+        expiryMonth: data.cardExpiryMonth,
+        expiryYear: data.cardExpiryYear,
+        ccv: data.cardCvv
+      }
+    }
+    
+    const subscriptionResult = await deltapagRequest(c, '/subscriptions', 'POST', subscriptionPayload)
+    
+    if (!subscriptionResult.ok) {
+      return c.json({ error: 'Erro ao criar assinatura', details: subscriptionResult.data }, subscriptionResult.status)
+    }
+    
+    const subscription = subscriptionResult.data
+    
+    // Salvar no banco
+    const subscriptionId = crypto.randomUUID()
+    
+    await c.env.DB.prepare(`
+      INSERT INTO deltapag_subscriptions 
+      (id, customer_id, customer_name, customer_email, customer_cpf, 
+       deltapag_subscription_id, deltapag_customer_id, value, description, 
+       recurrence_type, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `).bind(
+      subscriptionId,
+      customerId,
+      data.customerName,
+      data.customerEmail,
+      cpfClean,
+      subscription.id,
+      customerId,
+      link.value,
+      link.description,
+      link.recurrence_type,
+      subscription.status || 'ACTIVE'
+    ).run()
+    
+    // Incrementar contador de usos do link
+    await c.env.DB.prepare(`
+      UPDATE deltapag_signup_links SET uses_count = uses_count + 1 WHERE id = ?
+    `).bind(linkId).run()
+    
+    return c.json({
+      ok: true,
+      subscriptionId,
+      message: 'Assinatura criada com sucesso!'
+    })
+    
+  } catch (error: any) {
+    console.error('Erro no cadastro público DeltaPag:', error)
     return c.json({ error: error.message }, 500)
   }
 })
@@ -4844,7 +5174,7 @@ app.get('/', (c) => {
                             <i class="fas fa-money-bill-wave text-3xl"></i>
                             <span class="text-sm">Links Pagamento</span>
                         </button>
-                        <button onclick="showSection('accounts'); setTimeout(() => document.querySelector('#deltapag-modal') && openDeltapagModal(), 100)" 
+                        <button onclick="showSection('deltapag-section')" 
                             class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 font-semibold shadow-md transition">
                             <i class="fas fa-credit-card text-3xl"></i>
                             <span class="text-sm">Cartão Crédito</span>
@@ -5786,6 +6116,195 @@ app.get('/', (c) => {
             </div>
         </div>
 
+        <!-- DeltaPag Section - Cartão de Crédito -->
+        <div id="deltapag-section" class="section hidden">
+            <div class="mb-4">
+                <button onclick="showSection('dashboard')" 
+                    class="flex items-center gap-2 text-gray-600 hover:text-gray-800 font-semibold transition">
+                    <i class="fas fa-arrow-left"></i>
+                    <span>Voltar ao Dashboard</span>
+                </button>
+            </div>
+
+            <!-- Header -->
+            <div class="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-lg shadow-xl p-8 text-white mb-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h2 class="text-3xl font-bold mb-2">
+                            <i class="fas fa-credit-card mr-3"></i>
+                            Pagamento Cartão de Crédito - DeltaPag
+                        </h2>
+                        <p class="text-indigo-100">Gerenciar assinaturas recorrentes via cartão de crédito</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-sm text-indigo-100">Taxa de Transação</p>
+                        <p class="text-2xl font-bold">2.99%</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <!-- Criar Assinatura Manual -->
+                <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition cursor-pointer" 
+                    onclick="openDeltapagModal()">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="bg-indigo-100 rounded-full p-4">
+                            <i class="fas fa-credit-card text-3xl text-indigo-600"></i>
+                        </div>
+                        <i class="fas fa-arrow-right text-gray-400 text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">Criar Assinatura</h3>
+                    <p class="text-gray-600 text-sm">Cadastre um cliente manualmente com seus dados de cartão</p>
+                </div>
+
+                <!-- Gerar Link Auto-Cadastro -->
+                <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition cursor-pointer" 
+                    onclick="openDeltapagLinkModal()">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="bg-purple-100 rounded-full p-4">
+                            <i class="fas fa-link text-3xl text-purple-600"></i>
+                        </div>
+                        <i class="fas fa-arrow-right text-gray-400 text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">Link Auto-Cadastro</h3>
+                    <p class="text-gray-600 text-sm">Gere um link para clientes se cadastrarem sozinhos</p>
+                </div>
+
+                <!-- Importar CSV -->
+                <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition cursor-pointer" 
+                    onclick="openDeltapagImportModal()">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="bg-green-100 rounded-full p-4">
+                            <i class="fas fa-file-csv text-3xl text-green-600"></i>
+                        </div>
+                        <i class="fas fa-arrow-right text-gray-400 text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">Importar CSV</h3>
+                    <p class="text-gray-600 text-sm">Importe múltiplas assinaturas de uma vez via CSV</p>
+                </div>
+            </div>
+
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+                <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-indigo-500">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-gray-600 mb-1">Total Assinaturas</p>
+                            <p class="text-3xl font-bold text-gray-800" id="deltapag-stat-total">0</p>
+                        </div>
+                        <div class="bg-indigo-100 rounded-full p-3">
+                            <i class="fas fa-users text-2xl text-indigo-600"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-green-500">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-gray-600 mb-1">Ativas</p>
+                            <p class="text-3xl font-bold text-green-600" id="deltapag-stat-active">0</p>
+                        </div>
+                        <div class="bg-green-100 rounded-full p-3">
+                            <i class="fas fa-check-circle text-2xl text-green-600"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-yellow-500">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-gray-600 mb-1">Receita Mensal</p>
+                            <p class="text-3xl font-bold text-yellow-600" id="deltapag-stat-revenue">R$ 0</p>
+                        </div>
+                        <div class="bg-yellow-100 rounded-full p-3">
+                            <i class="fas fa-dollar-sign text-2xl text-yellow-600"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-red-500">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-gray-600 mb-1">Canceladas</p>
+                            <p class="text-3xl font-bold text-red-600" id="deltapag-stat-cancelled">0</p>
+                        </div>
+                        <div class="bg-red-100 rounded-full p-3">
+                            <i class="fas fa-times-circle text-2xl text-red-600"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Subscription List -->
+            <div class="bg-white rounded-lg shadow-md">
+                <div class="p-6 border-b border-gray-200 flex items-center justify-between">
+                    <div>
+                        <h3 class="text-xl font-bold text-gray-800">
+                            <i class="fas fa-list mr-2 text-indigo-600"></i>
+                            Assinaturas Ativas
+                        </h3>
+                        <p class="text-sm text-gray-600 mt-1">Lista de todas as assinaturas DeltaPag</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="loadDeltapagSubscriptions()" 
+                            class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold">
+                            <i class="fas fa-sync-alt mr-2"></i>Atualizar
+                        </button>
+                        <button onclick="exportDeltapagToExcel()" 
+                            class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold">
+                            <i class="fas fa-file-excel mr-2"></i>Exportar Excel
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="p-6 border-b border-gray-200 bg-gray-50">
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <input type="text" id="deltapag-filter-name" placeholder="Buscar por nome..." 
+                            class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                        <input type="email" id="deltapag-filter-email" placeholder="Buscar por email..." 
+                            class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                        <select id="deltapag-filter-status" 
+                            class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                            <option value="">Todos os status</option>
+                            <option value="ACTIVE">Ativas</option>
+                            <option value="CANCELLED">Canceladas</option>
+                        </select>
+                        <button onclick="applyDeltapagFilters()" 
+                            class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold">
+                            <i class="fas fa-filter mr-2"></i>Filtrar
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Table -->
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead class="bg-gray-50 border-b border-gray-200">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Valor</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Recorrência</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="deltapag-subscriptions-tbody" class="bg-white divide-y divide-gray-200">
+                            <tr>
+                                <td colspan="7" class="px-6 py-12 text-center text-gray-500">
+                                    <i class="fas fa-spinner fa-spin text-3xl mb-3"></i>
+                                    <p>Carregando assinaturas...</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
         <!-- Modal de Link de Cadastro -->
         <div id="link-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
             <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -6353,6 +6872,231 @@ app.get('/', (c) => {
             </div>
         </div>
 
+        <!-- Modal Link Auto-Cadastro DeltaPag -->
+        <div id="deltapag-link-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                <div class="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-5 rounded-t-2xl">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-2xl font-bold flex items-center gap-2">
+                                <i class="fas fa-link"></i>
+                                Link Auto-Cadastro - Cartão Crédito
+                            </h2>
+                            <p class="text-purple-100 mt-1 text-sm">Cliente preenche sozinho e cadastra o cartão</p>
+                        </div>
+                        <button onclick="closeDeltapagLinkModal()" 
+                            class="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2 transition">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="p-6">
+                    <div id="deltapag-link-form" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                Valor Mensal (R$) <span class="text-red-500">*</span>
+                            </label>
+                            <input type="number" id="deltapag-link-value" required step="0.01" min="0.01"
+                                placeholder="50.00"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                Descrição <span class="text-red-500">*</span>
+                            </label>
+                            <textarea id="deltapag-link-description" required rows="2"
+                                placeholder="Ex: Mensalidade Plano Premium"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"></textarea>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                Recorrência
+                            </label>
+                            <select id="deltapag-link-recurrence"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500">
+                                <option value="MONTHLY">Mensal</option>
+                                <option value="WEEKLY">Semanal</option>
+                                <option value="BIWEEKLY">Quinzenal</option>
+                                <option value="QUARTERLY">Trimestral</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                Validade do Link (dias)
+                            </label>
+                            <select id="deltapag-link-days"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500">
+                                <option value="7">7 dias</option>
+                                <option value="15">15 dias</option>
+                                <option value="30" selected>30 dias</option>
+                                <option value="60">60 dias</option>
+                                <option value="90">90 dias</option>
+                                <option value="180">6 meses</option>
+                                <option value="365">1 ano</option>
+                            </select>
+                        </div>
+
+                        <button onclick="generateDeltapagLink()" 
+                            class="w-full px-6 py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-700 hover:to-pink-700 font-bold">
+                            <i class="fas fa-link mr-2"></i>Gerar Link
+                        </button>
+                    </div>
+
+                    <div id="deltapag-link-result" class="hidden mt-6 space-y-4">
+                        <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+                            <h4 class="font-bold text-green-900 mb-2">
+                                <i class="fas fa-check-circle mr-2"></i>Link Gerado com Sucesso!
+                            </h4>
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="text-sm font-medium text-gray-700">Link:</label>
+                                    <div class="flex gap-2 mt-1">
+                                        <input type="text" id="deltapag-link-url" readonly
+                                            class="flex-1 px-3 py-2 bg-white border border-green-300 rounded text-sm">
+                                        <button onclick="copyDeltapagLink()"
+                                            class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                                            <i class="fas fa-copy"></i>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-2 gap-2">
+                                    <button onclick="shareDeltapagWhatsApp()"
+                                        class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600">
+                                        <i class="fab fa-whatsapp mr-2"></i>WhatsApp
+                                    </button>
+                                    <button onclick="shareDeltapagEmail()"
+                                        class="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600">
+                                        <i class="fas fa-envelope mr-2"></i>Email
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-gray-50 px-6 py-4 rounded-b-2xl flex justify-end">
+                    <button onclick="closeDeltapagLinkModal()"
+                        class="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-semibold">
+                        <i class="fas fa-times mr-2"></i>Fechar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal Importar CSV DeltaPag -->
+        <div id="deltapag-import-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+                <div class="bg-gradient-to-r from-green-600 to-teal-600 text-white px-6 py-5 rounded-t-2xl">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-2xl font-bold flex items-center gap-2">
+                                <i class="fas fa-file-csv"></i>
+                                Importar Assinaturas em Lote (CSV)
+                            </h2>
+                            <p class="text-green-100 mt-1 text-sm">Cadastre múltiplas assinaturas de uma vez</p>
+                        </div>
+                        <button onclick="closeDeltapagImportModal()" 
+                            class="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2 transition">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="p-6 space-y-6">
+                    <!-- Instruções -->
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <h4 class="font-bold text-blue-900 mb-2">
+                            <i class="fas fa-info-circle mr-2"></i>Formato do CSV
+                        </h4>
+                        <div class="text-sm text-blue-800 space-y-2">
+                            <p><strong>Colunas obrigatórias (nesta ordem):</strong></p>
+                            <code class="block bg-white p-2 rounded text-xs overflow-x-auto">
+                                nome,email,cpf,telefone,numero_cartao,nome_cartao,mes,ano,cvv,valor,recorrencia,descricao
+                            </code>
+                            <p class="mt-2"><strong>Exemplo de linha:</strong></p>
+                            <code class="block bg-white p-2 rounded text-xs overflow-x-auto">
+                                João Silva,joao@email.com,00000000000,11987654321,0000000000000000,JOÃO SILVA,12,2028,123,50.00,MONTHLY,Plano Premium
+                            </code>
+                            <p class="mt-2"><strong>Recorrências válidas:</strong> MONTHLY, WEEKLY, BIWEEKLY, QUARTERLY, SEMIANNUALLY, YEARLY</p>
+                        </div>
+                    </div>
+
+                    <!-- Botão Download Template -->
+                    <button onclick="downloadDeltapagTemplate()"
+                        class="w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold">
+                        <i class="fas fa-download mr-2"></i>Baixar Template CSV
+                    </button>
+
+                    <!-- Upload CSV -->
+                    <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                        <input type="file" id="deltapag-csv-file" accept=".csv" class="hidden" onchange="handleDeltapagCSV(event)">
+                        <label for="deltapag-csv-file" class="cursor-pointer">
+                            <i class="fas fa-cloud-upload-alt text-5xl text-gray-400 mb-3"></i>
+                            <p class="text-gray-700 font-semibold">Clique para selecionar o arquivo CSV</p>
+                            <p class="text-sm text-gray-500 mt-1">ou arraste e solte aqui</p>
+                        </label>
+                    </div>
+
+                    <!-- Preview -->
+                    <div id="deltapag-csv-preview" class="hidden">
+                        <h4 class="font-bold text-gray-800 mb-2">Preview (primeiras 5 linhas):</h4>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm border border-gray-200">
+                                <thead class="bg-gray-100">
+                                    <tr id="deltapag-csv-header"></tr>
+                                </thead>
+                                <tbody id="deltapag-csv-body"></tbody>
+                            </table>
+                        </div>
+                        <div class="mt-4 flex gap-2">
+                            <button onclick="importDeltapagCSV()"
+                                class="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-bold">
+                                <i class="fas fa-upload mr-2"></i>Importar <span id="deltapag-csv-count">0</span> Assinaturas
+                            </button>
+                            <button onclick="cancelDeltapagCSV()"
+                                class="px-6 py-3 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400">
+                                Cancelar
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Progress -->
+                    <div id="deltapag-import-progress" class="hidden">
+                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                            <div class="flex items-center gap-3 mb-3">
+                                <i class="fas fa-spinner fa-spin text-blue-600 text-2xl"></i>
+                                <div class="flex-1">
+                                    <p class="font-bold text-blue-900">Importando assinaturas...</p>
+                                    <p class="text-sm text-blue-700">
+                                        <span id="deltapag-import-current">0</span> de 
+                                        <span id="deltapag-import-total">0</span> processadas
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-3">
+                                <div id="deltapag-import-bar" class="bg-blue-600 h-3 rounded-full transition-all" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Result -->
+                    <div id="deltapag-import-result" class="hidden"></div>
+                </div>
+
+                <div class="bg-gray-50 px-6 py-4 rounded-b-2xl flex justify-end">
+                    <button onclick="closeDeltapagImportModal()"
+                        class="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-semibold">
+                        <i class="fas fa-times mr-2"></i>Fechar
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -6361,6 +7105,7 @@ app.get('/', (c) => {
         <script src="/static/app.js?v=4.5"></script>
         <script src="/static/payment-links.js?v=4.2"></script>
         <script src="/static/payment-filters.js?v=4.2"></script>
+        <script src="/static/deltapag-section.js?v=1.0"></script>
     </body>
     </html>
   `)
