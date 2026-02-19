@@ -700,6 +700,27 @@ app.get('/api/reports/:accountId', async (c) => {
   }
 })
 
+// Endpoint simplificado para listar transações (sem validação de conta)
+app.get('/api/transactions-list/:accountId', async (c) => {
+  try {
+    const db = c.env.DB
+    const accountId = c.req.param('accountId')
+    
+    const result = await db.prepare('SELECT * FROM transactions WHERE account_id = ? ORDER BY created_at DESC').bind(accountId).all()
+    const transactions = result.results || []
+    
+    return c.json({
+      ok: true,
+      accountId,
+      total: transactions.length,
+      transactions
+    })
+  } catch (error: any) {
+    console.error('Erro ao buscar transações:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 // Criar link de pagamento
 app.post('/api/payment-links', async (c) => {
   try {
