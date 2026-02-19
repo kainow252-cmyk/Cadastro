@@ -501,5 +501,139 @@ async function importDeltapagCSV() {
     }, 2000);
 }
 
+// ==========================================
+// MODAL VER LINKS DELTAPAG
+// ==========================================
+
+async function showDeltapagLinksModal() {
+    document.getElementById('deltapag-links-modal').classList.remove('hidden');
+    document.getElementById('deltapag-links-loading').classList.remove('hidden');
+    document.getElementById('deltapag-links-list').classList.add('hidden');
+    document.getElementById('deltapag-links-empty').classList.add('hidden');
+    
+    try {
+        const response = await axios.get('/api/deltapag/links');
+        const links = response.data.links || [];
+        
+        if (links.length === 0) {
+            document.getElementById('deltapag-links-loading').classList.add('hidden');
+            document.getElementById('deltapag-links-empty').classList.remove('hidden');
+            return;
+        }
+        
+        const listHtml = links.map(link => {
+            const isExpired = new Date(link.valid_until) < new Date();
+            const statusBadge = link.status === 'ACTIVE' && !isExpired
+                ? '<span class="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-semibold"><i class="fas fa-check-circle mr-1"></i>Ativo</span>'
+                : '<span class="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm font-semibold"><i class="fas fa-times-circle mr-1"></i>Inativo</span>';
+            
+            const linkUrl = `${window.location.origin}/deltapag-signup/${link.id}`;
+            const recurrenceMap = {
+                'MONTHLY': 'Mensal',
+                'WEEKLY': 'Semanal',
+                'BIWEEKLY': 'Quinzenal',
+                'QUARTERLY': 'Trimestral',
+                'SEMIANNUALLY': 'Semestral',
+                'YEARLY': 'Anual'
+            };
+            
+            return `
+                <div class="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-lg transition">
+                    <div class="flex items-start justify-between mb-4">
+                        <div class="flex-1">
+                            <h3 class="text-lg font-bold text-gray-800 mb-1">${link.description}</h3>
+                            <div class="flex items-center gap-4 text-sm text-gray-600">
+                                <span><i class="fas fa-money-bill-wave mr-1 text-green-600"></i>R$ ${parseFloat(link.value).toFixed(2)}</span>
+                                <span><i class="fas fa-calendar-alt mr-1 text-blue-600"></i>${recurrenceMap[link.recurrence_type] || link.recurrence_type}</span>
+                                <span><i class="fas fa-clock mr-1 text-purple-600"></i>Válido até ${new Date(link.valid_until).toLocaleDateString('pt-BR')}</span>
+                            </div>
+                        </div>
+                        ${statusBadge}
+                    </div>
+                    
+                    <div class="bg-gray-50 rounded-lg p-4 mb-4">
+                        <div class="flex items-center gap-2 mb-2">
+                            <i class="fas fa-link text-blue-600"></i>
+                            <span class="text-sm font-semibold text-gray-700">Link de Cadastro:</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <input type="text" value="${linkUrl}" readonly 
+                                class="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm font-mono"
+                                id="link-url-${link.id}">
+                            <button onclick="copyLinkUrl('${link.id}')" 
+                                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition whitespace-nowrap">
+                                <i class="fas fa-copy mr-1"></i>Copiar
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center justify-between text-sm">
+                        <div class="flex items-center gap-4 text-gray-600">
+                            <span><i class="fas fa-users mr-1"></i>${link.uses_count || 0} cadastros</span>
+                            <span><i class="fas fa-calendar-plus mr-1"></i>Criado em ${new Date(link.created_at).toLocaleDateString('pt-BR')}</span>
+                        </div>
+                        ${link.status === 'ACTIVE' && !isExpired ? `
+                            <button onclick="deactivateLink('${link.id}')" 
+                                class="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition">
+                                <i class="fas fa-ban mr-1"></i>Desativar
+                            </button>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+        document.getElementById('deltapag-links-list').innerHTML = listHtml;
+        document.getElementById('deltapag-links-loading').classList.add('hidden');
+        document.getElementById('deltapag-links-list').classList.remove('hidden');
+        
+    } catch (error) {
+        console.error('Erro ao carregar links:', error);
+        alert('Erro ao carregar links. Tente novamente.');
+        closeDeltapagLinksModal();
+    }
+}
+
+function closeDeltapagLinksModal() {
+    document.getElementById('deltapag-links-modal').classList.add('hidden');
+}
+
+function copyLinkUrl(linkId) {
+    const input = document.getElementById(`link-url-${linkId}`);
+    input.select();
+    input.setSelectionRange(0, 99999); // Para mobile
+    
+    navigator.clipboard.writeText(input.value).then(() => {
+        const originalText = event.target.innerHTML;
+        event.target.innerHTML = '<i class="fas fa-check mr-1"></i>Copiado!';
+        event.target.classList.add('bg-green-600');
+        event.target.classList.remove('bg-blue-600');
+        
+        setTimeout(() => {
+            event.target.innerHTML = originalText;
+            event.target.classList.remove('bg-green-600');
+            event.target.classList.add('bg-blue-600');
+        }, 2000);
+    }).catch(err => {
+        console.error('Erro ao copiar:', err);
+        alert('Erro ao copiar link. Tente manualmente.');
+    });
+}
+
+async function deactivateLink(linkId) {
+    if (!confirm('Deseja realmente desativar este link? Ele não poderá ser usado para novos cadastros.')) {
+        return;
+    }
+    
+    try {
+        await axios.patch(`/api/deltapag/links/${linkId}/deactivate`);
+        alert('Link desativado com sucesso!');
+        showDeltapagLinksModal(); // Recarregar lista
+    } catch (error) {
+        console.error('Erro ao desativar link:', error);
+        alert('Erro ao desativar link. Tente novamente.');
+    }
+}
+
 // Log de carregamento
 console.log('✅ DeltaPag Section JS carregado');

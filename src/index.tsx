@@ -3126,6 +3126,52 @@ app.post('/api/deltapag/create-link', authMiddleware, async (c) => {
   }
 })
 
+// Listar links DeltaPag
+app.get('/api/deltapag/links', authMiddleware, async (c) => {
+  try {
+    const result = await c.env.DB.prepare(`
+      SELECT 
+        id,
+        value,
+        description,
+        recurrence_type,
+        valid_until,
+        status,
+        uses_count,
+        max_uses,
+        created_at
+      FROM deltapag_signup_links
+      ORDER BY created_at DESC
+    `).all()
+    
+    return c.json({
+      ok: true,
+      links: result.results || []
+    })
+  } catch (error: any) {
+    console.error('Erro ao buscar links DeltaPag:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Desativar link DeltaPag
+app.patch('/api/deltapag/links/:linkId/deactivate', authMiddleware, async (c) => {
+  try {
+    const linkId = c.req.param('linkId')
+    
+    await c.env.DB.prepare(`
+      UPDATE deltapag_signup_links 
+      SET status = 'INACTIVE', updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(linkId).run()
+    
+    return c.json({ ok: true })
+  } catch (error: any) {
+    console.error('Erro ao desativar link:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 // Página pública de cadastro DeltaPag
 app.get('/deltapag-signup/:linkId', async (c) => {
   const linkId = c.req.param('linkId')
@@ -6374,8 +6420,21 @@ app.get('/', (c) => {
                         </div>
                         <i class="fas fa-arrow-right text-gray-400 text-2xl"></i>
                     </div>
-                    <h3 class="text-xl font-bold text-gray-800 mb-2">Link Auto-Cadastro</h3>
-                    <p class="text-gray-600 text-sm">Gere um link para clientes se cadastrarem sozinhos</p>
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">Criar Link</h3>
+                    <p class="text-gray-600 text-sm">Gere um link para clientes se cadastrarem</p>
+                </div>
+
+                <!-- Ver Links Criados -->
+                <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition cursor-pointer" 
+                    onclick="showDeltapagLinksModal()">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="bg-blue-100 rounded-full p-4">
+                            <i class="fas fa-list text-3xl text-blue-600"></i>
+                        </div>
+                        <i class="fas fa-arrow-right text-gray-400 text-2xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">Ver Links</h3>
+                    <p class="text-gray-600 text-sm">Visualize todos os links criados e suas estatísticas</p>
                 </div>
 
                 <!-- Importar CSV -->
@@ -7362,6 +7421,46 @@ app.get('/', (c) => {
             </div>
         </div>
 
+        <!-- Modal Ver Links DeltaPag -->
+        <div id="deltapag-links-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden">
+                <div class="bg-gradient-to-r from-blue-600 to-blue-800 px-6 py-4 rounded-t-2xl">
+                    <h2 class="text-2xl font-bold text-white flex items-center">
+                        <i class="fas fa-list mr-3"></i>
+                        Links de Auto-Cadastro Criados
+                    </h2>
+                </div>
+
+                <div class="p-6 overflow-y-auto max-h-[70vh]">
+                    <!-- Loading -->
+                    <div id="deltapag-links-loading" class="text-center py-8">
+                        <i class="fas fa-spinner fa-spin text-blue-600 text-4xl mb-4"></i>
+                        <p class="text-gray-600">Carregando links...</p>
+                    </div>
+
+                    <!-- Links List -->
+                    <div id="deltapag-links-list" class="hidden space-y-4"></div>
+
+                    <!-- Empty State -->
+                    <div id="deltapag-links-empty" class="hidden text-center py-12">
+                        <i class="fas fa-link text-gray-300 text-6xl mb-4"></i>
+                        <p class="text-gray-500 text-lg">Nenhum link criado ainda</p>
+                        <button onclick="closeDeltapagLinksModal(); openDeltapagLinkModal();" 
+                            class="mt-4 px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+                            <i class="fas fa-plus mr-2"></i>Criar Primeiro Link
+                        </button>
+                    </div>
+                </div>
+
+                <div class="bg-gray-50 px-6 py-4 rounded-b-2xl flex justify-end">
+                    <button onclick="closeDeltapagLinksModal()"
+                        class="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-semibold">
+                        <i class="fas fa-times mr-2"></i>Fechar
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -7370,7 +7469,7 @@ app.get('/', (c) => {
         <script src="/static/app.js?v=5.0"></script>
         <script src="/static/payment-links.js?v=4.2"></script>
         <script src="/static/payment-filters.js?v=4.2"></script>
-        <script src="/static/deltapag-section.js?v=3.0"></script>
+        <script src="/static/deltapag-section.js?v=3.1"></script>
     </body>
     </html>
   `)
