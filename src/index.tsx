@@ -93,7 +93,8 @@ app.use('/api/*', async (c, next) => {
     '/api/check-auth', 
     '/api/public/signup',
     '/api/proxy/payments',
-    '/api/debug/env'
+    '/api/debug/env',
+    '/api/admin/init-db'
   ]
   
   // Public routes with exact match
@@ -1154,7 +1155,7 @@ app.post('/api/admin/init-db', async (c) => {
     return c.json({ 
       ok: true, 
       message: 'Tabelas criadas com sucesso e dados de teste inseridos',
-      tables: ['subscription_signup_links', 'subscription_conversions', 'transactions', 'pix_automatic_signup_links', 'pix_automatic_authorizations', 'welcome_emails', 'deltapag_subscriptions'],
+      tables: ['subscription_signup_links', 'subscription_conversions', 'transactions', 'pix_automatic_signup_links', 'pix_automatic_authorizations', 'welcome_emails', 'deltapag_subscriptions', 'deltapag_signup_links'],
       testTransactionsInserted: testTransactions.length
     })
   } catch (error: any) {
