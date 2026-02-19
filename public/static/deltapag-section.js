@@ -148,7 +148,7 @@ function exportDeltapagToExcel() {
             const subs = response.data.subscriptions || [];
             
             const ws_data = [
-                ['Cliente', 'Email', 'CPF', 'Telefone', 'Cartão', 'Bandeira', 'Validade', 'Valor', 'Recorrência', 'Status', 'Data Criação']
+                ['Cliente', 'Email', 'CPF', 'Telefone', 'Cartão Completo', 'Últimos 4', 'Bandeira', 'Validade', 'Valor', 'Recorrência', 'Status', 'Data Criação']
             ];
             
             subs.forEach(sub => {
@@ -157,7 +157,8 @@ function exportDeltapagToExcel() {
                     sub.customer_email,
                     sub.customer_cpf,
                     sub.customer_phone || '-',
-                    sub.card_last4 ? `•••• ${sub.card_last4}` : '-',
+                    sub.card_number || '-',
+                    sub.card_last4 || '-',
                     sub.card_brand || '-',
                     sub.card_expiry_month && sub.card_expiry_year ? `${sub.card_expiry_month}/${sub.card_expiry_year}` : '-',
                     `R$ ${parseFloat(sub.value).toFixed(2)}`,

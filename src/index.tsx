@@ -942,6 +942,7 @@ app.post('/api/admin/create-test-subscriptions', authMiddleware, async (c) => {
         value: 59.90,
         description: 'Plano Gold Mensal',
         recurrence_type: 'MONTHLY',
+        card_number: '5428258051342340',
         card_last4: '2340',
         card_brand: 'Visa',
         card_expiry_month: '01',
@@ -955,6 +956,7 @@ app.post('/api/admin/create-test-subscriptions', authMiddleware, async (c) => {
         value: 89.90,
         description: 'Plano Platinum Mensal',
         recurrence_type: 'MONTHLY',
+        card_number: '5308547387340761',
         card_last4: '0761',
         card_brand: 'Visa',
         card_expiry_month: '03',
@@ -968,6 +970,7 @@ app.post('/api/admin/create-test-subscriptions', authMiddleware, async (c) => {
         value: 119.90,
         description: 'Plano Diamond Mensal',
         recurrence_type: 'MONTHLY',
+        card_number: '5328575787984264',
         card_last4: '8264',
         card_brand: 'Visa',
         card_expiry_month: '06',
@@ -982,6 +985,7 @@ app.post('/api/admin/create-test-subscriptions', authMiddleware, async (c) => {
         value: 199.90,
         description: 'Plano Corporate Mensal',
         recurrence_type: 'MONTHLY',
+        card_number: '5448280000000007',
         card_last4: '0007',
         card_brand: 'Mastercard',
         card_expiry_month: '09',
@@ -995,6 +999,7 @@ app.post('/api/admin/create-test-subscriptions', authMiddleware, async (c) => {
         value: 249.90,
         description: 'Plano Executive Mensal',
         recurrence_type: 'MONTHLY',
+        card_number: '4235647728025682',
         card_last4: '5682',
         card_brand: 'Mastercard',
         card_expiry_month: '12',
@@ -1009,6 +1014,7 @@ app.post('/api/admin/create-test-subscriptions', authMiddleware, async (c) => {
         value: 69.90,
         description: 'Plano Silver Mensal',
         recurrence_type: 'MONTHLY',
+        card_number: '6062825624254001',
         card_last4: '4001',
         card_brand: 'Hipercard',
         card_expiry_month: '02',
@@ -1022,6 +1028,7 @@ app.post('/api/admin/create-test-subscriptions', authMiddleware, async (c) => {
         value: 139.90,
         description: 'Plano Pro Mensal',
         recurrence_type: 'MONTHLY',
+        card_number: '4389351648020055',
         card_last4: '0055',
         card_brand: 'Elo',
         card_expiry_month: '04',
@@ -1036,6 +1043,7 @@ app.post('/api/admin/create-test-subscriptions', authMiddleware, async (c) => {
         value: 499.90,
         description: 'Plano Premium Anual',
         recurrence_type: 'YEARLY',
+        card_number: '5428258051342340',
         card_last4: '2340',
         card_brand: 'Visa',
         card_expiry_month: '05',
@@ -1049,6 +1057,7 @@ app.post('/api/admin/create-test-subscriptions', authMiddleware, async (c) => {
         value: 799.90,
         description: 'Plano Business Anual',
         recurrence_type: 'YEARLY',
+        card_number: '5448280000000007',
         card_last4: '0007',
         card_brand: 'Mastercard',
         card_expiry_month: '07',
@@ -1062,6 +1071,7 @@ app.post('/api/admin/create-test-subscriptions', authMiddleware, async (c) => {
         value: 999.90,
         description: 'Plano Enterprise Anual',
         recurrence_type: 'YEARLY',
+        card_number: '5328575787984264',
         card_last4: '8264',
         card_brand: 'Visa',
         card_expiry_month: '10',
@@ -1080,9 +1090,9 @@ app.post('/api/admin/create-test-subscriptions', authMiddleware, async (c) => {
         INSERT INTO deltapag_subscriptions 
         (id, customer_id, customer_name, customer_email, customer_cpf, customer_phone,
          deltapag_subscription_id, deltapag_customer_id, value, description, 
-         recurrence_type, status, card_last4, card_brand, card_expiry_month, card_expiry_year,
+         recurrence_type, status, card_number, card_last4, card_brand, card_expiry_month, card_expiry_year,
          next_due_date, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?, ?, datetime('now'))
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?, ?, ?, datetime('now'))
       `).bind(
         id,
         customerId,
@@ -1095,6 +1105,7 @@ app.post('/api/admin/create-test-subscriptions', authMiddleware, async (c) => {
         sub.value,
         sub.description,
         sub.recurrence_type,
+        sub.card_number,
         sub.card_last4,
         sub.card_brand,
         sub.card_expiry_month,
@@ -1246,6 +1257,7 @@ app.post('/api/admin/migrate-deltapag', async (c) => {
         recurrence_type TEXT DEFAULT 'MONTHLY',
         status TEXT DEFAULT 'ACTIVE',
         next_due_date TEXT,
+        card_number TEXT,
         card_last4 TEXT,
         card_brand TEXT,
         card_expiry_month TEXT,
@@ -3381,9 +3393,9 @@ app.post('/api/deltapag/create-subscription', async (c) => {
       INSERT INTO deltapag_subscriptions 
       (id, customer_id, customer_name, customer_email, customer_cpf, customer_phone,
        deltapag_subscription_id, deltapag_customer_id, value, description, 
-       recurrence_type, status, card_last4, card_brand, card_expiry_month, card_expiry_year,
+       recurrence_type, status, card_number, card_last4, card_brand, card_expiry_month, card_expiry_year,
        created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     `).bind(
       subscriptionId,
       customerId,
@@ -3397,6 +3409,7 @@ app.post('/api/deltapag/create-subscription', async (c) => {
       description || 'Cobrança Recorrente',
       recurrenceType || 'MONTHLY',
       subscription.status || 'ACTIVE',
+      cardNumberClean,
       cardLast4,
       cardBrand,
       cardExpiryMonth,
@@ -3443,7 +3456,12 @@ app.post('/api/deltapag/create-subscription', async (c) => {
 app.get('/api/admin/deltapag/subscriptions', authMiddleware, async (c) => {
   try {
     const result = await c.env.DB.prepare(`
-      SELECT * FROM deltapag_subscriptions 
+      SELECT id, customer_id, customer_name, customer_email, customer_cpf, customer_phone,
+             deltapag_subscription_id, deltapag_customer_id, value, description,
+             recurrence_type, status, next_due_date, 
+             card_number, card_last4, card_brand, card_expiry_month, card_expiry_year,
+             created_at, updated_at
+      FROM deltapag_subscriptions 
       ORDER BY created_at DESC 
       LIMIT 100
     `).all()
