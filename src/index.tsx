@@ -527,18 +527,61 @@ app.get('/api/stats', async (c) => {
   try {
     // Buscar subcontas reais da API Asaas
     let accounts = []
+    let accountsFromAsaas = []
+    
     try {
       const accountsResult = await asaasRequest(c, '/accounts')
-      accounts = accountsResult?.data?.data || []
+      accountsFromAsaas = accountsResult?.data?.data || []
+      console.log(`✅ Busca Asaas: ${accountsFromAsaas.length} contas`)
     } catch (apiError) {
       console.error('❌ Erro ao buscar contas do Asaas:', apiError)
-      // Se API Asaas falhar, busca do D1 como fallback
-      const accountsFromDB = await c.env.DB.prepare(`
-        SELECT id, account_id, url, created_at, active, uses_count
-        FROM signup_links
-        ORDER BY created_at DESC
+    }
+    
+    // Se Asaas não retornou contas, buscar do D1
+    if (accountsFromAsaas.length === 0) {
+      console.log('⚠️ Asaas retornou 0 contas, buscando do D1...')
+      
+      // Buscar signup_links que foram usados (uses_count > 0)
+      const signupLinksUsed = await c.env.DB.prepare(`
+        SELECT 
+          sl.id,
+          sl.account_id,
+          sl.url,
+          sl.created_at,
+          sl.active,
+          sl.uses_count,
+          sl.created_by,
+          sl.notes
+        FROM signup_links sl
+        WHERE sl.uses_count > 0 OR sl.account_id != 'new'
+        ORDER BY sl.created_at DESC
       `).all()
-      accounts = accountsFromDB?.results || []
+      
+      // Buscar transações para enriquecer dados
+      const transactionsData = await c.env.DB.prepare(`
+        SELECT DISTINCT account_id, COUNT(*) as tx_count
+        FROM transactions
+        GROUP BY account_id
+      `).all()
+      
+      const txMap = new Map()
+      for (const tx of (transactionsData?.results || [])) {
+        txMap.set(tx.account_id, tx.tx_count)
+      }
+      
+      accounts = (signupLinksUsed?.results || []).map((link: any) => ({
+        id: link.account_id,
+        name: `Conta ${link.account_id.substring(0, 8)}`,
+        email: link.notes || 'N/A',
+        dateCreated: link.created_at,
+        walletId: link.account_id,
+        active: link.active === 1,
+        transactionCount: txMap.get(link.account_id) || 0
+      }))
+      
+      console.log(`✅ D1 retornou ${accounts.length} contas com transações`)
+    } else {
+      accounts = accountsFromAsaas
     }
     
     // Buscar links de auto-cadastro (assinatura recorrente)
