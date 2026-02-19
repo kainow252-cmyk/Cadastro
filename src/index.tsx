@@ -3529,8 +3529,14 @@ function detectCardBrand(cardNumber: string): string {
 }
 
 async function deltapagRequest(c: any, endpoint: string, method: string, data?: any) {
-  const apiUrl = c.env.DELTAPAG_API_URL
+  let apiUrl = c.env.DELTAPAG_API_URL
   const apiKey = c.env.DELTAPAG_API_KEY
+  
+  // Fallback: tentar URLs comuns se DELTAPAG_API_URL não estiver configurada
+  if (!apiUrl || apiUrl === 'undefined') {
+    console.warn('⚠️ DELTAPAG_API_URL não configurada, usando sandbox padrão')
+    apiUrl = 'https://sandbox.bempaggo.com.br/api/v1'
+  }
   
   const url = `${apiUrl}${endpoint}`
   
