@@ -2786,6 +2786,13 @@ window.showSection = function(section) {
     if (section === 'reports') {
         loadReportAccounts();
     }
+    
+    // Carregar assinaturas DeltaPag quando entrar na seção
+    if (section === 'deltapag') {
+        if (typeof loadDeltapagSubscriptions === 'function') {
+            setTimeout(() => loadDeltapagSubscriptions(), 100);
+        }
+    }
 }
 
 // ===== FUNÇÕES DE RELATÓRIOS =====
