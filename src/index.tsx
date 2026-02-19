@@ -1403,9 +1403,18 @@ app.post('/api/admin/create-evidence-transactions', authMiddleware, async (c) =>
         console.log('📤 Criando cliente:', customerData)
         const customerResult = await deltapagRequest(c, '/customers', 'POST', customerData)
         
+        console.log('🔍 Status da resposta DeltaPag:', customerResult.status)
+        console.log('🔍 Headers:', Object.fromEntries(customerResult.headers.entries()))
+        console.log('🔍 Resposta completa:', JSON.stringify(customerResult.data, null, 2))
+        
         if (!customerResult.ok) {
           console.error('❌ Erro ao criar cliente:', customerResult.data)
-          throw new Error(`Erro ao criar cliente: ${customerResult.data.message || 'Desconhecido'}`)
+          const errorMessage = customerResult.data?.message 
+            || customerResult.data?.error 
+            || customerResult.data?.errors?.[0]?.message
+            || JSON.stringify(customerResult.data)
+            || 'Erro desconhecido ao criar cliente DeltaPag'
+          throw new Error(`Erro ao criar cliente: ${errorMessage}`)
         }
         
         const customerId = customerResult.data.id
