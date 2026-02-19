@@ -3,6 +3,8 @@ import { cors } from 'hono/cors'
 import { serveStatic } from 'hono/cloudflare-workers'
 import { getCookie, setCookie } from 'hono/cookie'
 import { SignJWT, jwtVerify } from 'jose'
+import { initializeSESClient, sendWelcomeEmail, isSESConfigured } from './email-service'
+import type { CustomerData } from './email-templates'
 
 type Bindings = {
   ASAAS_API_KEY: string;
@@ -13,6 +15,10 @@ type Bindings = {
   MAILERSEND_API_KEY: string;
   MAILERSEND_FROM_EMAIL: string;
   MAILERSEND_FROM_NAME: string;
+  AWS_ACCESS_KEY_ID?: string;
+  AWS_SECRET_ACCESS_KEY?: string;
+  AWS_REGION?: string;
+  ASAAS_WEBHOOK_TOKEN?: string;
   DB: D1Database;
 }
 
@@ -992,6 +998,8 @@ app.post('/api/admin/init-db', async (c) => {
         value REAL NOT NULL,
         description TEXT,
         frequency TEXT DEFAULT 'MONTHLY',
+        plan_type TEXT DEFAULT 'basico',
+        campaign TEXT,
         expires_at DATETIME NOT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         active INTEGER DEFAULT 1,
@@ -1035,6 +1043,31 @@ app.post('/api/admin/init-db', async (c) => {
     await db.prepare(`CREATE INDEX IF NOT EXISTS idx_pix_auto_auth_customer ON pix_automatic_authorizations(customer_id)`).run()
     await db.prepare(`CREATE INDEX IF NOT EXISTS idx_pix_auto_auth_status ON pix_automatic_authorizations(status)`).run()
     
+    // Criar tabela welcome_emails para rastreamento de e-mails
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS welcome_emails (
+        id TEXT PRIMARY KEY,
+        authorization_id TEXT NOT NULL,
+        email TEXT NOT NULL,
+        plan_type TEXT NOT NULL,
+        template_type TEXT NOT NULL,
+        sent_at DATETIME NOT NULL,
+        ses_message_id TEXT,
+        status TEXT DEFAULT 'sent',
+        error_message TEXT,
+        opened_at DATETIME,
+        clicked_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (authorization_id) REFERENCES pix_automatic_authorizations(id)
+      )
+    `).run()
+    
+    // Criar índices para welcome_emails
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_welcome_emails_auth ON welcome_emails(authorization_id)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_welcome_emails_email ON welcome_emails(email)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_welcome_emails_status ON welcome_emails(status)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_welcome_emails_sent ON welcome_emails(sent_at)`).run()
+    
     // Inserir transações de teste para as 2 subcontas
     const testTransactions = [
       // Franklin - Transações recebidas
@@ -1074,7 +1107,7 @@ app.post('/api/admin/init-db', async (c) => {
     return c.json({ 
       ok: true, 
       message: 'Tabelas criadas com sucesso e dados de teste inseridos',
-      tables: ['subscription_signup_links', 'subscription_conversions', 'transactions', 'pix_automatic_signup_links', 'pix_automatic_authorizations'],
+      tables: ['subscription_signup_links', 'subscription_conversions', 'transactions', 'pix_automatic_signup_links', 'pix_automatic_authorizations', 'welcome_emails'],
       testTransactionsInserted: testTransactions.length
     })
   } catch (error: any) {
@@ -1084,6 +1117,46 @@ app.post('/api/admin/init-db', async (c) => {
       error: error.message 
     }, 500)
   }
+})
+
+// Endpoint para inicializar Amazon SES
+app.post('/api/admin/configure-ses', async (c) => {
+  try {
+    const { accessKeyId, secretAccessKey, region } = await c.req.json()
+    
+    if (!accessKeyId || !secretAccessKey) {
+      return c.json({ 
+        ok: false, 
+        error: 'accessKeyId e secretAccessKey são obrigatórios' 
+      }, 400)
+    }
+    
+    // Inicializar cliente SES
+    initializeSESClient(accessKeyId, secretAccessKey, region || 'us-east-1')
+    
+    return c.json({ 
+      ok: true, 
+      message: 'Amazon SES configurado com sucesso',
+      region: region || 'us-east-1',
+      configured: isSESConfigured()
+    })
+  } catch (error: any) {
+    console.error('Erro ao configurar SES:', error)
+    return c.json({ 
+      ok: false, 
+      error: error.message 
+    }, 500)
+  }
+})
+
+// Endpoint para verificar status do SES
+app.get('/api/admin/ses-status', async (c) => {
+  return c.json({ 
+    ok: true, 
+    configured: isSESConfigured(),
+    hasCredentials: !!(c.env.AWS_ACCESS_KEY_ID && c.env.AWS_SECRET_ACCESS_KEY),
+    region: c.env.AWS_REGION || 'us-east-1'
+  })
 })
 
 // Webhook do Asaas para notificações de pagamento
@@ -5855,7 +5928,7 @@ async function handlePaymentCreated(c: any, payload: any) {
 }
 
 async function handlePaymentReceived(c: any, payload: any) {
-  console.log('Pagamento recebido:', payload.payment?.id)
+  console.log('📧 Pagamento recebido:', payload.payment?.id)
   
   const payment = payload.payment
   const paymentValue = parseFloat(payment?.value || 0)
@@ -5873,8 +5946,135 @@ async function handlePaymentReceived(c: any, payload: any) {
     })
   ).run()
   
+  // ========================================
+  // ENVIAR E-MAIL DE BOAS-VINDAS
+  // ========================================
+  try {
+    // Buscar dados da autorização PIX Automático
+    const auth = await c.env.DB.prepare(`
+      SELECT 
+        pa.*,
+        psl.campaign,
+        psl.plan_type,
+        psl.description as link_description,
+        (SELECT COUNT(*) FROM pix_automatic_authorizations WHERE customer_email = pa.customer_email AND status = 'ACTIVE') as subscription_count
+      FROM pix_automatic_authorizations pa
+      LEFT JOIN pix_automatic_signup_links psl ON pa.link_id = psl.id
+      WHERE pa.customer_id = ?
+      ORDER BY pa.created_at DESC
+      LIMIT 1
+    `).bind(payment.customer).first()
+    
+    if (auth && auth.customer_email) {
+      // Inicializar SES se ainda não foi
+      if (!isSESConfigured() && c.env.AWS_ACCESS_KEY_ID && c.env.AWS_SECRET_ACCESS_KEY) {
+        initializeSESClient(
+          c.env.AWS_ACCESS_KEY_ID,
+          c.env.AWS_SECRET_ACCESS_KEY,
+          c.env.AWS_REGION || 'us-east-1'
+        )
+      }
+      
+      // Determinar tipo de assinatura
+      const subscriptionCount = parseInt(auth.subscription_count as string) || 0
+      const isReactivation = subscriptionCount > 1
+      const isUpgrade = (auth.description as string || '').toLowerCase().includes('upgrade')
+      
+      // Determinar plano (extrair de description ou usar padrão)
+      let plan: 'basico' | 'premium' | 'empresarial' = 'basico'
+      const planType = (auth.plan_type as string || '').toLowerCase()
+      const description = (auth.description as string || '').toLowerCase()
+      
+      if (planType.includes('premium') || description.includes('premium')) {
+        plan = 'premium'
+      } else if (planType.includes('empresarial') || planType.includes('enterprise') || description.includes('empresarial')) {
+        plan = 'empresarial'
+      }
+      
+      console.log('📊 Dados do e-mail:', {
+        email: auth.customer_email,
+        plan,
+        isUpgrade,
+        isReactivation,
+        campaign: auth.campaign,
+        subscriptionCount
+      })
+      
+      // Preparar dados do cliente
+      const customerData: CustomerData = {
+        name: auth.customer_name as string,
+        email: auth.customer_email as string,
+        plan,
+        value: parseFloat(auth.value as string),
+        activationDate: new Date().toLocaleDateString('pt-BR'),
+        campaign: auth.campaign as string || undefined,
+        isUpgrade,
+        isReactivation
+      }
+      
+      // Enviar e-mail de boas-vindas
+      const emailResult = await sendWelcomeEmail(customerData)
+      
+      if (emailResult.success) {
+        console.log('✅ E-mail de boas-vindas enviado com sucesso!')
+        
+        // Registrar envio no banco
+        await c.env.DB.prepare(`
+          INSERT INTO welcome_emails (
+            id,
+            authorization_id,
+            email,
+            plan_type,
+            template_type,
+            sent_at,
+            ses_message_id,
+            status,
+            created_at
+          ) VALUES (?, ?, ?, ?, ?, datetime('now'), ?, 'sent', datetime('now'))
+        `).bind(
+          `email-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          auth.id,
+          auth.customer_email,
+          plan,
+          isUpgrade ? 'upgrade' : isReactivation ? 'reactivation' : plan,
+          emailResult.messageId || null
+        ).run()
+      } else {
+        console.warn('⚠️ Falha ao enviar e-mail:', emailResult.error)
+        
+        // Registrar falha no banco
+        await c.env.DB.prepare(`
+          INSERT INTO welcome_emails (
+            id,
+            authorization_id,
+            email,
+            plan_type,
+            template_type,
+            sent_at,
+            status,
+            error_message,
+            created_at
+          ) VALUES (?, ?, ?, ?, ?, datetime('now'), 'failed', ?, datetime('now'))
+        `).bind(
+          `email-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          auth.id,
+          auth.customer_email,
+          plan,
+          isUpgrade ? 'upgrade' : isReactivation ? 'reactivation' : plan,
+          emailResult.error || 'Unknown error'
+        ).run()
+      }
+    } else {
+      console.log('ℹ️ Autorização não encontrada para customer:', payment.customer)
+    }
+  } catch (emailError: any) {
+    console.error('❌ Erro ao processar e-mail de boas-vindas:', emailError.message)
+    // Não falhar o webhook se o e-mail der erro
+  }
+  
+  // ========================================
   // APLICAR SPLIT AUTOMÁTICO 20/80
-  // Buscar configuração de split baseada no valor do pagamento
+  // ========================================
   try {
     const splitConfig = await c.env.DB.prepare(`
       SELECT * FROM pix_splits 
@@ -5888,7 +6088,7 @@ async function handlePaymentReceived(c: any, payload: any) {
       const splitPercentage = (splitConfig.split_percentage as number) || 20
       const transferValue = (paymentValue * splitPercentage / 100)
       
-      console.log(`Aplicando split de ${splitPercentage}%: R$ ${transferValue} para conta ${accountId}`)
+      console.log(`💸 Aplicando split de ${splitPercentage}%: R$ ${transferValue} para conta ${accountId}`)
       
       // Criar transferência para a subconta
       const transferData = {
@@ -5899,7 +6099,7 @@ async function handlePaymentReceived(c: any, payload: any) {
       const transferResult = await asaasRequest(c, '/transfers', 'POST', transferData)
       
       if (transferResult.ok) {
-        console.log('Split aplicado com sucesso:', transferResult.data)
+        console.log('✅ Split aplicado com sucesso:', transferResult.data)
         
         // Registrar split no log
         await c.env.DB.prepare(`
@@ -5915,11 +6115,11 @@ async function handlePaymentReceived(c: any, payload: any) {
           })
         ).run()
       } else {
-        console.error('Erro ao aplicar split:', transferResult.data)
+        console.error('❌ Erro ao aplicar split:', transferResult.data)
       }
     }
   } catch (splitError: any) {
-    console.error('Erro ao processar split:', splitError)
+    console.error('❌ Erro ao processar split:', splitError)
     // Não falhar o webhook se o split der erro
   }
 }

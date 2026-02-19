@@ -16,6 +16,7 @@
     "git:status": "git status"
   },
   "dependencies": {
+    "@aws-sdk/client-ses": "^3.993.0",
     "hono": "^4.11.9",
     "jose": "^6.1.3"
   },
