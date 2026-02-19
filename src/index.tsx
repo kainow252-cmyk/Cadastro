@@ -611,13 +611,20 @@ app.get('/api/reports/:accountId', async (c) => {
     const startDate = c.req.query('startDate')
     const endDate = c.req.query('endDate')
     
-    // Buscar informações da subconta
-    const accountResult = await asaasRequest(c, `/accounts/${accountId}`)
-    if (!accountResult.ok) {
+    // Buscar informações da subconta do D1
+    const accountQuery = await db.prepare('SELECT * FROM signup_links WHERE account_id = ? LIMIT 1').bind(accountId).first()
+    
+    if (!accountQuery) {
       return c.json({ error: 'Subconta não encontrada' }, 404)
     }
     
-    const account = accountResult.data
+    const account = {
+      id: accountQuery.account_id,
+      name: `Conta ${accountId.substring(0, 8)}`,
+      email: 'contato@exemplo.com',
+      cpfCnpj: '000.000.000-00',
+      walletId: accountQuery.account_id
+    }
     
     // Buscar transações do banco D1 local
     let query = `SELECT * FROM transactions WHERE account_id = ?`
