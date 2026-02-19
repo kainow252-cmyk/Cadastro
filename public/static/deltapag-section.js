@@ -694,22 +694,29 @@ async function showQRCodeModal(linkId, linkUrl, description, value, recurrence) 
     // Gerar QR Code
     const canvas = document.getElementById('qrcode-canvas');
     try {
-        await QRCode.toCanvas(canvas, linkUrl, {
+        // Usar a API correta do qrcode.min.js
+        QRCode.toCanvas(canvas, linkUrl, {
             width: 280,
             margin: 2,
             color: {
                 dark: '#6b21a8',  // purple-800
                 light: '#ffffff'
             }
+        }, function(error) {
+            if (error) {
+                console.error('Erro ao gerar QR Code:', error);
+                alert(`Erro ao gerar QR Code: ${error.message}`);
+                return;
+            }
+            
+            // Gerar preview HTML
+            const qrDataURL = canvas.toDataURL('image/png');
+            const htmlCode = generateQRCodeHTML(linkUrl, description, value, recurrence, qrDataURL);
+            document.getElementById('qr-html-preview').textContent = htmlCode;
+            
+            // Mostrar modal
+            document.getElementById('qrcode-modal').classList.remove('hidden');
         });
-        
-        // Gerar preview HTML
-        const qrDataURL = canvas.toDataURL('image/png');
-        const htmlCode = generateQRCodeHTML(linkUrl, description, value, recurrence, qrDataURL);
-        document.getElementById('qr-html-preview').textContent = htmlCode;
-        
-        // Mostrar modal
-        document.getElementById('qrcode-modal').classList.remove('hidden');
     } catch (error) {
         console.error('Erro ao gerar QR Code:', error);
         alert(`Erro ao gerar QR Code: ${error.message}\n\nTente recarregar a página.`);
