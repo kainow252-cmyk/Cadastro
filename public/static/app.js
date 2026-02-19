@@ -4429,3 +4429,194 @@ function downloadPixAutoHTML() {
     // Feedback visual
     alert('✅ HTML gerado com sucesso!');
 }
+
+// =====================================================
+// DELTAPAG - PAGAMENTO RECORRENTE CARTÃO DE CRÉDITO
+// =====================================================
+
+function openDeltapagModal() {
+    document.getElementById('deltapag-modal').classList.remove('hidden');
+    
+    // Aplicar máscaras nos campos
+    const cpfInput = document.getElementById('deltapag-customer-cpf');
+    const cardNumberInput = document.getElementById('deltapag-card-number');
+    const cvvInput = document.getElementById('deltapag-card-cvv');
+    
+    // Máscara CPF
+    cpfInput.addEventListener('input', function(e) {
+        let value = e.target.value.replace(/\D/g, '');
+        if (value.length <= 11) {
+            value = value.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+        }
+        e.target.value = value;
+    });
+    
+    // Máscara Cartão
+    cardNumberInput.addEventListener('input', function(e) {
+        let value = e.target.value.replace(/\D/g, '');
+        value = value.replace(/(\d{4})(?=\d)/g, '$1 ');
+        e.target.value = value.substring(0, 19);
+    });
+    
+    // Máscara CVV
+    cvvInput.addEventListener('input', function(e) {
+        e.target.value = e.target.value.replace(/\D/g, '');
+    });
+}
+
+function closeDeltapagModal() {
+    document.getElementById('deltapag-modal').classList.add('hidden');
+    document.getElementById('deltapag-form').reset();
+    document.getElementById('deltapag-result').classList.add('hidden');
+}
+
+// Handler do formulário DeltaPag
+document.addEventListener('DOMContentLoaded', function() {
+    const deltapagForm = document.getElementById('deltapag-form');
+    if (deltapagForm) {
+        deltapagForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const submitBtn = document.getElementById('deltapag-submit-btn');
+            const resultDiv = document.getElementById('deltapag-result');
+            
+            // Desabilitar botão
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Processando...';
+            resultDiv.classList.add('hidden');
+            
+            try {
+                // Coletar dados do formulário
+                const formData = {
+                    customerName: document.getElementById('deltapag-customer-name').value,
+                    customerEmail: document.getElementById('deltapag-customer-email').value,
+                    customerCpf: document.getElementById('deltapag-customer-cpf').value,
+                    customerPhone: document.getElementById('deltapag-customer-phone').value,
+                    
+                    cardNumber: document.getElementById('deltapag-card-number').value,
+                    cardHolderName: document.getElementById('deltapag-card-holder').value,
+                    cardExpiryMonth: document.getElementById('deltapag-card-month').value,
+                    cardExpiryYear: document.getElementById('deltapag-card-year').value,
+                    cardCvv: document.getElementById('deltapag-card-cvv').value,
+                    
+                    value: parseFloat(document.getElementById('deltapag-value').value),
+                    recurrenceType: document.getElementById('deltapag-recurrence').value,
+                    description: document.getElementById('deltapag-description').value,
+                    
+                    splitWalletId: document.getElementById('deltapag-split-wallet').value || null,
+                    splitPercentage: document.getElementById('deltapag-split-percentage').value ? 
+                        parseFloat(document.getElementById('deltapag-split-percentage').value) : null
+                };
+                
+                // Fazer requisição
+                const response = await axios.post('/api/deltapag/create-subscription', formData);
+                
+                if (response.data.ok) {
+                    // Sucesso
+                    resultDiv.innerHTML = `
+                        <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+                            <div class="flex items-start gap-3">
+                                <i class="fas fa-check-circle text-green-600 text-2xl"></i>
+                                <div class="flex-1">
+                                    <h4 class="font-bold text-green-900 mb-2">
+                                        🎉 Assinatura Criada com Sucesso!
+                                    </h4>
+                                    <div class="space-y-2 text-sm text-green-800">
+                                        <div><strong>ID:</strong> ${response.data.subscription.id}</div>
+                                        <div><strong>Cliente:</strong> ${response.data.subscription.customer.name}</div>
+                                        <div><strong>Email:</strong> ${response.data.subscription.customer.email}</div>
+                                        <div><strong>Valor:</strong> R$ ${response.data.subscription.value.toFixed(2)}</div>
+                                        <div><strong>Recorrência:</strong> ${response.data.subscription.recurrenceType}</div>
+                                        <div><strong>Status:</strong> ${response.data.subscription.status}</div>
+                                    </div>
+                                    
+                                    <div class="mt-4 p-3 bg-white rounded border border-green-300">
+                                        <div class="font-semibold text-green-900 mb-2">Próximos Passos:</div>
+                                        <ul class="text-sm text-green-800 space-y-1">
+                                            ${response.data.instructions.map(inst => `<li>${inst}</li>`).join('')}
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    resultDiv.classList.remove('hidden');
+                    
+                    // Limpar formulário
+                    deltapagForm.reset();
+                    
+                    // Recarregar lista de assinaturas (se existir)
+                    if (typeof loadDeltapagSubscriptions === 'function') {
+                        setTimeout(loadDeltapagSubscriptions, 1000);
+                    }
+                    
+                } else {
+                    // Erro
+                    throw new Error(response.data.error || 'Erro desconhecido');
+                }
+                
+            } catch (error) {
+                // Mostrar erro
+                resultDiv.innerHTML = `
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+                        <div class="flex items-start gap-3">
+                            <i class="fas fa-exclamation-circle text-red-600 text-2xl"></i>
+                            <div class="flex-1">
+                                <h4 class="font-bold text-red-900 mb-2">Erro ao Criar Assinatura</h4>
+                                <p class="text-sm text-red-800">${error.response?.data?.error || error.message}</p>
+                                ${error.response?.data?.details ? `
+                                    <pre class="mt-2 text-xs bg-red-100 p-2 rounded overflow-x-auto">
+                                        ${JSON.stringify(error.response.data.details, null, 2)}
+                                    </pre>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+                resultDiv.classList.remove('hidden');
+            } finally {
+                // Reabilitar botão
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-credit-card mr-2"></i>Criar Assinatura Recorrente';
+            }
+        });
+    }
+});
+
+// Função para carregar lista de assinaturas DeltaPag (admin)
+async function loadDeltapagSubscriptions() {
+    try {
+        const response = await axios.get('/api/admin/deltapag/subscriptions');
+        
+        if (response.data.ok) {
+            const subscriptions = response.data.subscriptions;
+            console.log('Assinaturas DeltaPag carregadas:', subscriptions.length);
+            
+            // Aqui você pode popular uma tabela ou lista na interface
+            // Exemplo: document.getElementById('deltapag-list').innerHTML = ...
+        }
+    } catch (error) {
+        console.error('Erro ao carregar assinaturas DeltaPag:', error);
+    }
+}
+
+// Função para cancelar assinatura DeltaPag
+async function cancelDeltapagSubscription(subscriptionId) {
+    if (!confirm('Deseja realmente cancelar esta assinatura? Esta ação não pode ser desfeita.')) {
+        return;
+    }
+    
+    try {
+        const response = await axios.post(`/api/deltapag/cancel-subscription/${subscriptionId}`);
+        
+        if (response.data.ok) {
+            alert('✅ Assinatura cancelada com sucesso!');
+            loadDeltapagSubscriptions();
+        } else {
+            alert('❌ Erro: ' + response.data.error);
+        }
+    } catch (error) {
+        alert('❌ Erro ao cancelar: ' + (error.response?.data?.error || error.message));
+    }
+}
+

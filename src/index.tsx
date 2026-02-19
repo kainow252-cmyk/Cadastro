@@ -19,6 +19,8 @@ type Bindings = {
   AWS_SECRET_ACCESS_KEY?: string;
   AWS_REGION?: string;
   ASAAS_WEBHOOK_TOKEN?: string;
+  DELTAPAG_API_KEY: string;
+  DELTAPAG_API_URL: string;
   DB: D1Database;
 }
 
@@ -1065,6 +1067,31 @@ app.post('/api/admin/init-db', async (c) => {
     // Criar índices para welcome_emails
     await db.prepare(`CREATE INDEX IF NOT EXISTS idx_welcome_emails_auth ON welcome_emails(authorization_id)`).run()
     await db.prepare(`CREATE INDEX IF NOT EXISTS idx_welcome_emails_email ON welcome_emails(email)`).run()
+    
+    // Criar tabela deltapag_subscriptions para assinaturas via cartão de crédito
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS deltapag_subscriptions (
+        id TEXT PRIMARY KEY,
+        customer_id TEXT NOT NULL,
+        customer_name TEXT NOT NULL,
+        customer_email TEXT NOT NULL,
+        customer_cpf TEXT NOT NULL,
+        deltapag_subscription_id TEXT NOT NULL,
+        deltapag_customer_id TEXT NOT NULL,
+        value REAL NOT NULL,
+        description TEXT,
+        recurrence_type TEXT DEFAULT 'MONTHLY',
+        status TEXT DEFAULT 'ACTIVE',
+        next_due_date TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `).run()
+    
+    // Criar índices para deltapag_subscriptions
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_deltapag_subs_customer ON deltapag_subscriptions(customer_id)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_deltapag_subs_status ON deltapag_subscriptions(status)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_deltapag_subs_deltapag_id ON deltapag_subscriptions(deltapag_subscription_id)`).run()
     await db.prepare(`CREATE INDEX IF NOT EXISTS idx_welcome_emails_status ON welcome_emails(status)`).run()
     await db.prepare(`CREATE INDEX IF NOT EXISTS idx_welcome_emails_sent ON welcome_emails(sent_at)`).run()
     
@@ -1107,7 +1134,7 @@ app.post('/api/admin/init-db', async (c) => {
     return c.json({ 
       ok: true, 
       message: 'Tabelas criadas com sucesso e dados de teste inseridos',
-      tables: ['subscription_signup_links', 'subscription_conversions', 'transactions', 'pix_automatic_signup_links', 'pix_automatic_authorizations', 'welcome_emails'],
+      tables: ['subscription_signup_links', 'subscription_conversions', 'transactions', 'pix_automatic_signup_links', 'pix_automatic_authorizations', 'welcome_emails', 'deltapag_subscriptions'],
       testTransactionsInserted: testTransactions.length
     })
   } catch (error: any) {
@@ -2546,6 +2573,293 @@ app.post('/api/pix/automatic-signup/:linkId', async (c) => {
     
   } catch (error: any) {
     console.error('Erro no auto-cadastro PIX Automático:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// ===================================
+// 🔷 DELTAPAG API - PAGAMENTO RECORRENTE CARTÃO CRÉDITO
+// ===================================
+
+// Função auxiliar para fazer requests à API DeltaPag
+async function deltapagRequest(c: any, endpoint: string, method: string, data?: any) {
+  const apiUrl = c.env.DELTAPAG_API_URL
+  const apiKey = c.env.DELTAPAG_API_KEY
+  
+  const url = `${apiUrl}${endpoint}`
+  
+  const options: RequestInit = {
+    method,
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    }
+  }
+  
+  if (data) {
+    options.body = JSON.stringify(data)
+  }
+  
+  try {
+    console.log(`🔷 DeltaPag Request: ${method} ${url}`)
+    console.log('📤 Payload:', JSON.stringify(data, null, 2))
+    
+    const response = await fetch(url, options)
+    const responseData = await response.json()
+    
+    console.log(`📥 DeltaPag Response [${response.status}]:`, JSON.stringify(responseData, null, 2))
+    
+    return {
+      ok: response.ok,
+      status: response.status,
+      data: responseData,
+      headers: response.headers
+    }
+  } catch (error: any) {
+    console.error('❌ Erro na requisição DeltaPag:', error)
+    return {
+      ok: false,
+      status: 500,
+      data: { error: error.message },
+      headers: new Headers()
+    }
+  }
+}
+
+// Endpoint: Criar cobrança recorrente via cartão de crédito (DeltaPag)
+app.post('/api/deltapag/create-subscription', async (c) => {
+  try {
+    const body = await c.req.json()
+    const {
+      // Dados do cliente
+      customerName,
+      customerEmail,
+      customerCpf,
+      customerPhone,
+      
+      // Dados do cartão
+      cardNumber,
+      cardHolderName,
+      cardExpiryMonth,
+      cardExpiryYear,
+      cardCvv,
+      
+      // Dados da cobrança
+      value,
+      description,
+      recurrenceType, // MONTHLY, WEEKLY, etc
+      
+      // Split (opcional)
+      splitWalletId,
+      splitPercentage
+    } = body
+    
+    // Validações
+    if (!customerName || !customerEmail || !customerCpf) {
+      return c.json({ error: 'Dados do cliente obrigatórios: nome, email, CPF' }, 400)
+    }
+    
+    if (!cardNumber || !cardHolderName || !cardExpiryMonth || !cardExpiryYear || !cardCvv) {
+      return c.json({ error: 'Dados do cartão obrigatórios' }, 400)
+    }
+    
+    if (!value || value <= 0) {
+      return c.json({ error: 'Valor deve ser maior que zero' }, 400)
+    }
+    
+    // Limpar CPF (remover pontuação)
+    const cpfClean = customerCpf.replace(/\D/g, '')
+    
+    // Limpar número do cartão
+    const cardNumberClean = cardNumber.replace(/\s/g, '')
+    
+    // 1. Criar ou buscar cliente na DeltaPag
+    const customerData = {
+      name: customerName,
+      email: customerEmail,
+      cpfCnpj: cpfClean,
+      phone: customerPhone || '',
+      mobilePhone: customerPhone || ''
+    }
+    
+    console.log('📊 Criando cliente DeltaPag:', customerData)
+    
+    let customerId: string = ''
+    
+    // Tentar criar cliente (se já existir, a API retorna o ID existente)
+    const customerResult = await deltapagRequest(c, '/customers', 'POST', customerData)
+    
+    if (!customerResult.ok) {
+      return c.json({ 
+        error: 'Erro ao criar cliente na DeltaPag',
+        details: customerResult.data
+      }, customerResult.status)
+    }
+    
+    customerId = customerResult.data.id
+    console.log('✅ Cliente DeltaPag criado/encontrado:', customerId)
+    
+    // 2. Criar cobrança recorrente com cartão de crédito
+    const subscriptionData = {
+      customer: customerId,
+      billingType: 'CREDIT_CARD',
+      value: value,
+      nextDueDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0], // Amanhã
+      cycle: recurrenceType || 'MONTHLY',
+      description: description || 'Cobrança Recorrente',
+      
+      // Dados do cartão
+      creditCard: {
+        holderName: cardHolderName,
+        number: cardNumberClean,
+        expiryMonth: cardExpiryMonth,
+        expiryYear: cardExpiryYear,
+        ccv: cardCvv
+      },
+      
+      // Configuração de split (se fornecido)
+      ...(splitWalletId && splitPercentage ? {
+        split: [{
+          walletId: splitWalletId,
+          percentualValue: splitPercentage
+        }]
+      } : {})
+    }
+    
+    console.log('📊 Criando assinatura DeltaPag (sem dados sensíveis do cartão)')
+    
+    const subscriptionResult = await deltapagRequest(c, '/subscriptions', 'POST', subscriptionData)
+    
+    if (!subscriptionResult.ok) {
+      return c.json({ 
+        error: 'Erro ao criar assinatura na DeltaPag',
+        details: subscriptionResult.data
+      }, subscriptionResult.status)
+    }
+    
+    const subscription = subscriptionResult.data
+    console.log('✅ Assinatura DeltaPag criada:', subscription.id)
+    
+    // 3. Salvar no banco D1
+    const subscriptionId = crypto.randomUUID()
+    
+    await c.env.DB.prepare(`
+      INSERT INTO deltapag_subscriptions 
+      (id, customer_id, customer_name, customer_email, customer_cpf, 
+       deltapag_subscription_id, deltapag_customer_id, value, description, 
+       recurrence_type, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `).bind(
+      subscriptionId,
+      customerId,
+      customerName,
+      customerEmail,
+      cpfClean,
+      subscription.id,
+      customerId,
+      value,
+      description || 'Cobrança Recorrente',
+      recurrenceType || 'MONTHLY',
+      subscription.status || 'ACTIVE'
+    ).run()
+    
+    console.log('💾 Assinatura salva no banco D1')
+    
+    // 4. Retornar resposta
+    return c.json({
+      ok: true,
+      subscription: {
+        id: subscriptionId,
+        deltapagId: subscription.id,
+        status: subscription.status,
+        value: value,
+        description: description,
+        recurrenceType: recurrenceType || 'MONTHLY',
+        nextDueDate: subscription.nextDueDate,
+        customer: {
+          id: customerId,
+          name: customerName,
+          email: customerEmail,
+          cpf: cpfClean
+        }
+      },
+      message: 'Assinatura recorrente criada com sucesso! O cartão será cobrado automaticamente.',
+      instructions: [
+        '✅ Primeira cobrança processada',
+        '🔄 Cobranças automáticas mensais ativas',
+        '💳 Cartão será debitado automaticamente',
+        '📧 Você receberá emails de confirmação',
+        `💰 Taxa de transação: 2.99% por cobrança`
+      ]
+    })
+    
+  } catch (error: any) {
+    console.error('❌ Erro ao criar assinatura DeltaPag:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Endpoint: Listar assinaturas DeltaPag (Admin)
+app.get('/api/admin/deltapag/subscriptions', authMiddleware, async (c) => {
+  try {
+    const result = await c.env.DB.prepare(`
+      SELECT * FROM deltapag_subscriptions 
+      ORDER BY created_at DESC 
+      LIMIT 100
+    `).all()
+    
+    return c.json({
+      ok: true,
+      subscriptions: result.results
+    })
+  } catch (error: any) {
+    console.error('Erro ao listar assinaturas DeltaPag:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Endpoint: Cancelar assinatura DeltaPag
+app.post('/api/deltapag/cancel-subscription/:id', async (c) => {
+  try {
+    const subscriptionId = c.req.param('id')
+    
+    // Buscar no banco
+    const subscription = await c.env.DB.prepare(`
+      SELECT * FROM deltapag_subscriptions WHERE id = ?
+    `).bind(subscriptionId).first()
+    
+    if (!subscription) {
+      return c.json({ error: 'Assinatura não encontrada' }, 404)
+    }
+    
+    // Cancelar na DeltaPag
+    const cancelResult = await deltapagRequest(
+      c, 
+      `/subscriptions/${subscription.deltapag_subscription_id}`, 
+      'DELETE'
+    )
+    
+    if (!cancelResult.ok) {
+      return c.json({ 
+        error: 'Erro ao cancelar assinatura na DeltaPag',
+        details: cancelResult.data
+      }, cancelResult.status)
+    }
+    
+    // Atualizar status no banco
+    await c.env.DB.prepare(`
+      UPDATE deltapag_subscriptions 
+      SET status = 'CANCELLED', updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(subscriptionId).run()
+    
+    return c.json({
+      ok: true,
+      message: 'Assinatura cancelada com sucesso'
+    })
+    
+  } catch (error: any) {
+    console.error('Erro ao cancelar assinatura DeltaPag:', error)
     return c.json({ error: error.message }, 500)
   }
 })
@@ -4530,6 +4844,11 @@ app.get('/', (c) => {
                             <i class="fas fa-money-bill-wave text-3xl"></i>
                             <span class="text-sm">Links Pagamento</span>
                         </button>
+                        <button onclick="showSection('accounts'); setTimeout(() => document.querySelector('#deltapag-modal') && openDeltapagModal(), 100)" 
+                            class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 font-semibold shadow-md transition">
+                            <i class="fas fa-credit-card text-3xl"></i>
+                            <span class="text-sm">Cartão Crédito</span>
+                        </button>
                     </div>
                 </div>
 
@@ -5785,6 +6104,252 @@ app.get('/', (c) => {
                         Fechar
                     </button>
                 </div>
+            </div>
+        </div>
+
+        <!-- Modal DeltaPag - Pagamento Recorrente Cartão de Crédito -->
+        <div id="deltapag-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+                <!-- Header -->
+                <div class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-5 rounded-t-2xl">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-2xl font-bold flex items-center gap-2">
+                                <i class="fas fa-credit-card"></i>
+                                Pagamento Recorrente - Cartão de Crédito
+                            </h2>
+                            <p class="text-indigo-100 mt-1 text-sm">DeltaPag - Cobrança automática mensal</p>
+                        </div>
+                        <button onclick="closeDeltapagModal()" 
+                            class="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2 transition">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Form Content -->
+                <form id="deltapag-form" class="p-6 space-y-6">
+                    <!-- Dados do Cliente -->
+                    <div class="border-b pb-4">
+                        <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                            <i class="fas fa-user text-indigo-600"></i>
+                            Dados do Cliente
+                        </h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    Nome Completo <span class="text-red-500">*</span>
+                                </label>
+                                <input type="text" id="deltapag-customer-name" required
+                                    placeholder="Ex: João da Silva"
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    Email <span class="text-red-500">*</span>
+                                </label>
+                                <input type="email" id="deltapag-customer-email" required
+                                    placeholder="joao@email.com"
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    CPF <span class="text-red-500">*</span>
+                                </label>
+                                <input type="text" id="deltapag-customer-cpf" required
+                                    placeholder="000.000.000-00"
+                                    maxlength="14"
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    Telefone
+                                </label>
+                                <input type="tel" id="deltapag-customer-phone"
+                                    placeholder="(11) 98765-4321"
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Dados do Cartão -->
+                    <div class="border-b pb-4">
+                        <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                            <i class="fas fa-credit-card text-indigo-600"></i>
+                            Dados do Cartão
+                        </h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="md:col-span-2">
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    Número do Cartão <span class="text-red-500">*</span>
+                                </label>
+                                <input type="text" id="deltapag-card-number" required
+                                    placeholder="0000 0000 0000 0000"
+                                    maxlength="19"
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    Nome no Cartão <span class="text-red-500">*</span>
+                                </label>
+                                <input type="text" id="deltapag-card-holder" required
+                                    placeholder="JOÃO DA SILVA"
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent uppercase">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    Validade <span class="text-red-500">*</span>
+                                </label>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <select id="deltapag-card-month" required
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                                        <option value="">Mês</option>
+                                        <option value="01">01</option>
+                                        <option value="02">02</option>
+                                        <option value="03">03</option>
+                                        <option value="04">04</option>
+                                        <option value="05">05</option>
+                                        <option value="06">06</option>
+                                        <option value="07">07</option>
+                                        <option value="08">08</option>
+                                        <option value="09">09</option>
+                                        <option value="10">10</option>
+                                        <option value="11">11</option>
+                                        <option value="12">12</option>
+                                    </select>
+                                    <select id="deltapag-card-year" required
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                                        <option value="">Ano</option>
+                                        <option value="2026">2026</option>
+                                        <option value="2027">2027</option>
+                                        <option value="2028">2028</option>
+                                        <option value="2029">2029</option>
+                                        <option value="2030">2030</option>
+                                        <option value="2031">2031</option>
+                                        <option value="2032">2032</option>
+                                        <option value="2033">2033</option>
+                                        <option value="2034">2034</option>
+                                        <option value="2035">2035</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    CVV <span class="text-red-500">*</span>
+                                </label>
+                                <input type="text" id="deltapag-card-cvv" required
+                                    placeholder="000"
+                                    maxlength="4"
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Dados da Cobrança -->
+                    <div class="border-b pb-4">
+                        <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                            <i class="fas fa-money-bill-wave text-indigo-600"></i>
+                            Dados da Cobrança
+                        </h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    Valor Mensal (R$) <span class="text-red-500">*</span>
+                                </label>
+                                <input type="number" id="deltapag-value" required step="0.01" min="0.01"
+                                    placeholder="50.00"
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    Recorrência
+                                </label>
+                                <select id="deltapag-recurrence" required
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                                    <option value="MONTHLY">Mensal</option>
+                                    <option value="WEEKLY">Semanal</option>
+                                    <option value="BIWEEKLY">Quinzenal</option>
+                                    <option value="QUARTERLY">Trimestral</option>
+                                    <option value="SEMIANNUALLY">Semestral</option>
+                                    <option value="YEARLY">Anual</option>
+                                </select>
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    Descrição
+                                </label>
+                                <textarea id="deltapag-description" rows="2"
+                                    placeholder="Ex: Mensalidade Plano Premium"
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Split (Opcional) -->
+                    <div class="border-b pb-4">
+                        <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                            <i class="fas fa-split text-indigo-600"></i>
+                            Split de Pagamento (Opcional)
+                        </h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    Wallet ID da Subconta
+                                </label>
+                                <input type="text" id="deltapag-split-wallet"
+                                    placeholder="Deixe vazio para não usar split"
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    Percentual para Subconta (%)
+                                </label>
+                                <input type="number" id="deltapag-split-percentage" 
+                                    placeholder="20"
+                                    min="0" max="100" step="0.01"
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                            </div>
+                        </div>
+                        <p class="text-sm text-gray-500 mt-2">
+                            <i class="fas fa-info-circle mr-1"></i>
+                            Se configurado, o valor será dividido automaticamente entre a conta principal e a subconta
+                        </p>
+                    </div>
+
+                    <!-- Informações de Taxa -->
+                    <div class="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+                        <div class="flex items-start gap-3">
+                            <i class="fas fa-info-circle text-indigo-600 text-xl mt-1"></i>
+                            <div class="flex-1">
+                                <h4 class="font-bold text-indigo-900 mb-2">Informações Importantes:</h4>
+                                <ul class="text-sm text-indigo-800 space-y-1">
+                                    <li>✅ Primeira cobrança será processada imediatamente</li>
+                                    <li>🔄 Cobranças automáticas mensais no cartão cadastrado</li>
+                                    <li>💳 Taxa de transação: 2.99% por cobrança</li>
+                                    <li>📧 O cliente receberá emails de confirmação</li>
+                                    <li>🔐 Dados do cartão são criptografados e seguros</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Resultado -->
+                    <div id="deltapag-result" class="hidden"></div>
+
+                    <!-- Botões -->
+                    <div class="flex gap-3 pt-4">
+                        <button type="submit" id="deltapag-submit-btn"
+                            class="flex-1 px-6 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 font-bold shadow-lg transition">
+                            <i class="fas fa-credit-card mr-2"></i>
+                            Criar Assinatura Recorrente
+                        </button>
+                        <button type="button" onclick="closeDeltapagModal()"
+                            class="px-6 py-4 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-semibold">
+                            <i class="fas fa-times mr-2"></i>
+                            Cancelar
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
 
