@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "include": ["/*"],
+  "exclude": [
+    "/static/*",
+    "/favicon.svg",
+    "/favicon.ico",
+    "/seed-test.html",
+    "/subscription-signup.html"
+  ]
+}
