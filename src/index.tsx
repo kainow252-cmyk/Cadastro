@@ -926,6 +926,91 @@ app.get('/api/debug/env', async (c) => {
 })
 
 // Endpoint para inicializar tabelas do banco D1 (executar uma vez)
+// Endpoint temporário para migrar tabela deltapag_subscriptions
+app.post('/api/admin/migrate-deltapag', async (c) => {
+  try {
+    const db = c.env.DB
+    
+    // Fazer backup dos dados existentes
+    const existingData = await db.prepare(`SELECT * FROM deltapag_subscriptions`).all()
+    console.log(`📊 Backup: ${existingData.results?.length || 0} assinaturas existentes`)
+    
+    // Drop tabela antiga
+    await db.prepare(`DROP TABLE IF EXISTS deltapag_subscriptions`).run()
+    console.log('🗑️ Tabela antiga removida')
+    
+    // Criar tabela nova com colunas de cartão
+    await db.prepare(`
+      CREATE TABLE deltapag_subscriptions (
+        id TEXT PRIMARY KEY,
+        customer_id TEXT NOT NULL,
+        customer_name TEXT NOT NULL,
+        customer_email TEXT NOT NULL,
+        customer_cpf TEXT NOT NULL,
+        customer_phone TEXT,
+        deltapag_subscription_id TEXT NOT NULL,
+        deltapag_customer_id TEXT NOT NULL,
+        value REAL NOT NULL,
+        description TEXT,
+        recurrence_type TEXT DEFAULT 'MONTHLY',
+        status TEXT DEFAULT 'ACTIVE',
+        next_due_date TEXT,
+        card_last4 TEXT,
+        card_brand TEXT,
+        card_expiry_month TEXT,
+        card_expiry_year TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `).run()
+    console.log('✅ Nova tabela criada com colunas de cartão')
+    
+    // Recriar índices
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_deltapag_subs_customer ON deltapag_subscriptions(customer_id)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_deltapag_subs_status ON deltapag_subscriptions(status)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_deltapag_subs_deltapag_id ON deltapag_subscriptions(deltapag_subscription_id)`).run()
+    console.log('✅ Índices recriados')
+    
+    // Restaurar dados (sem os campos de cartão)
+    if (existingData.results && existingData.results.length > 0) {
+      for (const sub of existingData.results) {
+        await db.prepare(`
+          INSERT INTO deltapag_subscriptions 
+          (id, customer_id, customer_name, customer_email, customer_cpf, 
+           deltapag_subscription_id, deltapag_customer_id, value, description, 
+           recurrence_type, status, next_due_date, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          sub.id,
+          sub.customer_id,
+          sub.customer_name,
+          sub.customer_email,
+          sub.customer_cpf,
+          sub.deltapag_subscription_id,
+          sub.deltapag_customer_id,
+          sub.value,
+          sub.description,
+          sub.recurrence_type,
+          sub.status,
+          sub.next_due_date,
+          sub.created_at,
+          sub.updated_at
+        ).run()
+      }
+      console.log(`✅ ${existingData.results.length} assinaturas restauradas`)
+    }
+    
+    return c.json({
+      ok: true,
+      message: 'Tabela migrada com sucesso!',
+      restored: existingData.results?.length || 0
+    })
+  } catch (error: any) {
+    console.error('❌ Erro na migração:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 app.post('/api/admin/init-db', async (c) => {
   try {
     const db = c.env.DB
