@@ -819,5 +819,44 @@ function generateQRCodeHTML(linkUrl, description, value, recurrence, qrDataURL) 
 </div>`;
 }
 
+// ==========================================
+// SINCRONIZAR DADOS DE CARTÃO DA API DELTAPAG
+// ==========================================
+
+async function syncDeltapagCards() {
+    if (!confirm('Deseja sincronizar os dados de cartão das assinaturas com a API DeltaPag?\n\nIsso pode levar alguns segundos.')) {
+        return;
+    }
+    
+    const btn = event.target.closest('button');
+    const originalHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Sincronizando...';
+    
+    try {
+        const response = await axios.post('/api/admin/sync-deltapag-cards');
+        
+        if (response.data.ok) {
+            alert(
+                `✅ Sincronização concluída!\n\n` +
+                `• ${response.data.updated} assinaturas atualizadas\n` +
+                `• ${response.data.total} assinaturas verificadas\n` +
+                (response.data.errors ? `\n⚠️ Erros:\n${response.data.errors.join('\n')}` : '')
+            );
+            
+            // Recarregar lista
+            loadDeltapagSubscriptions();
+        } else {
+            alert('❌ Erro: ' + response.data.error);
+        }
+    } catch (error) {
+        console.error('Erro ao sincronizar:', error);
+        alert('❌ Erro ao sincronizar dados de cartão:\n' + (error.response?.data?.error || error.message));
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalHTML;
+    }
+}
+
 // Log de carregamento
 console.log('✅ DeltaPag Section JS carregado');

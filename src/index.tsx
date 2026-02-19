@@ -926,6 +926,97 @@ app.get('/api/debug/env', async (c) => {
 })
 
 // Endpoint para inicializar tabelas do banco D1 (executar uma vez)
+// Sincronizar dados de cartão da API DeltaPag
+app.post('/api/admin/sync-deltapag-cards', authMiddleware, async (c) => {
+  try {
+    // Buscar todas as assinaturas do banco local
+    const localSubs = await c.env.DB.prepare(`
+      SELECT * FROM deltapag_subscriptions 
+      WHERE card_last4 IS NULL OR card_last4 = ''
+    `).all()
+    
+    console.log(`📊 ${localSubs.results?.length || 0} assinaturas sem dados de cartão`)
+    
+    if (!localSubs.results || localSubs.results.length === 0) {
+      return c.json({ 
+        ok: true, 
+        message: 'Todas as assinaturas já possuem dados de cartão',
+        updated: 0
+      })
+    }
+    
+    let updated = 0
+    const errors: string[] = []
+    
+    // Para cada assinatura, buscar dados na API DeltaPag
+    for (const sub of localSubs.results) {
+      try {
+        // Buscar assinatura na API DeltaPag
+        const deltapagSub = await deltapagRequest(
+          c, 
+          `/subscriptions/${sub.deltapag_subscription_id}`, 
+          'GET'
+        )
+        
+        if (!deltapagSub.ok) {
+          console.error(`❌ Erro ao buscar assinatura ${sub.deltapag_subscription_id}:`, deltapagSub.data)
+          errors.push(`${sub.customer_name}: ${deltapagSub.data.message || 'Erro desconhecido'}`)
+          continue
+        }
+        
+        const apiSub = deltapagSub.data
+        
+        // Extrair dados do cartão da resposta da API
+        let cardLast4 = null
+        let cardBrand = null
+        
+        // DeltaPag retorna creditCard nos dados da assinatura
+        if (apiSub.creditCard) {
+          cardLast4 = apiSub.creditCard.creditCardNumber?.slice(-4) || null
+          cardBrand = apiSub.creditCard.creditCardBrand || 'Unknown'
+        } else if (apiSub.creditCardNumber) {
+          // Algumas APIs retornam diretamente
+          cardLast4 = apiSub.creditCardNumber.slice(-4)
+          cardBrand = apiSub.creditCardBrand || 'Unknown'
+        }
+        
+        if (cardLast4) {
+          // Atualizar banco local
+          await c.env.DB.prepare(`
+            UPDATE deltapag_subscriptions 
+            SET card_last4 = ?, 
+                card_brand = ?,
+                updated_at = datetime('now')
+            WHERE id = ?
+          `).bind(cardLast4, cardBrand, sub.id).run()
+          
+          updated++
+          console.log(`✅ ${sub.customer_name}: ${cardBrand} •••• ${cardLast4}`)
+        } else {
+          console.log(`⚠️ ${sub.customer_name}: Sem dados de cartão na API`)
+          errors.push(`${sub.customer_name}: Sem dados de cartão na API DeltaPag`)
+        }
+        
+      } catch (error: any) {
+        console.error(`❌ Erro ao processar ${sub.customer_name}:`, error)
+        errors.push(`${sub.customer_name}: ${error.message}`)
+      }
+    }
+    
+    return c.json({
+      ok: true,
+      message: `${updated} assinaturas atualizadas com dados de cartão`,
+      updated,
+      total: localSubs.results.length,
+      errors: errors.length > 0 ? errors : undefined
+    })
+    
+  } catch (error: any) {
+    console.error('❌ Erro na sincronização:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 // Endpoint temporário para migrar tabela deltapag_subscriptions
 app.post('/api/admin/migrate-deltapag', async (c) => {
   try {
@@ -6641,6 +6732,10 @@ app.get('/', (c) => {
                             class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold">
                             <i class="fas fa-sync-alt mr-2"></i>Atualizar
                         </button>
+                        <button onclick="syncDeltapagCards()" 
+                            class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-semibold">
+                            <i class="fas fa-credit-card mr-2"></i>Sincronizar Cartões
+                        </button>
                         <button onclick="exportDeltapagToExcel()" 
                             class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold">
                             <i class="fas fa-file-excel mr-2"></i>Exportar Excel
@@ -7662,7 +7757,7 @@ app.get('/', (c) => {
         <script src="/static/app.js?v=5.0"></script>
         <script src="/static/payment-links.js?v=4.2"></script>
         <script src="/static/payment-filters.js?v=4.2"></script>
-        <script src="/static/deltapag-section.js?v=3.3"></script>
+        <script src="/static/deltapag-section.js?v=3.4"></script>
     </body>
     </html>
   `)
