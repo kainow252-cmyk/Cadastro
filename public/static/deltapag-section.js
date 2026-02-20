@@ -776,7 +776,20 @@ function closeQRCodeModal() {
 }
 
 function downloadQRCode() {
+    // Verificar se há dados do QR Code
+    if (!currentQRData) {
+        console.error('❌ Nenhum QR Code carregado');
+        alert('Erro: Nenhum QR Code carregado. Por favor, abra o QR Code primeiro.');
+        return;
+    }
+    
     const canvas = document.getElementById('qrcode-canvas');
+    if (!canvas) {
+        console.error('❌ Canvas do QR Code não encontrado');
+        alert('Erro: Canvas do QR Code não encontrado.');
+        return;
+    }
+    
     const link = document.createElement('a');
     const filename = `qrcode-${currentQRData.description.toLowerCase().replace(/\s+/g, '-')}.png`;
     
@@ -784,18 +797,22 @@ function downloadQRCode() {
     link.href = canvas.toDataURL('image/png');
     link.click();
     
+    console.log('✅ QR Code baixado:', filename);
+    
     // Feedback visual
     const btn = event.target.closest('button');
-    const originalHTML = btn.innerHTML;
-    btn.innerHTML = '<i class="fas fa-check"></i> Baixado!';
-    btn.classList.add('bg-green-600');
-    btn.classList.remove('bg-purple-600');
-    
-    setTimeout(() => {
-        btn.innerHTML = originalHTML;
-        btn.classList.remove('bg-green-600');
-        btn.classList.add('bg-purple-600');
-    }, 2000);
+    if (btn) {
+        const originalHTML = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-check"></i> Baixado!';
+        btn.classList.add('bg-green-600');
+        btn.classList.remove('bg-purple-600');
+        
+        setTimeout(() => {
+            btn.innerHTML = originalHTML;
+            btn.classList.remove('bg-green-600');
+            btn.classList.add('bg-purple-600');
+        }, 2000);
+    }
 }
 
 function copyQRCodeHTML() {
