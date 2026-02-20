@@ -1332,6 +1332,47 @@ app.get('/api/admin/test-deltapag-config', authMiddleware, async (c) => {
   }
 })
 
+// Endpoint de teste para criar um cliente de teste na DeltaPag
+app.post('/api/admin/test-deltapag-api', authMiddleware, async (c) => {
+  try {
+    console.log('🧪 Testando API DeltaPag...')
+    
+    if (!c.env.DELTAPAG_API_KEY) {
+      return c.json({ ok: false, error: 'DELTAPAG_API_KEY não configurada' }, 400)
+    }
+    
+    // Dados de cliente de teste
+    const testCustomer = {
+      name: 'Cliente Teste API',
+      email: 'teste-api-' + Date.now() + '@example.com',
+      cpf: '12345678901',
+      mobilePhone: '11999999999'
+    }
+    
+    console.log('📤 Enviando para DeltaPag:', testCustomer)
+    
+    // Tentar criar cliente
+    const result = await deltapagRequest(c, '/customers', 'POST', testCustomer)
+    
+    console.log('📥 Resposta DeltaPag:', result)
+    
+    return c.json({
+      ok: result.ok,
+      statusCode: result.status,
+      response: result.data,
+      testData: testCustomer
+    })
+    
+  } catch (error: any) {
+    console.error('❌ Erro ao testar API DeltaPag:', error)
+    return c.json({ 
+      ok: false, 
+      error: error.message,
+      stack: error.stack 
+    }, 500)
+  }
+})
+
 // Criar transações de evidência para DeltaPag (sandbox)
 app.post('/api/admin/create-evidence-transactions', authMiddleware, async (c) => {
   try {
