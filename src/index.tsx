@@ -1677,10 +1677,14 @@ app.post('/api/admin/create-evidence-customers', authMiddleware, async (c) => {
     // Dados de 5 transações de teste para evidência
     // USANDO CARTÕES DE TESTE OFICIAIS DO DELTAPAG SANDBOX
     // CPFs VÁLIDOS (gerados com algoritmo correto de dígitos verificadores)
+    
+    // Gerar timestamp único para evitar duplicação de emails
+    const timestamp = Date.now()
+    
     const evidenceTransactions = [
       {
         customer_name: 'João Silva Santos',
-        customer_email: 'joao.silva@evidencia.com',
+        customer_email: `joao.silva+${timestamp}@evidencia.com`,
         customer_cpf: '783.686.313-19',  // CPF válido (gerado com algoritmo)
         customer_phone: '(11) 98765-4321',
         value: 149.90,
@@ -1693,7 +1697,7 @@ app.post('/api/admin/create-evidence-customers', authMiddleware, async (c) => {
       },
       {
         customer_name: 'Maria Oliveira Costa',
-        customer_email: 'maria.oliveira@evidencia.com',
+        customer_email: `maria.oliveira+${timestamp}@evidencia.com`,
         customer_cpf: '892.162.429-57',  // CPF válido (gerado com algoritmo)
         customer_phone: '(21) 97654-3210',
         value: 249.90,
@@ -1706,7 +1710,7 @@ app.post('/api/admin/create-evidence-customers', authMiddleware, async (c) => {
       },
       {
         customer_name: 'Pedro Henrique Lima',
-        customer_email: 'pedro.lima@evidencia.com',
+        customer_email: `pedro.lima+${timestamp}@evidencia.com`,
         customer_cpf: '512.662.546-25',  // CPF válido (gerado com algoritmo)
         customer_phone: '(31) 96543-2109',
         value: 399.90,
@@ -1719,7 +1723,7 @@ app.post('/api/admin/create-evidence-customers', authMiddleware, async (c) => {
       },
       {
         customer_name: 'Ana Paula Rodrigues',
-        customer_email: 'ana.rodrigues@evidencia.com',
+        customer_email: `ana.rodrigues+${timestamp}@evidencia.com`,
         customer_cpf: '657.078.015-88',  // CPF válido (gerado com algoritmo)
         customer_phone: '(41) 95432-1098',
         value: 599.90,
@@ -1732,7 +1736,7 @@ app.post('/api/admin/create-evidence-customers', authMiddleware, async (c) => {
       },
       {
         customer_name: 'Carlos Eduardo Almeida',
-        customer_email: 'carlos.almeida@evidencia.com',
+        customer_email: `carlos.almeida+${timestamp}@evidencia.com`,
         customer_cpf: '047.862.824-21',  // CPF válido (gerado com algoritmo)
         customer_phone: '(51) 94321-0987',
         value: 899.90,
