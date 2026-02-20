@@ -404,7 +404,7 @@ function createNetSplit(walletId: string, totalValue: number, percentage: number
   
   return [{
     walletId: walletId,
-    totalFixedValue: fixedValue // Garante que a sub-conta recebe este valor LÍQUIDO
+    fixedValue: fixedValue // Usar fixedValue em vez de totalFixedValue
   }]
 }
 
