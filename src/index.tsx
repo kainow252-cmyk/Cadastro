@@ -7849,17 +7849,9 @@ app.get('/', (c) => {
                             class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold">
                             <i class="fas fa-sync-alt mr-2"></i>Atualizar
                         </button>
-                        <button onclick="createTestSubscriptions()" 
-                            class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold">
-                            <i class="fas fa-plus-circle mr-2"></i>+10 Testes
-                        </button>
                         <button onclick="createEvidenceTransactions()" 
                             class="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-semibold">
                             <i class="fas fa-receipt mr-2"></i>Criar Evidências
-                        </button>
-                        <button onclick="syncDeltapagCards()" 
-                            class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-semibold">
-                            <i class="fas fa-credit-card mr-2"></i>Sincronizar Cartões
                         </button>
                         <button onclick="exportDeltapagToExcel()" 
                             class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold">
