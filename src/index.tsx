@@ -1853,22 +1853,21 @@ app.post('/api/admin/create-evidence-customers', authMiddleware, async (c) => {
         
         console.log(`✅ Cliente DeltaPag criado: ${customerId}`)
         
-        // 2. Tentar criar ASSINATURA RECORRENTE (subscription) com cartão de teste
-        // (OPCIONAL - não bloquear se falhar por falta de permissão)
-        let subscriptionDeltaPagId = null
+        // 2. Criar COBRANÇA/PAGAMENTO (payment) para aparecer como "Última transação" no painel
+        let paymentId = null
         try {
-          console.log(`💳 Tentando criar ASSINATURA recorrente para ${tx.customer_name}...`)
+          console.log(`💳 Criando cobrança de evidência para ${tx.customer_name}...`)
           
-          const nextDueDate = new Date()
-          nextDueDate.setDate(nextDueDate.getDate() + 1)
+          const dueDate = new Date()
+          dueDate.setDate(dueDate.getDate() + 7) // Vencimento em 7 dias
           
-          const subscriptionData = {
+          const paymentData = {
             customer: customerId,
             billingType: 'CREDIT_CARD',
             value: tx.value,
-            nextDueDate: nextDueDate.toISOString().split('T')[0],
-            cycle: tx.recurrence_type,  // MONTHLY ou YEARLY
+            dueDate: dueDate.toISOString().split('T')[0],
             description: tx.description,
+            externalReference: `evidence_${Date.now()}_${customerId}`,
             creditCard: {
               holderName: tx.customer_name,
               number: tx.card_number,
@@ -1879,38 +1878,38 @@ app.post('/api/admin/create-evidence-customers', authMiddleware, async (c) => {
             creditCardHolderInfo: {
               name: tx.customer_name,
               email: tx.customer_email,
-              cpfCnpj: tx.customer_cpf.replace(/\D/g, ''),
+              cpfCnpj: cpfClean,
               postalCode: '01310100',
               addressNumber: '1000',
-              phone: tx.customer_phone.replace(/\D/g, '')
+              addressComplement: '',
+              phone: tx.customer_phone.replace(/\D/g, ''),
+              mobilePhone: tx.customer_phone.replace(/\D/g, '')
             }
           }
           
-          console.log('📤 Enviando assinatura DeltaPag:', subscriptionData)
-          const subscriptionResult = await deltapagRequest(c, '/subscriptions', 'POST', subscriptionData)
+          console.log('📤 Enviando cobrança DeltaPag:', JSON.stringify(paymentData, null, 2))
+          const paymentResult = await deltapagRequest(c, '/payments', 'POST', paymentData)
           
-          console.log('📥 Status assinatura:', subscriptionResult.status)
-          console.log('📥 Resposta:', subscriptionResult.data)
+          console.log('📥 Status cobrança:', paymentResult.status)
+          console.log('📥 Resposta completa:', JSON.stringify(paymentResult.data, null, 2))
           
-          if (subscriptionResult.ok || subscriptionResult.status === 201) {
-            // Tentar extrair ID da assinatura (body ou header)
-            subscriptionDeltaPagId = subscriptionResult.data?.id 
-              || subscriptionResult.headers.get('content-id')
-              || `sub_${customerId}_${Date.now()}`
-            
-            console.log('✅ ASSINATURA DeltaPag criada! ID:', subscriptionDeltaPagId)
-            console.log('✅ Agora o painel deve mostrar Documento e Última transação!')
+          if (paymentResult.ok && paymentResult.data) {
+            paymentId = paymentResult.data.id || paymentResult.headers.get('content-id')
+            console.log('✅ COBRANÇA DeltaPag criada! ID:', paymentId)
+            console.log('✅ Status:', paymentResult.data.status)
+            console.log('✅ Agora deve aparecer em "Última transação" no painel!')
           } else {
-            console.log('⚠️ Não foi possível criar assinatura (código:', subscriptionResult.status, ')')
-            console.log('⚠️ Resposta:', subscriptionResult.data)
-            console.log('ℹ️ Cliente foi criado, mas sem assinatura recorrente')
+            console.log('⚠️ Falha ao criar cobrança (código:', paymentResult.status, ')')
+            console.log('⚠️ Resposta:', JSON.stringify(paymentResult.data, null, 2))
+            console.log('ℹ️ Cliente foi criado, mas sem cobrança de evidência')
           }
-        } catch (subscriptionError: any) {
-          console.log('⚠️ Erro ao criar assinatura (token sem permissão?):', subscriptionError.message)
+        } catch (paymentError: any) {
+          console.log('⚠️ Erro ao criar cobrança:', paymentError.message)
+          console.log('⚠️ Stack:', paymentError.stack)
           console.log('ℹ️ Continuando - cliente foi criado com sucesso')
         }
         
-        // 3. Salvar cliente no banco D1 como evidência (SEM assinatura por enquanto)
+        // 3. Salvar cliente no banco D1 como evidência
         const localSubscriptionId = crypto.randomUUID()
         const cardLast4 = tx.card_number.slice(-4)
         const nextDueDate = new Date()
@@ -1918,9 +1917,9 @@ app.post('/api/admin/create-evidence-customers', authMiddleware, async (c) => {
         
         console.log(`💾 Salvando cliente no banco D1 como evidência...`)
         
-        // Usar ID real da assinatura se criada, ou gerar ID de evidência
+        // Usar ID real do pagamento se criado, ou gerar ID de evidência
         const timestamp = Date.now()
-        const subscriptionId = subscriptionDeltaPagId || `evidence_${timestamp}_${customerId}`
+        const subscriptionId = paymentId || `evidence_${timestamp}_${customerId}`
         
         await db.prepare(`
           INSERT INTO deltapag_subscriptions 
