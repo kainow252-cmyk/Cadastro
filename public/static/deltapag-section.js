@@ -775,7 +775,7 @@ function closeQRCodeModal() {
     currentQRData = null;
 }
 
-function downloadQRCode() {
+function downloadQRCodeFromCanvas() {
     // Verificar se há dados do QR Code
     if (!currentQRData) {
         console.error('❌ Nenhum QR Code carregado');

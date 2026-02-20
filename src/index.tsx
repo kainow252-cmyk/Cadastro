@@ -8278,7 +8278,7 @@ app.get('/', (c) => {
                                     <i class="fab fa-telegram text-xl"></i>
                                     Telegram
                                 </button>
-                                <button onclick="downloadQRCode()" 
+                                <button onclick="downloadQRCodeFromCanvas()" 
                                     class="w-full px-4 py-3 bg-purple-500 text-white rounded-lg hover:bg-purple-600 font-semibold flex items-center justify-center gap-2">
                                     <i class="fas fa-download text-xl"></i>
                                     Baixar QR Code
@@ -9045,7 +9045,7 @@ app.get('/', (c) => {
                     <!-- Actions -->
                     <div class="space-y-3">
                         <!-- Baixar PNG -->
-                        <button onclick="downloadQRCode()" 
+                        <button onclick="downloadQRCodeFromCanvas()" 
                             class="w-full px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-semibold flex items-center justify-center gap-2">
                             <i class="fas fa-download"></i>
                             Baixar QR Code (PNG)
