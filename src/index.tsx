@@ -1557,14 +1557,33 @@ app.post('/api/admin/create-evidence-transactions', authMiddleware, async (c) =>
         
         // Se status 201 com resposta vazia, extrair ID do header Location
         let customerId = customerResult.data.id
+        console.log('🔍 Customer ID no body:', customerId)
+        console.log('🔍 Status da resposta:', customerResult.status)
         
         if (!customerId && customerResult.status === 201) {
-          const locationHeader = customerResult.headers.get('location')
-          console.log('📍 Location header:', locationHeader)
+          console.log('⚠️ Status 201 mas sem ID no body, tentando Location header...')
+          
+          // Listar TODOS os headers disponíveis
+          console.log('📋 Headers disponíveis:')
+          const allHeaders: string[] = []
+          customerResult.headers.forEach((value, key) => {
+            console.log(`  ${key}: ${value}`)
+            allHeaders.push(key)
+          })
+          console.log('📋 Lista de chaves:', allHeaders.join(', '))
+          
+          // Tentar várias variações do header Location
+          const locationHeader = customerResult.headers.get('location') 
+            || customerResult.headers.get('Location')
+            || customerResult.headers.get('LOCATION')
+          
+          console.log('📍 Location header encontrado:', locationHeader)
           
           if (locationHeader) {
             // Extrair ID da URL: /api/v2/customers/123 -> 123
             const match = locationHeader.match(/\/customers\/([^\/]+)$/)
+            console.log('🔍 Regex match result:', match)
+            
             if (match) {
               customerId = match[1]
               console.log(`📍 Customer ID extraído do Location: ${customerId}`)
@@ -1577,11 +1596,18 @@ app.post('/api/admin/create-evidence-transactions', authMiddleware, async (c) =>
                 customerId = customerDetailsResult.data.id
                 console.log(`✅ Dados completos obtidos: ${customerId}`)
               }
+            } else {
+              console.error('❌ Regex não encontrou match no Location header:', locationHeader)
             }
+          } else {
+            console.error('❌ Nenhuma variação do header Location foi encontrada')
           }
         }
         
         if (!customerId) {
+          console.error('❌ ERRO: Não conseguiu obter customerId')
+          console.error('❌ Body da resposta:', JSON.stringify(customerResult.data, null, 2))
+          console.error('❌ Status:', customerResult.status)
           throw new Error('Não foi possível obter o ID do cliente criado (nem no body nem no Location header)')
         }
         
@@ -3784,6 +3810,12 @@ async function deltapagRequest(c: any, endpoint: string, method: string, data?: 
     }
     
     console.log(`📥 DeltaPag Response Parsed [${response.status}]:`, JSON.stringify(responseData, null, 2))
+    
+    // Log ALL headers
+    console.log('📋 Todos os headers da resposta:')
+    response.headers.forEach((value, key) => {
+      console.log(`  ${key}: ${value}`)
+    })
     
     return {
       ok: response.ok,
