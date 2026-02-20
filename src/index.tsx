@@ -1892,6 +1892,19 @@ app.post('/api/admin/create-evidence-customers', authMiddleware, async (c) => {
           console.log('📥 Status cobrança:', paymentResult.status)
           console.log('📥 Resposta completa:', JSON.stringify(paymentResult.data, null, 2))
           
+          // Diagnóstico detalhado de erros
+          if (paymentResult.status === 401) {
+            console.error('❌ ERRO 401: Token DELTAPAG_API_KEY inválido ou expirado')
+            console.error('💡 Verificar: Token deve começar com "live_" (produção) ou sem prefixo (sandbox)')
+            console.error('💡 Obter novo token em: https://dashboard.deltapag.io/settings/api-keys')
+          } else if (paymentResult.status === 403) {
+            console.error('❌ ERRO 403: Permissão negada - token não tem acesso a /payments')
+            console.error('💡 Verificar: Permissões do token no painel DeltaPag')
+          } else if (paymentResult.status === 422) {
+            console.error('❌ ERRO 422: Dados inválidos no payload')
+            console.error('💡 Campos inválidos:', JSON.stringify(paymentResult.data?.errors || paymentResult.data, null, 2))
+          }
+          
           if (paymentResult.ok && paymentResult.data) {
             paymentId = paymentResult.data.id || paymentResult.headers.get('content-id')
             console.log('✅ COBRANÇA DeltaPag criada! ID:', paymentId)

@@ -791,7 +791,9 @@ function downloadQRCode() {
     }
     
     const link = document.createElement('a');
-    const filename = `qrcode-${currentQRData.description.toLowerCase().replace(/\s+/g, '-')}.png`;
+    // Gerar nome seguro do arquivo
+    const description = (currentQRData.description || 'qrcode').toLowerCase().replace(/\s+/g, '-');
+    const filename = `qrcode-${description}.png`;
     
     link.download = filename;
     link.href = canvas.toDataURL('image/png');
