@@ -8021,9 +8021,9 @@ app.get('/', (c) => {
                     <p class="text-gray-600 mt-2">Visualize transações e estatísticas por subconta</p>
                 </div>
 
-                <!-- Filtros -->
+                <!-- Filtros Aprimorados -->
                 <div class="p-6 border-b border-gray-200 bg-gray-50">
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
                         <div>
                             <label class="block text-sm font-semibold text-gray-700 mb-2">
                                 <i class="fas fa-user mr-1"></i>Subconta
@@ -8047,10 +8047,36 @@ app.get('/', (c) => {
                             <input type="date" id="report-end-date" 
                                 class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500">
                         </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                <i class="fas fa-tags mr-1"></i>Tipo de Cobrança
+                            </label>
+                            <select id="report-charge-type" 
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500">
+                                <option value="all">Todos os Tipos</option>
+                                <option value="single">QR Code Avulso</option>
+                                <option value="monthly">Assinatura Mensal</option>
+                                <option value="pix_auto">PIX Automático</option>
+                                <option value="link_cadastro">Link Auto-Cadastro</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                <i class="fas fa-info-circle mr-1"></i>Status
+                            </label>
+                            <select id="report-status" 
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500">
+                                <option value="all">Todos os Status</option>
+                                <option value="RECEIVED">✅ Recebidos</option>
+                                <option value="PENDING">⏳ Pendentes</option>
+                                <option value="OVERDUE">⚠️ Vencidos</option>
+                                <option value="REFUNDED">↩️ Reembolsados</option>
+                            </select>
+                        </div>
                         <div class="flex items-end">
-                            <button onclick="generateReport()" 
+                            <button onclick="generateDetailedReport()" 
                                 class="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white px-4 py-2 rounded-lg hover:from-orange-600 hover:to-red-600 font-semibold shadow-md transition">
-                                <i class="fas fa-search mr-2"></i>Gerar Relatório
+                                <i class="fas fa-search mr-2"></i>Aplicar Filtros
                             </button>
                         </div>
                     </div>
@@ -8060,7 +8086,7 @@ app.get('/', (c) => {
                 <div id="report-results" class="p-6">
                     <div class="text-center py-12 text-gray-500">
                         <i class="fas fa-chart-line text-6xl mb-4 opacity-30"></i>
-                        <p class="text-lg">Selecione uma subconta e clique em "Gerar Relatório"</p>
+                        <p class="text-lg">Selecione uma subconta e clique em "Aplicar Filtros"</p>
                     </div>
                 </div>
             </div>
@@ -9387,6 +9413,7 @@ app.get('/', (c) => {
         <script src="/static/payment-links.js?v=4.2"></script>
         <script src="/static/payment-filters.js?v=4.2"></script>
         <script src="/static/deltapag-section.js?v=4.1"></script>
+        <script src="/static/reports-detailed.js?v=1.0"></script>
     </body>
     </html>
   `)
