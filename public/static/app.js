@@ -2205,17 +2205,7 @@ function displayAccounts(accounts) {
         // Seção de PIX (só para aprovados)
         const pixSection = hasWallet ? `
             <div class="mt-4">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <button onclick="togglePixForm('${account.id}', '${account.walletId}')" 
-                        id="btn-toggle-${account.id}"
-                        class="px-4 py-3 bg-gradient-to-r from-green-500 to-blue-500 text-white rounded-lg hover:from-green-600 hover:to-blue-600 font-semibold shadow-md transition">
-                        <i class="fas fa-qrcode mr-2"></i>QR Code Avulso
-                    </button>
-                    <button onclick="toggleSubscriptionForm('${account.id}', '${account.walletId}')" 
-                        id="btn-subscription-${account.id}"
-                        class="px-4 py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:from-purple-600 hover:to-pink-600 font-semibold shadow-md transition">
-                        <i class="fas fa-calendar-check mr-2"></i>Assinatura Mensal
-                    </button>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <button onclick="toggleAutomaticForm('${account.id}', '${account.walletId}')" 
                         id="btn-automatic-${account.id}"
                         class="px-4 py-3 bg-gradient-to-r from-indigo-500 to-cyan-500 text-white rounded-lg hover:from-indigo-600 hover:to-cyan-600 font-semibold shadow-md transition">
