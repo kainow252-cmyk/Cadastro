@@ -1750,20 +1750,12 @@ app.post('/api/admin/create-evidence-customers', authMiddleware, async (c) => {
       try {
         console.log(`\n🔄 Criando transação para ${tx.customer_name}...`)
         
-        // 1. Criar ou buscar cliente na API DeltaPag (com dados completos para aparecer no painel)
+        // 1. Criar cliente na API DeltaPag (apenas campos básicos - endereço será adicionado no charge)
         const customerData = {
           name: tx.customer_name,
           email: tx.customer_email,
           cpf: tx.customer_cpf.replace(/\D/g, ''),
-          mobilePhone: tx.customer_phone.replace(/\D/g, ''),
-          // Adicionar endereço para aparecer "Documento" e "Última transação" no painel
-          address: 'Av. Paulista',
-          addressNumber: '1000',
-          complement: 'Sala 101',
-          province: 'Bela Vista',
-          postalCode: '01310100',
-          city: 'São Paulo',
-          state: 'SP'
+          mobilePhone: tx.customer_phone.replace(/\D/g, '')
         }
         
         console.log('📤 Criando cliente:', customerData)
