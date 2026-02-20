@@ -3558,6 +3558,9 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
     const walletId = link.wallet_id as string
     const value = link.value as number
     const description = link.description as string
+    const chargeType = (link.charge_type as string) || 'monthly' // 'single' ou 'monthly'
+    
+    console.log('📝 Link Info:', { linkId, walletId, value, description, chargeType })
     
     // 1. Buscar ou criar customer
     const searchResult = await asaasRequest(c, `/customers?cpfCnpj=${customerCpf}`)
@@ -3584,59 +3587,101 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
       customerId = createResult.data.id
     }
     
-    // 2. Criar assinatura mensal com split
-    console.log('📝 Dados do link:', { linkId, walletId, value, description })
+    // 2. Criar pagamento único OU assinatura mensal dependendo do chargeType
     console.log('👤 Customer criado:', customerId)
     
-    const subscriptionData = {
-      customer: customerId,
-      billingType: 'PIX',
-      value: value,
-      nextDueDate: new Date(Date.now() + 24*60*60*1000).toISOString().split('T')[0],
-      cycle: 'MONTHLY',
-      description: description,
-      split: createNetSplit(walletId, value, 20) // Sub-conta recebe 20% LÍQUIDO (após taxas)
-    }
+    let firstPayment: any
+    let subscription: any = null
     
-    console.log('📤 Criando assinatura:', JSON.stringify(subscriptionData, null, 2))
-    
-    const subscriptionResult = await asaasRequest(c, '/subscriptions', 'POST', subscriptionData)
-    
-    console.log('📥 Resposta Asaas:', {
-      ok: subscriptionResult.ok,
-      status: subscriptionResult.status,
-      data: subscriptionResult.data
-    })
-    
-    if (!subscriptionResult.ok) {
-      console.error('❌ Erro ao criar assinatura:', subscriptionResult.data)
-      return c.json({ 
-        error: 'Erro ao criar assinatura',
-        details: subscriptionResult.data,
-        walletId: walletId,
-        value: value
-      }, 400)
-    }
-    
-    const subscription = subscriptionResult.data
-    
-    // 3. Buscar primeiro pagamento
-    const paymentsResult = await asaasRequest(c, `/payments?subscription=${subscription.id}`)
-    
-    if (!paymentsResult.ok || !paymentsResult.data?.data?.[0]) {
-      return c.json({
-        ok: true,
-        subscription: {
-          id: subscription.id,
-          status: subscription.status,
-          value: subscription.value,
-          nextDueDate: subscription.nextDueDate
-        },
-        warning: 'Assinatura criada, aguardando primeiro pagamento'
+    if (chargeType === 'single') {
+      // 2A. COBRANÇA ÚNICA: Criar apenas um pagamento PIX
+      console.log('💰 Criando cobrança única (pagamento PIX)...')
+      
+      const paymentData = {
+        customer: customerId,
+        billingType: 'PIX',
+        value: value,
+        dueDate: new Date(Date.now() + 7*24*60*60*1000).toISOString().split('T')[0], // 7 dias
+        description: description || 'Pagamento Único',
+        split: createNetSplit(walletId, value, 20)
+      }
+      
+      console.log('📤 Criando pagamento:', JSON.stringify(paymentData, null, 2))
+      
+      const paymentResult = await asaasRequest(c, '/payments', 'POST', paymentData)
+      
+      console.log('📥 Resposta Asaas:', {
+        ok: paymentResult.ok,
+        status: paymentResult.status,
+        data: paymentResult.data
       })
+      
+      if (!paymentResult.ok) {
+        console.error('❌ Erro ao criar pagamento:', paymentResult.data)
+        return c.json({ 
+          error: 'Erro ao criar pagamento',
+          details: paymentResult.data,
+          walletId: walletId,
+          value: value
+        }, 400)
+      }
+      
+      firstPayment = paymentResult.data
+      
+    } else {
+      // 2B. ASSINATURA MENSAL: Criar assinatura recorrente
+      console.log('🔄 Criando assinatura mensal...')
+      
+      const subscriptionData = {
+        customer: customerId,
+        billingType: 'PIX',
+        value: value,
+        nextDueDate: new Date(Date.now() + 24*60*60*1000).toISOString().split('T')[0],
+        cycle: 'MONTHLY',
+        description: description || 'Mensalidade',
+        split: createNetSplit(walletId, value, 20)
+      }
+      
+      console.log('📤 Criando assinatura:', JSON.stringify(subscriptionData, null, 2))
+      
+      const subscriptionResult = await asaasRequest(c, '/subscriptions', 'POST', subscriptionData)
+      
+      console.log('📥 Resposta Asaas:', {
+        ok: subscriptionResult.ok,
+        status: subscriptionResult.status,
+        data: subscriptionResult.data
+      })
+      
+      if (!subscriptionResult.ok) {
+        console.error('❌ Erro ao criar assinatura:', subscriptionResult.data)
+        return c.json({ 
+          error: 'Erro ao criar assinatura',
+          details: subscriptionResult.data,
+          walletId: walletId,
+          value: value
+        }, 400)
+      }
+      
+      subscription = subscriptionResult.data
+      
+      // Buscar primeiro pagamento da assinatura
+      const paymentsResult = await asaasRequest(c, `/payments?subscription=${subscription.id}`)
+      
+      if (!paymentsResult.ok || !paymentsResult.data?.data?.[0]) {
+        return c.json({
+          ok: true,
+          subscription: {
+            id: subscription.id,
+            status: subscription.status,
+            value: subscription.value,
+            nextDueDate: subscription.nextDueDate
+          },
+          warning: 'Assinatura criada, aguardando primeiro pagamento'
+        })
+      }
+      
+      firstPayment = paymentsResult.data.data[0]
     }
-    
-    const firstPayment = paymentsResult.data.data[0]
     
     // 4. Buscar QR Code PIX
     const qrCodeResult = await asaasRequest(c, `/payments/${firstPayment.id}/pixQrCode`)
@@ -3668,7 +3713,7 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
     await c.env.DB.prepare(`
       INSERT INTO subscription_conversions (link_id, customer_id, subscription_id, customer_name, customer_email, customer_cpf)
       VALUES (?, ?, ?, ?, ?, ?)
-    `).bind(linkId, customerId, subscription.id, customerName, customerEmail, customerCpf).run()
+    `).bind(linkId, customerId, subscription?.id || null, customerName, customerEmail, customerCpf).run()
     
     // 6. Salvar transação no banco D1 local
     const accountId = link.account_id as string
@@ -3693,14 +3738,15 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
     
     return c.json({
       ok: true,
-      subscription: {
+      chargeType: chargeType,
+      subscription: subscription ? {
         id: subscription.id,
         status: subscription.status,
         value: subscription.value,
         cycle: subscription.cycle,
         nextDueDate: subscription.nextDueDate,
         description: subscription.description
-      },
+      } : null,
       firstPayment: {
         id: firstPayment.id,
         status: firstPayment.status,
