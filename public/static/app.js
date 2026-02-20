@@ -2850,7 +2850,8 @@ async function loadReportAccounts() {
         const accounts = response.data.accounts || [];
         
         const select = document.getElementById('report-account-select');
-        select.innerHTML = '<option value="">Selecione uma subconta...</option>';
+        select.innerHTML = '<option value="">Selecione uma subconta...</option>' +
+                          '<option value="ALL_ACCOUNTS">📊 TODAS AS SUBCONTAS</option>';
         
         accounts.forEach(account => {
             if (account.walletId) { // Apenas aprovadas
