@@ -1,11 +1,14 @@
 // Sistema de Relatórios Detalhados com Dados dos Clientes
 // Data: 20/02/2026
 
-// Variável global para armazenar dados do relatório atual
-let currentReportData = null;
+// Namespace para evitar conflitos
+window.ReportsDetailed = window.ReportsDetailed || {};
+
+// Variável para armazenar dados do relatório atual
+window.ReportsDetailed.currentData = null;
 
 // Função principal para gerar relatório detalhado
-async function generateDetailedReport() {
+window.generateDetailedReport = async function() {
     const accountId = document.getElementById('report-account-select')?.value;
     const startDate = document.getElementById('report-start-date')?.value;
     const endDate = document.getElementById('report-end-date')?.value;
@@ -32,7 +35,7 @@ async function generateDetailedReport() {
         const data = await response.json();
         
         if (data.ok) {
-            currentReportData = data.data;
+            window.ReportsDetailed.currentData = data.data;
             displayDetailedReport(data.data);
         } else {
             resultsDiv.innerHTML = '<div class="text-center py-12 text-red-500"><i class="fas fa-exclamation-triangle text-6xl mb-4"></i><p class="text-lg">Erro ao gerar relatório: ' + (data.error || 'Erro desconhecido') + '</p></div>';
@@ -166,8 +169,8 @@ function displayDetailedReport(data) {
 }
 
 // Função para exportar para PDF
-function exportReportToPDF() {
-    if (!currentReportData) {
+window.exportReportToPDF = function() {
+    if (!window.ReportsDetailed.currentData) {
         alert('Gere um relatório primeiro');
         return;
     }
@@ -177,13 +180,13 @@ function exportReportToPDF() {
 }
 
 // Função para exportar para Excel
-function exportReportToExcel() {
-    if (!currentReportData) {
+window.exportReportToExcel = function() {
+    if (!window.ReportsDetailed.currentData) {
         alert('Gere um relatório primeiro');
         return;
     }
     
-    const { account, transactions } = currentReportData;
+    const { account, transactions } = window.ReportsDetailed.currentData;
     
     // Criar CSV
     let csv = 'Data,Descrição,Valor,Status,Nome Cliente,Email,CPF,Nascimento,Tipo\n';
