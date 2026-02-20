@@ -722,14 +722,27 @@ app.get('/api/reports/:accountId', async (c) => {
     if (payments.length === 0) {
       console.log(`⚠️ Nenhuma transação no D1 para ${accountId}, buscando no Asaas...`)
       
-      let asaasPaymentsUrl = `/payments?account=${accountId}&limit=100`
+      // IMPORTANTE: Buscar apenas pagamentos com split para esse walletId
+      // Não há filtro direto por walletId na API, então buscar todos e filtrar localmente
+      let asaasPaymentsUrl = `/payments?limit=1000`
       if (startDate) asaasPaymentsUrl += `&dateCreated[ge]=${startDate}`
       if (endDate) asaasPaymentsUrl += `&dateCreated[le]=${endDate}`
       
       const asaasPayments = await asaasRequest(c, asaasPaymentsUrl, 'GET')
       
       if (asaasPayments.ok && asaasPayments.data?.data) {
-        payments = asaasPayments.data.data.map((p: any) => ({
+        // Filtrar apenas pagamentos que têm split para essa subconta (walletId)
+        const walletId = account.walletId
+        
+        const filteredPayments = asaasPayments.data.data.filter((p: any) => {
+          // Verificar se o pagamento tem split para esse walletId
+          if (p.split && Array.isArray(p.split)) {
+            return p.split.some((s: any) => s.walletId === walletId)
+          }
+          return false
+        })
+        
+        payments = filteredPayments.map((p: any) => ({
           id: p.id,
           value: p.value,
           description: p.description,
@@ -740,7 +753,9 @@ app.get('/api/reports/:accountId', async (c) => {
           payment_date: p.paymentDate
         }))
         
-        console.log(`✅ ${payments.length} transações encontradas no Asaas`)
+        console.log(`✅ ${payments.length} transações encontradas no Asaas com split para ${walletId}`)
+      } else {
+        console.log(`⚠️ Nenhuma transação encontrada no Asaas`)
       }
     }
     
