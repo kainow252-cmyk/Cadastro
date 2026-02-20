@@ -938,6 +938,17 @@ async function createEvidenceTransactions() {
         console.log('✅ Criados no DeltaPag:', response.data.customersCreatedInDeltaPag);
         console.log('❌ Com erro:', response.data.customersWithError);
         
+        // 🔍 DEBUG: Verificar status de criação de payments
+        console.log('\n🔍 DEBUG: Status de Payment para cada cliente:');
+        response.data.customers?.forEach((customer, i) => {
+            console.log(`Cliente ${i + 1}: ${customer.customer}`);
+            console.log(`  - Payment criado: ${customer.payment_created ? '✅ SIM' : '❌ NÃO'}`);
+            console.log(`  - Payment ID: ${customer.payment_id}`);
+            if (customer.payment_error) {
+                console.error(`  - ❌ Erro: ${customer.payment_error}`);
+            }
+        });
+        
         if (response.data.errors && response.data.errors.length > 0) {
             console.error('🔴 ERROS DETALHADOS:');
             response.data.errors.forEach(err => {

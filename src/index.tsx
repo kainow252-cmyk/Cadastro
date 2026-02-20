@@ -1899,14 +1899,26 @@ app.post('/api/admin/create-evidence-customers', authMiddleware, async (c) => {
             console.log('✅ Status:', paymentResult.data.status)
             console.log('✅ Agora deve aparecer em "Última transação" no painel!')
           } else {
-            console.log('⚠️ Falha ao criar cobrança (código:', paymentResult.status, ')')
-            console.log('⚠️ Resposta:', JSON.stringify(paymentResult.data, null, 2))
+            const errorMsg = `Falha ao criar cobrança: HTTP ${paymentResult.status} - ${JSON.stringify(paymentResult.data)}`
+            console.error('❌ ' + errorMsg)
+            console.log('⚠️ Resposta completa:', JSON.stringify(paymentResult.data, null, 2))
             console.log('ℹ️ Cliente foi criado, mas sem cobrança de evidência')
+            
+            // Adicionar erro aos logs retornados
+            if (!tx.payment_error) {
+              tx.payment_error = errorMsg
+            }
           }
         } catch (paymentError: any) {
-          console.log('⚠️ Erro ao criar cobrança:', paymentError.message)
-          console.log('⚠️ Stack:', paymentError.stack)
+          const errorMsg = `Exceção ao criar cobrança: ${paymentError.message}`
+          console.error('❌ ' + errorMsg)
+          console.error('⚠️ Stack:', paymentError.stack)
           console.log('ℹ️ Continuando - cliente foi criado com sucesso')
+          
+          // Adicionar erro aos logs retornados
+          if (!tx.payment_error) {
+            tx.payment_error = errorMsg
+          }
         }
         
         // 3. Salvar cliente no banco D1 como evidência
@@ -1961,7 +1973,11 @@ app.post('/api/admin/create-evidence-customers', authMiddleware, async (c) => {
           value: tx.value,
           card: `${tx.card_brand} •••• ${cardLast4}`,
           status: 'EVIDENCE',
-          description: tx.description
+          description: tx.description,
+          // Debug info para entender falhas
+          payment_created: !!paymentId,
+          payment_id: paymentId || 'NOT_CREATED',
+          payment_error: tx.payment_error || null
         })
         
         console.log(`✅ Cliente ${createdTransactions.length + 1}/5 processado`)
