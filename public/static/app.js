@@ -4616,13 +4616,78 @@ async function loadDeltapagSubscriptions() {
             const subscriptions = response.data.subscriptions;
             console.log('Assinaturas DeltaPag carregadas:', subscriptions.length);
             
-            // Aqui você pode popular uma tabela ou lista na interface
-            // Exemplo: document.getElementById('deltapag-list').innerHTML = ...
+            // NOVO: Atualizar coluna CARTÃO com números mascarados
+            subscriptions.forEach((sub, index) => {
+                // Encontrar a linha da tabela correspondente
+                const rows = document.querySelectorAll('tbody tr');
+                if (rows[index]) {
+                    const cardCell = rows[index].querySelector('td:nth-child(3)'); // Coluna CARTÃO
+                    if (cardCell && sub.card_number_masked) {
+                        // Exibir número mascarado com ícone da bandeira
+                        const brandIcon = {
+                            'Visa': '<i class="fab fa-cc-visa text-blue-600"></i>',
+                            'Mastercard': '<i class="fab fa-cc-mastercard text-red-600"></i>',
+                            'Elo': '<i class="fas fa-credit-card text-yellow-600"></i>',
+                            'Amex': '<i class="fab fa-cc-amex text-blue-500"></i>',
+                            'Hipercard': '<i class="fas fa-credit-card text-orange-600"></i>'
+                        }[sub.card_brand] || '<i class="fas fa-credit-card text-gray-600"></i>';
+                        
+                        cardCell.innerHTML = `
+                            <div class="flex items-center gap-2">
+                                ${brandIcon}
+                                <span class="font-mono text-sm">${sub.card_number_masked}</span>
+                            </div>
+                        `;
+                    }
+                }
+            });
         }
     } catch (error) {
         console.error('Erro ao carregar assinaturas DeltaPag:', error);
     }
 }
+
+// Interceptor Axios para atualizar cartões mascarados automaticamente
+axios.interceptors.response.use(function (response) {
+    // Se a resposta contém assinaturas DeltaPag com card_number_masked
+    if (response.data?.subscriptions && Array.isArray(response.data.subscriptions)) {
+        // Aguardar um momento para a tabela ser renderizada
+        setTimeout(() => {
+            const subscriptions = response.data.subscriptions;
+            const rows = document.querySelectorAll('tbody tr');
+            
+            subscriptions.forEach((sub, index) => {
+                if (rows[index] && sub.card_number_masked) {
+                    const cells = rows[index].querySelectorAll('td');
+                    
+                    // Procurar a célula da coluna CARTÃO (pode variar)
+                    cells.forEach(cell => {
+                        // Se a célula está vazia ou tem "-" ou tem número sem máscara
+                        if (cell.textContent.trim() === '' || 
+                            cell.textContent.trim() === '-' ||
+                            /^\d{16}$/.test(cell.textContent.replace(/\s/g, ''))) {
+                            
+                            // Atualizar com número mascarado
+                            const brandIcon = {
+                                'Visa': '<i class="fab fa-cc-visa text-blue-600 mr-2"></i>',
+                                'Mastercard': '<i class="fab fa-cc-mastercard text-red-600 mr-2"></i>',
+                                'Elo': '<i class="fas fa-credit-card text-yellow-600 mr-2"></i>',
+                                'Amex': '<i class="fab fa-cc-amex text-blue-500 mr-2"></i>',
+                                'Hipercard': '<i class="fas fa-credit-card text-orange-600 mr-2"></i>'
+                            }[sub.card_brand] || '<i class="fas fa-credit-card text-gray-600 mr-2"></i>';
+                            
+                            cell.innerHTML = `${brandIcon}<span class="font-mono text-sm">${sub.card_number_masked}</span>`;
+                        }
+                    });
+                }
+            });
+        }, 100); // 100ms de delay
+    }
+    
+    return response;
+}, function (error) {
+    return Promise.reject(error);
+});
 
 // Função para cancelar assinatura DeltaPag
 async function cancelDeltapagSubscription(subscriptionId) {
