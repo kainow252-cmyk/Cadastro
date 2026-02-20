@@ -933,9 +933,14 @@ async function createEvidenceTransactions() {
     try {
         const response = await axios.post('/api/admin/create-evidence-customers');
         
+        console.log('📥 Resposta completa da API:', response.data);
+        console.log('📊 Clientes retornados:', response.data.customers);
+        
         if (response.data.ok) {
             const customers = response.data.customers || [];
             const count = response.data.count || customers.length;
+            
+            console.log(`✅ Total de clientes: ${count}`);
             
             // Mostrar detalhes dos clientes criados
             let details = `✅ ${count} clientes de evidência criados com sucesso!\n\n`;
