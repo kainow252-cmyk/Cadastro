@@ -824,6 +824,147 @@ app.get('/api/reports/:accountId', async (c) => {
   }
 })
 
+// Endpoint aprimorado de relatórios com dados dos clientes
+app.get('/api/reports/:accountId/detailed', async (c) => {
+  try {
+    const db = c.env.DB
+    const accountId = c.req.param('accountId')
+    const startDate = c.req.query('startDate')
+    const endDate = c.req.query('endDate')
+    const chargeType = c.req.query('chargeType') // 'all', 'single', 'monthly', 'pix_auto', 'link_cadastro'
+    const statusFilter = c.req.query('status') // 'all', 'RECEIVED', 'PENDING', etc.
+    
+    // Buscar informações da subconta
+    const accountQuery = await db.prepare('SELECT * FROM signup_links WHERE account_id = ? LIMIT 1').bind(accountId).first()
+    
+    let account: any = null
+    
+    if (accountQuery) {
+      account = {
+        id: accountQuery.account_id,
+        name: accountQuery.customer_name || `Conta ${accountId.substring(0, 8)}`,
+        email: accountQuery.customer_email || 'N/A',
+        cpfCnpj: accountQuery.customer_cpf || 'N/A',
+        walletId: accountQuery.wallet_id
+      }
+    } else {
+      const asaasAccount = await asaasRequest(c, `/accounts/${accountId}`, 'GET')
+      if (!asaasAccount.ok || !asaasAccount.data) {
+        return c.json({ error: 'Subconta não encontrada', accountId }, 404)
+      }
+      account = {
+        id: asaasAccount.data.id,
+        name: asaasAccount.data.name || `Conta ${accountId.substring(0, 8)}`,
+        email: asaasAccount.data.email || 'N/A',
+        cpfCnpj: asaasAccount.data.cpfCnpj || 'N/A',
+        walletId: asaasAccount.data.walletId || accountId
+      }
+    }
+    
+    // Buscar transações do D1
+    let query = `SELECT t.*, sc.customer_name, sc.customer_email, sc.customer_cpf, sc.customer_birthdate, ssl.charge_type
+      FROM transactions t
+      LEFT JOIN subscription_conversions sc ON t.id = sc.subscription_id OR t.id IN (
+        SELECT id FROM transactions WHERE wallet_id = t.wallet_id AND ABS(CAST((julianday(created_at) - julianday(sc.converted_at)) * 86400 AS INTEGER)) < 60
+      )
+      LEFT JOIN subscription_signup_links ssl ON sc.link_id = ssl.id
+      WHERE t.account_id = ?`
+    
+    const params = [accountId]
+    
+    if (startDate) {
+      query += ` AND t.created_at >= ?`
+      params.push(startDate)
+    }
+    if (endDate) {
+      query += ` AND t.created_at <= ?`
+      params.push(endDate + ' 23:59:59')
+    }
+    if (statusFilter && statusFilter !== 'all') {
+      query += ` AND t.status = ?`
+      params.push(statusFilter)
+    }
+    
+    query += ` ORDER BY t.created_at DESC`
+    
+    const result = await db.prepare(query).bind(...params).all()
+    let payments = result.results || []
+    
+    // Filtrar por tipo de cobrança
+    if (chargeType && chargeType !== 'all') {
+      payments = payments.filter((p: any) => {
+        const pChargeType = p.charge_type || 'monthly'
+        return pChargeType === chargeType
+      })
+    }
+    
+    // Calcular estatísticas
+    let totalReceived = 0
+    let totalPending = 0
+    let totalOverdue = 0
+    let totalRefunded = 0
+    
+    payments.forEach((payment: any) => {
+      const value = parseFloat(payment.value || 0)
+      if (payment.status === 'RECEIVED') totalReceived += value
+      else if (payment.status === 'PENDING') totalPending += value
+      else if (payment.status === 'OVERDUE') totalOverdue += value
+      else if (payment.status === 'REFUNDED') totalRefunded += value
+    })
+    
+    // Preparar transações com dados dos clientes
+    const transactions = payments.map((p: any) => ({
+      id: p.id,
+      value: parseFloat(p.value || 0),
+      description: p.description || 'Sem descrição',
+      dueDate: p.due_date,
+      status: p.status,
+      dateCreated: p.created_at,
+      billingType: p.billing_type,
+      paymentDate: p.payment_date,
+      chargeType: p.charge_type || 'monthly',
+      customer: {
+        name: p.customer_name || 'N/A',
+        email: p.customer_email || 'N/A',
+        cpf: p.customer_cpf || 'N/A',
+        birthdate: p.customer_birthdate || 'N/A'
+      }
+    }))
+    
+    return c.json({
+      ok: true,
+      data: {
+        account: {
+          id: account.id,
+          name: account.name,
+          email: account.email,
+          cpfCnpj: account.cpfCnpj,
+          walletId: account.walletId
+        },
+        period: {
+          startDate: startDate || 'Início',
+          endDate: endDate || 'Hoje'
+        },
+        filters: {
+          chargeType: chargeType || 'all',
+          status: statusFilter || 'all'
+        },
+        summary: {
+          totalReceived,
+          totalPending,
+          totalOverdue,
+          totalRefunded,
+          totalTransactions: payments.length
+        },
+        transactions
+      }
+    })
+  } catch (error: any) {
+    console.error('Erro ao buscar relatório detalhado:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 // Endpoint simplificado para listar transações (sem validação de conta)
 app.get('/api/transactions-list/:accountId', async (c) => {
   try {
