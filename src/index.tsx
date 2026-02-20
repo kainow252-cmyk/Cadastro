@@ -2874,14 +2874,25 @@ app.post('/api/pix/static', async (c) => {
       return c.json({ error: 'Token inválido' }, 401)
     }
     
-    const { walletId, accountId, value, description } = await c.req.json()
+    const body = await c.req.json()
+    const { walletId, accountId, value, description } = body
+    
+    console.log('📝 Request PIX estático:', { walletId, accountId, value, description })
     
     if (!walletId) {
-      return c.json({ error: 'walletId é obrigatório' }, 400)
+      console.error('❌ walletId não fornecido:', body)
+      return c.json({ 
+        error: 'walletId é obrigatório',
+        received: body 
+      }, 400)
     }
     
     if (!value || value <= 0) {
-      return c.json({ error: 'Valor deve ser maior que zero' }, 400)
+      console.error('❌ Valor inválido:', { value, body })
+      return c.json({ 
+        error: 'Valor deve ser maior que zero',
+        received: { value }
+      }, 400)
     }
     
     // NOVA ABORDAGEM: Criar cobrança PIX via API Asaas
