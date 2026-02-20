@@ -4811,3 +4811,67 @@ async function cancelDeltapagSubscription(subscriptionId) {
     }
 }
 
+// Função para criar evidências DeltaPag (5 clientes teste)
+async function createEvidenceTransactions() {
+    if (!confirm('🧪 Criar 5 clientes de EVIDÊNCIA no DeltaPag Sandbox?\n\nIsto irá:\n• Criar 5 clientes com CPF válidos\n• Tentar criar assinaturas recorrentes\n• Salvar no banco de dados D1\n\nDeseja continuar?')) {
+        return;
+    }
+    
+    try {
+        console.log('🔄 Criando evidências DeltaPag...');
+        
+        const response = await axios.post('/api/admin/create-evidence-customers');
+        
+        if (response.data.ok) {
+            const count = response.data.count || response.data.customers?.length || 0;
+            
+            console.log('✅ SUCESSO! Total de evidências criadas:', count);
+            console.log('📋 Detalhes:', response.data);
+            
+            // Mostrar resultado detalhado
+            let message = `✅ ${count} evidências criadas com sucesso!\n\n`;
+            
+            if (response.data.customers && response.data.customers.length > 0) {
+                message += '📋 Clientes criados:\n\n';
+                response.data.customers.forEach((customer, index) => {
+                    message += `${index + 1}. ${customer.customer}\n`;
+                    message += `   Email: ${customer.email}\n`;
+                    if (customer.cpf) {
+                        message += `   CPF: ${customer.cpf}\n`;
+                    }
+                    message += `   DeltaPag ID: ${customer.deltapag_customer_id}\n`;
+                    message += `   Valor: R$ ${customer.value}\n`;
+                    message += `   Status: ${customer.status}\n\n`;
+                });
+            }
+            
+            message += '\n🔗 Verificar no painel DeltaPag:\nhttps://painel-sandbox.deltapag.io/marketplaces/clients';
+            
+            alert(message);
+            
+            // Recarregar lista de assinaturas
+            console.log('🔄 Recarregando lista de assinaturas...');
+            await loadDeltapagSubscriptions();
+            
+        } else {
+            console.error('❌ Erro:', response.data);
+            alert('❌ Erro ao criar evidências:\n\n' + (response.data.error || 'Erro desconhecido'));
+        }
+        
+    } catch (error) {
+        console.error('❌ Erro ao criar evidências:', error);
+        
+        let errorMessage = 'Erro desconhecido';
+        
+        if (error.response?.data?.error) {
+            errorMessage = error.response.data.error;
+        } else if (error.response?.data?.message) {
+            errorMessage = error.response.data.message;
+        } else if (error.message) {
+            errorMessage = error.message;
+        }
+        
+        alert('❌ Erro ao criar transações de evidência:\n\n' + errorMessage);
+    }
+}
+
