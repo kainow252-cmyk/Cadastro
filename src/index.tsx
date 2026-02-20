@@ -861,34 +861,57 @@ app.get('/api/reports/:accountId/detailed', async (c) => {
       }
     }
     
-    // Buscar transações do D1
-    let query = `SELECT t.*, sc.customer_name, sc.customer_email, sc.customer_cpf, sc.customer_birthdate, ssl.charge_type
-      FROM transactions t
-      LEFT JOIN subscription_conversions sc ON t.id = sc.subscription_id OR t.id IN (
-        SELECT id FROM transactions WHERE wallet_id = t.wallet_id AND ABS(CAST((julianday(created_at) - julianday(sc.converted_at)) * 86400 AS INTEGER)) < 60
-      )
-      LEFT JOIN subscription_signup_links ssl ON sc.link_id = ssl.id
-      WHERE t.account_id = ?`
-    
+    // Buscar transações do D1 (query simplificada)
+    let query = `SELECT * FROM transactions WHERE account_id = ?`
     const params = [accountId]
     
     if (startDate) {
-      query += ` AND t.created_at >= ?`
+      query += ` AND created_at >= ?`
       params.push(startDate)
     }
     if (endDate) {
-      query += ` AND t.created_at <= ?`
+      query += ` AND created_at <= ?`
       params.push(endDate + ' 23:59:59')
     }
     if (statusFilter && statusFilter !== 'all') {
-      query += ` AND t.status = ?`
+      query += ` AND status = ?`
       params.push(statusFilter)
     }
     
-    query += ` ORDER BY t.created_at DESC`
+    query += ` ORDER BY created_at DESC`
     
     const result = await db.prepare(query).bind(...params).all()
     let payments = result.results || []
+    
+    // Enriquecer cada pagamento com dados do cliente
+    for (let i = 0; i < payments.length; i++) {
+      const payment = payments[i] as any
+      
+      // Buscar dados do cliente via subscription_conversions
+      const conversion = await db.prepare(`
+        SELECT sc.*, ssl.charge_type 
+        FROM subscription_conversions sc
+        LEFT JOIN subscription_signup_links ssl ON sc.link_id = ssl.id
+        WHERE sc.subscription_id = ? OR sc.customer_id IN (
+          SELECT customer_id FROM subscription_conversions WHERE subscription_id = ?
+        )
+        LIMIT 1
+      `).bind(payment.id, payment.id).first()
+      
+      if (conversion) {
+        payment.customer_name = conversion.customer_name
+        payment.customer_email = conversion.customer_email
+        payment.customer_cpf = conversion.customer_cpf
+        payment.customer_birthdate = conversion.customer_birthdate
+        payment.charge_type = conversion.charge_type || 'monthly'
+      } else {
+        payment.customer_name = 'N/A'
+        payment.customer_email = 'N/A'
+        payment.customer_cpf = 'N/A'
+        payment.customer_birthdate = 'N/A'
+        payment.charge_type = 'monthly'
+      }
+    }
     
     // Filtrar por tipo de cobrança
     if (chargeType && chargeType !== 'all') {
