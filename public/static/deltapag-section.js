@@ -935,6 +935,15 @@ async function createEvidenceTransactions() {
         
         console.log('📥 Resposta completa da API:', response.data);
         console.log('📊 Clientes retornados:', response.data.customers);
+        console.log('✅ Criados no DeltaPag:', response.data.customersCreatedInDeltaPag);
+        console.log('❌ Com erro:', response.data.customersWithError);
+        
+        if (response.data.errors && response.data.errors.length > 0) {
+            console.error('🔴 ERROS DETALHADOS:');
+            response.data.errors.forEach(err => {
+                console.error(`   - ${err.customer}: ${err.error}`);
+            });
+        }
         
         if (response.data.ok) {
             const customers = response.data.customers || [];

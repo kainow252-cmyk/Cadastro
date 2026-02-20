@@ -1766,9 +1766,13 @@ app.post('/api/admin/create-evidence-customers', authMiddleware, async (c) => {
         }
         
         console.log('📤 Criando cliente:', customerData)
+        console.log('🔑 Token sendo usado:', c.env.DELTAPAG_API_KEY ? `${c.env.DELTAPAG_API_KEY.substring(0, 30)}...` : 'NÃO CONFIGURADO')
+        console.log('🌐 URL da API:', c.env.DELTAPAG_API_URL || 'https://api-sandbox.deltapag.io/api/v2')
+        
         const customerResult = await deltapagRequest(c, '/customers', 'POST', customerData)
         
         console.log('🔍 Status da resposta DeltaPag:', customerResult.status)
+        console.log('🔍 OK?:', customerResult.ok)
         console.log('🔍 Headers:', Object.fromEntries(customerResult.headers.entries()))
         console.log('🔍 Resposta completa:', JSON.stringify(customerResult.data, null, 2))
         
@@ -1988,23 +1992,41 @@ app.post('/api/admin/create-evidence-customers', authMiddleware, async (c) => {
     
     // Verificar se realmente criou os clientes
     const actualCustomersCreated = createdTransactions.filter(t => 
-      t.deltapag_customer_id && !t.deltapag_customer_id.includes('evidence_')
+      t.deltapag_customer_id && 
+      !t.deltapag_customer_id.includes('evidence_') && 
+      t.deltapag_customer_id !== 'ERROR'
+    )
+    
+    const customersWithError = createdTransactions.filter(t => 
+      t.deltapag_customer_id === 'ERROR'
     )
     
     console.log(`📊 RESUMO FINAL:`)
     console.log(`   Total processado: ${createdTransactions.length}`)
     console.log(`   Criados no DeltaPag: ${actualCustomersCreated.length}`)
+    console.log(`   Com erro: ${customersWithError.length}`)
     console.log(`   IDs DeltaPag: ${actualCustomersCreated.map(t => t.deltapag_customer_id).join(', ')}`)
+    
+    if (customersWithError.length > 0) {
+      console.log(`❌ Clientes com erro:`)
+      customersWithError.forEach(c => {
+        console.log(`   - ${c.customer}: ${c.description}`)
+      })
+    }
     
     return c.json({
       ok: true,
-      message: `${createdTransactions.length} CLIENTES processados (${actualCustomersCreated.length} criados na API DeltaPag)`,
+      message: `${createdTransactions.length} CLIENTES processados (${actualCustomersCreated.length} criados na API DeltaPag, ${customersWithError.length} com erro)`,
       count: createdTransactions.length,
       customersCreatedInDeltaPag: actualCustomersCreated.length,
+      customersWithError: customersWithError.length,
       customers: createdTransactions,
+      errors: customersWithError.length > 0 
+        ? customersWithError.map(c => ({ customer: c.customer, error: c.description }))
+        : [],
       note: actualCustomersCreated.length > 0 
         ? 'Clientes reais criados na DeltaPag Sandbox - prontos para solicitar API de produção!'
-        : '⚠️ ATENÇÃO: Clientes salvos localmente mas NÃO foram criados na API DeltaPag. Verifique se DELTAPAG_API_KEY está configurado corretamente.'
+        : '⚠️ ATENÇÃO: Clientes salvos localmente mas NÃO foram criados na API DeltaPag. Verifique se DELTAPAG_API_KEY está configurado corretamente ou veja os erros acima.'
     })
     
   } catch (error: any) {
