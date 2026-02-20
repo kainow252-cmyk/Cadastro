@@ -1750,12 +1750,20 @@ app.post('/api/admin/create-evidence-customers', authMiddleware, async (c) => {
       try {
         console.log(`\n🔄 Criando transação para ${tx.customer_name}...`)
         
-        // 1. Criar ou buscar cliente na API DeltaPag
+        // 1. Criar ou buscar cliente na API DeltaPag (com dados completos para aparecer no painel)
         const customerData = {
           name: tx.customer_name,
           email: tx.customer_email,
           cpf: tx.customer_cpf.replace(/\D/g, ''),
-          mobilePhone: tx.customer_phone.replace(/\D/g, '')
+          mobilePhone: tx.customer_phone.replace(/\D/g, ''),
+          // Adicionar endereço para aparecer "Documento" e "Última transação" no painel
+          address: 'Av. Paulista',
+          addressNumber: '1000',
+          complement: 'Sala 101',
+          province: 'Bela Vista',
+          postalCode: '01310100',
+          city: 'São Paulo',
+          state: 'SP'
         }
         
         console.log('📤 Criando cliente:', customerData)
@@ -1842,7 +1850,42 @@ app.post('/api/admin/create-evidence-customers', authMiddleware, async (c) => {
         
         console.log(`✅ Cliente DeltaPag criado: ${customerId}`)
         
-        // 2. Salvar cliente no banco D1 como evidência (SEM assinatura por enquanto)
+        // 2. Criar uma cobrança teste para aparecer "Última transação" no painel
+        console.log(`💳 Criando cobrança teste para ${tx.customer_name}...`)
+        
+        const chargeData = {
+          customer: customerId,
+          billingType: 'CREDIT_CARD',
+          value: tx.value,
+          dueDate: new Date().toISOString().split('T')[0], // Hoje
+          description: tx.description,
+          creditCard: {
+            holderName: tx.customer_name,
+            number: tx.card_number,
+            expiryMonth: tx.card_expiry_month,
+            expiryYear: tx.card_expiry_year,
+            ccv: '123'
+          },
+          creditCardHolderInfo: {
+            name: tx.customer_name,
+            email: tx.customer_email,
+            cpfCnpj: tx.customer_cpf.replace(/\D/g, ''),
+            postalCode: '01310100',
+            addressNumber: '1000',
+            phone: tx.customer_phone.replace(/\D/g, '')
+          }
+        }
+        
+        console.log('📤 Enviando cobrança:', chargeData)
+        const chargeResult = await deltapagRequest(c, '/payments', 'POST', chargeData)
+        
+        if (chargeResult.ok) {
+          console.log('✅ Cobrança teste criada:', chargeResult.data)
+        } else {
+          console.log('⚠️ Não foi possível criar cobrança teste (cliente foi criado):', chargeResult.data)
+        }
+        
+        // 3. Salvar cliente no banco D1 como evidência (SEM assinatura por enquanto)
         const localSubscriptionId = crypto.randomUUID()
         const cardLast4 = tx.card_number.slice(-4)
         const nextDueDate = new Date()
