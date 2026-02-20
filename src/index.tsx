@@ -891,12 +891,26 @@ app.get('/api/reports/all-accounts/detailed', async (c) => {
         LIMIT 1
       `).bind(payment.id).first()
       
-      if (conversion) {
-        payment.customer_name = conversion.customer_name
-        payment.customer_email = conversion.customer_email
-        payment.customer_cpf = conversion.customer_cpf
-        payment.customer_birthdate = conversion.customer_birthdate
-        payment.charge_type = conversion.charge_type || 'monthly'
+      let finalConversion = conversion
+      
+      // Se não encontrou, tentar buscar pelo account_id (casos onde múltiplos pagamentos da mesma conta)
+      if (!finalConversion) {
+        finalConversion = await db.prepare(`
+          SELECT sc.*, ssl.charge_type 
+          FROM subscription_conversions sc
+          LEFT JOIN subscription_signup_links ssl ON sc.link_id = ssl.id
+          WHERE ssl.account_id = ?
+          ORDER BY sc.converted_at DESC
+          LIMIT 1
+        `).bind(payment.account_id).first()
+      }
+      
+      if (finalConversion) {
+        payment.customer_name = finalConversion.customer_name
+        payment.customer_email = finalConversion.customer_email
+        payment.customer_cpf = finalConversion.customer_cpf
+        payment.customer_birthdate = finalConversion.customer_birthdate
+        payment.charge_type = finalConversion.charge_type || 'monthly'
       } else {
         payment.customer_name = 'N/A'
         payment.customer_email = 'N/A'
@@ -1051,22 +1065,36 @@ app.get('/api/reports/:accountId/detailed', async (c) => {
       const payment = payments[i] as any
       
       // Buscar dados do cliente via subscription_conversions
+      // Nota: payment.id pode ser tanto subscription_id quanto payment_id
+      // Buscar primeiro por subscription_id, depois por customer_id relacionado
       const conversion = await db.prepare(`
         SELECT sc.*, ssl.charge_type 
         FROM subscription_conversions sc
         LEFT JOIN subscription_signup_links ssl ON sc.link_id = ssl.id
-        WHERE sc.subscription_id = ? OR sc.customer_id IN (
-          SELECT customer_id FROM subscription_conversions WHERE subscription_id = ?
-        )
+        WHERE sc.subscription_id = ?
         LIMIT 1
-      `).bind(payment.id, payment.id).first()
+      `).bind(payment.id).first()
       
-      if (conversion) {
-        payment.customer_name = conversion.customer_name
-        payment.customer_email = conversion.customer_email
-        payment.customer_cpf = conversion.customer_cpf
-        payment.customer_birthdate = conversion.customer_birthdate
-        payment.charge_type = conversion.charge_type || 'monthly'
+      let finalConversion = conversion
+      
+      // Se não encontrou, tentar buscar pelo account_id (casos onde múltiplos pagamentos da mesma conta)
+      if (!finalConversion) {
+        finalConversion = await db.prepare(`
+          SELECT sc.*, ssl.charge_type 
+          FROM subscription_conversions sc
+          LEFT JOIN subscription_signup_links ssl ON sc.link_id = ssl.id
+          WHERE ssl.account_id = ?
+          ORDER BY sc.converted_at DESC
+          LIMIT 1
+        `).bind(payment.account_id).first()
+      }
+      
+      if (finalConversion) {
+        payment.customer_name = finalConversion.customer_name
+        payment.customer_email = finalConversion.customer_email
+        payment.customer_cpf = finalConversion.customer_cpf
+        payment.customer_birthdate = finalConversion.customer_birthdate
+        payment.charge_type = finalConversion.charge_type || 'monthly'
       } else {
         payment.customer_name = 'N/A'
         payment.customer_email = 'N/A'
