@@ -931,24 +931,28 @@ async function createEvidenceTransactions() {
     btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Criando via API...';
     
     try {
-        const response = await axios.post('/api/admin/create-evidence-transactions');
+        const response = await axios.post('/api/admin/create-evidence-customers');
         
         if (response.data.ok) {
-            const txs = response.data.transactions;
+            const customers = response.data.customers || [];
+            const count = response.data.count || customers.length;
             
-            // Mostrar detalhes das transações criadas
-            let details = `✅ ${response.data.count} transações de evidência criadas com sucesso!\n\n`;
+            // Mostrar detalhes dos clientes criados
+            let details = `✅ ${count} clientes de evidência criados com sucesso!\n\n`;
             details += '📋 Detalhes:\n\n';
-            txs.forEach((tx, i) => {
-                details += `${i + 1}. ${tx.customer}\n`;
-                details += `   Email: ${tx.email}\n`;
-                details += `   ${tx.card} - R$ ${tx.value.toFixed(2)}\n`;
-                details += `   Status: ${tx.status}\n`;
-                details += `   ID DeltaPag: ${tx.deltapag_id}\n\n`;
+            customers.forEach((customer, i) => {
+                details += `${i + 1}. ${customer.customer}\n`;
+                details += `   Email: ${customer.email}\n`;
+                if (customer.cpf) {
+                    details += `   CPF: ${customer.cpf}\n`;
+                }
+                details += `   Valor: R$ ${customer.value}\n`;
+                details += `   Status: ${customer.status}\n`;
+                details += `   DeltaPag ID: ${customer.deltapag_customer_id}\n\n`;
             });
-            details += '\n✨ Todas as transações foram criadas via API DeltaPag Sandbox\n';
-            details += '💾 Dados salvos no banco de dados local\n';
-            details += '📧 Envie os IDs DeltaPag para a equipe DeltaPag como evidência';
+            details += '\n✨ Clientes criados via API DeltaPag Sandbox\n';
+            details += '💾 Dados salvos no banco de dados D1\n';
+            details += '🔗 Verificar no painel:\nhttps://painel-sandbox.deltapag.io/marketplaces/clients';
             
             alert(details);
             
