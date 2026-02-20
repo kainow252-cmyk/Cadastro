@@ -1957,20 +1957,50 @@ app.post('/api/admin/create-evidence-customers', authMiddleware, async (c) => {
           description: tx.description
         })
         
-        console.log(`✅ Cliente ${createdTransactions.length}/5 criado como evidência`)
+        console.log(`✅ Cliente ${createdTransactions.length + 1}/5 processado`)
         
       } catch (error: any) {
         console.error(`❌ Erro na transação ${tx.customer_name}:`, error)
-        throw error
+        console.error(`❌ Stack trace:`, error.stack)
+        
+        // NÃO PARAR - continuar com próximo cliente
+        // Adicionar à lista com status de erro
+        createdTransactions.push({
+          id: 'ERROR',
+          deltapag_customer_id: 'ERROR',
+          deltapag_id: 'ERROR',
+          customer: tx.customer_name,
+          email: tx.customer_email,
+          value: tx.value,
+          card: 'ERROR',
+          status: 'ERROR',
+          description: `Erro: ${error.message}`,
+          error: error.message
+        })
+        
+        console.log(`⚠️ Continuando com próximo cliente (${createdTransactions.length}/5)...`)
       }
     }
     
+    // Verificar se realmente criou os clientes
+    const actualCustomersCreated = createdTransactions.filter(t => 
+      t.deltapag_customer_id && !t.deltapag_customer_id.includes('evidence_')
+    )
+    
+    console.log(`📊 RESUMO FINAL:`)
+    console.log(`   Total processado: ${createdTransactions.length}`)
+    console.log(`   Criados no DeltaPag: ${actualCustomersCreated.length}`)
+    console.log(`   IDs DeltaPag: ${actualCustomersCreated.map(t => t.deltapag_customer_id).join(', ')}`)
+    
     return c.json({
       ok: true,
-      message: `${createdTransactions.length} CLIENTES criados com sucesso na API DeltaPag (evidência para aprovação)`,
+      message: `${createdTransactions.length} CLIENTES processados (${actualCustomersCreated.length} criados na API DeltaPag)`,
       count: createdTransactions.length,
+      customersCreatedInDeltaPag: actualCustomersCreated.length,
       customers: createdTransactions,
-      note: 'Clientes reais criados na DeltaPag Sandbox - prontos para solicitar API de produção!'
+      note: actualCustomersCreated.length > 0 
+        ? 'Clientes reais criados na DeltaPag Sandbox - prontos para solicitar API de produção!'
+        : '⚠️ ATENÇÃO: Clientes salvos localmente mas NÃO foram criados na API DeltaPag. Verifique se DELTAPAG_API_KEY está configurado corretamente.'
     })
     
   } catch (error: any) {
