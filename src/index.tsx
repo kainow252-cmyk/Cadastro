@@ -7105,22 +7105,14 @@ app.get('/', (c) => {
                         <i class="fas fa-bolt mr-2 text-yellow-500"></i>
                         Ações Rápidas
                     </h3>
-                    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                    <div class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
                         <button onclick="showSection('dashboard')" 
                             class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 font-semibold shadow-md transition">
                             <i class="fas fa-chart-line text-3xl"></i>
                             <span class="text-sm">Dashboard</span>
                         </button>
-                        <button onclick="showSection('accounts')" 
-                            class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 font-semibold shadow-md transition">
-                            <i class="fas fa-user-plus text-3xl"></i>
-                            <span class="text-sm">Criar Subconta</span>
-                        </button>
-                        <button onclick="showSection('accounts'); setTimeout(() => document.querySelector('#link-modal') && openLinkModal(), 100)" 
-                            class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:from-purple-600 hover:to-pink-600 font-semibold shadow-md transition">
-                            <i class="fas fa-link text-3xl"></i>
-                            <span class="text-sm">Gerar Link</span>
-                        </button>
+                        <!-- Botão "Criar Subconta" removido - use o menu "Subcontas" -->
+                        <!-- Botão "Gerar Link" removido - use "Links Pagamento" -->
                         <button onclick="showSection('accounts')" 
                             class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 font-semibold shadow-md transition">
                             <i class="fas fa-list text-3xl"></i>
