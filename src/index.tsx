@@ -8097,58 +8097,33 @@ app.get('/', (c) => {
                 </div>
             </div>
 
-            <!-- Action Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                <!-- Criar Assinatura Manual -->
-                <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition cursor-pointer" 
-                    onclick="openDeltapagModal()">
-                    <div class="flex items-center justify-between mb-4">
-                        <div class="bg-indigo-100 rounded-full p-4">
-                            <i class="fas fa-credit-card text-3xl text-indigo-600"></i>
-                        </div>
-                        <i class="fas fa-arrow-right text-gray-400 text-2xl"></i>
-                    </div>
-                    <h3 class="text-xl font-bold text-gray-800 mb-2">Criar Assinatura</h3>
-                    <p class="text-gray-600 text-sm">Cadastre um cliente manualmente com seus dados de cartão</p>
-                </div>
-
-                <!-- Gerar Link Auto-Cadastro -->
-                <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition cursor-pointer" 
-                    onclick="openDeltapagLinkModal()">
-                    <div class="flex items-center justify-between mb-4">
-                        <div class="bg-purple-100 rounded-full p-4">
-                            <i class="fas fa-link text-3xl text-purple-600"></i>
-                        </div>
-                        <i class="fas fa-arrow-right text-gray-400 text-2xl"></i>
-                    </div>
-                    <h3 class="text-xl font-bold text-gray-800 mb-2">Criar Link</h3>
-                    <p class="text-gray-600 text-sm">Gere um link para clientes se cadastrarem</p>
-                </div>
-
-                <!-- Ver Links Criados -->
-                <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition cursor-pointer" 
-                    onclick="showDeltapagLinksModal()">
-                    <div class="flex items-center justify-between mb-4">
-                        <div class="bg-blue-100 rounded-full p-4">
-                            <i class="fas fa-list text-3xl text-blue-600"></i>
-                        </div>
-                        <i class="fas fa-arrow-right text-gray-400 text-2xl"></i>
-                    </div>
-                    <h3 class="text-xl font-bold text-gray-800 mb-2">Ver Links</h3>
-                    <p class="text-gray-600 text-sm">Visualize todos os links criados e suas estatísticas</p>
-                </div>
-
-                <!-- Importar CSV -->
-                <div class="bg-white rounded-lg shadow-md p-6 hover:shadow-xl transition cursor-pointer" 
-                    onclick="openDeltapagImportModal()">
-                    <div class="flex items-center justify-between mb-4">
-                        <div class="bg-green-100 rounded-full p-4">
-                            <i class="fas fa-file-csv text-3xl text-green-600"></i>
-                        </div>
-                        <i class="fas fa-arrow-right text-gray-400 text-2xl"></i>
-                    </div>
-                    <h3 class="text-xl font-bold text-gray-800 mb-2">Importar CSV</h3>
-                    <p class="text-gray-600 text-sm">Importe múltiplas assinaturas de uma vez via CSV</p>
+            <!-- Action Buttons - Estilo compacto como nas subcontas -->
+            <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                    <i class="fas fa-bolt mr-2 text-yellow-500"></i>
+                    Ações Rápidas
+                </h3>
+                <div class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                    <button onclick="openDeltapagModal()" 
+                        class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 font-semibold shadow-md transition">
+                        <i class="fas fa-qrcode text-3xl"></i>
+                        <span class="text-sm">QR Code Avulso</span>
+                    </button>
+                    <button onclick="openDeltapagLinkModal()" 
+                        class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:from-purple-600 hover:to-pink-600 font-semibold shadow-md transition">
+                        <i class="fas fa-sync text-3xl"></i>
+                        <span class="text-sm">Assinatura Mensal</span>
+                    </button>
+                    <button onclick="showSection('payment-links')" 
+                        class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 font-semibold shadow-md transition">
+                        <i class="fas fa-robot text-3xl"></i>
+                        <span class="text-sm">PIX Automático</span>
+                    </button>
+                    <button onclick="showSection('accounts')" 
+                        class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-lg hover:from-orange-600 hover:to-red-600 font-semibold shadow-md transition">
+                        <i class="fas fa-link text-3xl"></i>
+                        <span class="text-sm">Link Auto-Cadastro</span>
+                    </button>
                 </div>
             </div>
 
