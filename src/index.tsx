@@ -1331,8 +1331,9 @@ app.get('/api/admin/test-deltapag-config', authMiddleware, async (c) => {
   }
 })
 
-// Endpoint temporário para aplicar migration 0010 (charge_type)
-app.post('/api/admin/apply-migration-0010', authMiddleware, async (c) => {
+// Endpoint temporário PÚBLICO para aplicar migration 0010 (charge_type)
+// REMOVER após aplicação bem-sucedida em produção
+app.post('/api/admin/apply-migration-0010', async (c) => {
   try {
     console.log('🔧 Aplicando migration 0010: charge_type...')
     
@@ -3371,6 +3372,66 @@ app.post('/api/pix/subscription-link', async (c) => {
     })
   } catch (error: any) {
     console.error('Erro ao criar link:', error)
+    
+    // Se o erro for "no column named charge_type", tentar aplicar migration automaticamente
+    if (error.message?.includes('no column named charge_type')) {
+      console.log('🔧 Detectado erro de charge_type, aplicando migration automaticamente...')
+      
+      try {
+        // Aplicar migration
+        await c.env.DB.prepare(`
+          ALTER TABLE subscription_signup_links 
+          ADD COLUMN charge_type TEXT DEFAULT 'monthly' CHECK(charge_type IN ('single', 'monthly'))
+        `).run()
+        
+        console.log('✅ Coluna charge_type adicionada, tentando novamente...')
+        
+        // Tentar inserir novamente
+        const { walletId, accountId, value, description, maxUses, chargeType } = await c.req.json()
+        const validChargeTypes = ['single', 'monthly']
+        const finalChargeType = validChargeTypes.includes(chargeType) ? chargeType : 'monthly'
+        const linkId = crypto.randomUUID()
+        const expiresAt = new Date(Date.now() + 30*24*60*60*1000).toISOString()
+        
+        await c.env.DB.prepare(`
+          INSERT INTO subscription_signup_links (id, wallet_id, account_id, value, description, expires_at, charge_type)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          linkId, 
+          walletId, 
+          accountId || '', 
+          value, 
+          description || (finalChargeType === 'single' ? 'Pagamento Único' : 'Mensalidade'), 
+          expiresAt,
+          finalChargeType
+        ).run()
+        
+        const linkUrl = `${new URL(c.req.url).origin}/subscription-signup/${linkId}`
+        
+        return c.json({
+          ok: true,
+          autoFixed: true,
+          data: {
+            linkId,
+            linkUrl,
+            qrCodeData: linkUrl,
+            value,
+            description,
+            expiresAt,
+            walletId,
+            accountId
+          }
+        })
+        
+      } catch (migrationError: any) {
+        console.error('❌ Falha ao aplicar migration automática:', migrationError)
+        return c.json({ 
+          error: 'Erro no banco de dados. Por favor, contate o administrador.',
+          details: migrationError.message 
+        }, 500)
+      }
+    }
+    
     return c.json({ error: error.message }, 500)
   }
 })
