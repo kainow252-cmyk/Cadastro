@@ -1436,12 +1436,24 @@ app.post('/api/public/test-deltapag-debug', async (c) => {
     log(`🔍 ID no body: ${customerId}`)
     
     if (!customerId && location) {
-      const match = location.match(/\/customers\/([^\/]+)$/)
-      log(`🔍 Regex match: ${JSON.stringify(match)}`)
-      
-      if (match) {
-        customerId = match[1]
-        log(`✅ ID extraído do Location: ${customerId}`)
+      if (location.includes('/customers/document/')) {
+        log('🔍 Location usa /document/ - tentando buscar por CPF')
+        const cpf = testCustomer.cpf
+        log(`🔄 GET /customers/document/${cpf}`)
+        
+        const detailsResult = await deltapagRequest(c, `/customers/document/${cpf}`, 'GET')
+        log(`📥 Resposta da busca: ${JSON.stringify(detailsResult.data)}`)
+        
+        customerId = detailsResult.data.id || detailsResult.data.customerId
+        log(`✅ ID obtido via CPF: ${customerId}`)
+      } else {
+        const match = location.match(/\/customers\/([^\/]+)$/)
+        log(`🔍 Regex match: ${JSON.stringify(match)}`)
+        
+        if (match) {
+          customerId = match[1]
+          log(`✅ ID extraído do Location: ${customerId}`)
+        }
       }
     }
     
@@ -1658,15 +1670,6 @@ app.post('/api/admin/create-evidence-transactions', authMiddleware, async (c) =>
         if (!customerId && customerResult.status === 201) {
           console.log('⚠️ Status 201 mas sem ID no body, tentando Location header...')
           
-          // Listar TODOS os headers disponíveis
-          console.log('📋 Headers disponíveis:')
-          const allHeaders: string[] = []
-          customerResult.headers.forEach((value, key) => {
-            console.log(`  ${key}: ${value}`)
-            allHeaders.push(key)
-          })
-          console.log('📋 Lista de chaves:', allHeaders.join(', '))
-          
           // Tentar várias variações do header Location
           const locationHeader = customerResult.headers.get('location') 
             || customerResult.headers.get('Location')
@@ -1675,24 +1678,48 @@ app.post('/api/admin/create-evidence-transactions', authMiddleware, async (c) =>
           console.log('📍 Location header encontrado:', locationHeader)
           
           if (locationHeader) {
-            // Extrair ID da URL: /api/v2/customers/123 -> 123
-            const match = locationHeader.match(/\/customers\/([^\/]+)$/)
-            console.log('🔍 Regex match result:', match)
+            // DeltaPag retorna: https://api-sandbox.deltapag.io/api/v2/customers/document/
+            // Precisamos fazer GET em /customers/document/{cpf}
             
-            if (match) {
-              customerId = match[1]
-              console.log(`📍 Customer ID extraído do Location: ${customerId}`)
+            if (locationHeader.includes('/customers/document/')) {
+              console.log('🔍 Location usa /document/ - buscando por CPF...')
+              const cpf = customerData.cpf // Já está sem formatação
+              console.log(`🔄 Buscando cliente por CPF: ${cpf}`)
               
-              // Fazer GET para buscar dados completos do cliente
-              console.log('🔄 Buscando dados completos do cliente...')
-              const customerDetailsResult = await deltapagRequest(c, `/customers/${customerId}`, 'GET')
+              const customerDetailsResult = await deltapagRequest(c, `/customers/document/${cpf}`, 'GET')
+              
+              console.log('📥 Resposta da busca por CPF:', JSON.stringify(customerDetailsResult.data, null, 2))
               
               if (customerDetailsResult.ok && customerDetailsResult.data.id) {
                 customerId = customerDetailsResult.data.id
-                console.log(`✅ Dados completos obtidos: ${customerId}`)
+                console.log(`✅ Customer ID obtido via CPF: ${customerId}`)
+              } else if (customerDetailsResult.ok && customerDetailsResult.data.customerId) {
+                customerId = customerDetailsResult.data.customerId
+                console.log(`✅ Customer ID obtido via CPF (campo customerId): ${customerId}`)
+              } else {
+                console.error('❌ Não encontrou ID na busca por CPF')
+                console.error('❌ Resposta:', JSON.stringify(customerDetailsResult.data, null, 2))
               }
             } else {
-              console.error('❌ Regex não encontrou match no Location header:', locationHeader)
+              // Formato padrão: /customers/{id}
+              const match = locationHeader.match(/\/customers\/([^\/]+)$/)
+              console.log('🔍 Regex match result:', match)
+              
+              if (match) {
+                customerId = match[1]
+                console.log(`📍 Customer ID extraído do Location: ${customerId}`)
+                
+                // Fazer GET para buscar dados completos do cliente
+                console.log('🔄 Buscando dados completos do cliente...')
+                const customerDetailsResult = await deltapagRequest(c, `/customers/${customerId}`, 'GET')
+                
+                if (customerDetailsResult.ok && customerDetailsResult.data.id) {
+                  customerId = customerDetailsResult.data.id
+                  console.log(`✅ Dados completos obtidos: ${customerId}`)
+                }
+              } else {
+                console.error('❌ Regex não encontrou match no Location header:', locationHeader)
+              }
             }
           } else {
             console.error('❌ Nenhuma variação do header Location foi encontrada')
