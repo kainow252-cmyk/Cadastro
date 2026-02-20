@@ -177,14 +177,140 @@ function displayDetailedReport(data) {
 }
 
 // Função para exportar para PDF
-window.exportReportToPDF = function() {
+window.exportReportToPDF = async function() {
     if (!window.ReportsDetailed.currentData) {
         alert('Gere um relatório primeiro');
         return;
     }
     
-    alert('Exportação para PDF em desenvolvimento. Por enquanto, use "Imprimir" (Ctrl+P) e salve como PDF.');
-    window.print();
+    // Carregar jsPDF e autoTable dinamicamente
+    if (typeof jsPDF === 'undefined') {
+        const script1 = document.createElement('script');
+        script1.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+        document.head.appendChild(script1);
+        
+        const script2 = document.createElement('script');
+        script2.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js';
+        document.head.appendChild(script2);
+        
+        await new Promise((resolve) => {
+            script2.onload = resolve;
+        });
+    }
+    
+    const { account, period, filters, summary, transactions } = window.ReportsDetailed.currentData;
+    
+    // Criar instância do jsPDF
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    
+    // Configurações
+    let yPos = 20;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    // Título
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Relatório de Subconta', pageWidth / 2, yPos, { align: 'center' });
+    yPos += 12;
+    
+    // Informações da conta
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Conta: ${account.name}`, 14, yPos);
+    yPos += 6;
+    doc.text(`Email: ${account.email}`, 14, yPos);
+    yPos += 6;
+    doc.text(`CPF/CNPJ: ${account.cpfCnpj}`, 14, yPos);
+    yPos += 6;
+    doc.text(`Período: ${period.startDate} até ${period.endDate}`, 14, yPos);
+    yPos += 6;
+    doc.text(`Filtros: Tipo ${filters.chargeType === 'all' ? 'Todos' : filters.chargeType} | Status ${filters.status === 'all' ? 'Todos' : filters.status}`, 14, yPos);
+    yPos += 10;
+    
+    // Estatísticas
+    doc.setFont('helvetica', 'bold');
+    doc.text('Resumo Financeiro:', 14, yPos);
+    yPos += 6;
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Recebido: R$ ${summary.totalReceived.toFixed(2)}`, 14, yPos);
+    doc.text(`Pendente: R$ ${summary.totalPending.toFixed(2)}`, 70, yPos);
+    yPos += 6;
+    doc.text(`Vencido: R$ ${summary.totalOverdue.toFixed(2)}`, 14, yPos);
+    doc.text(`Transações: ${summary.totalTransactions}`, 70, yPos);
+    yPos += 10;
+    
+    // Preparar dados da tabela
+    const tableData = transactions.map(t => {
+        const date = t.dateCreated ? new Date(t.dateCreated).toLocaleDateString('pt-BR') : 'N/A';
+        const birthdate = t.customer.birthdate && t.customer.birthdate !== 'N/A' ? new Date(t.customer.birthdate).toLocaleDateString('pt-BR') : 'N/A';
+        const cpf = t.customer.cpf ? t.customer.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4') : 'N/A';
+        
+        const chargeTypeLabels = {
+            'single': 'QR Code Avulso',
+            'monthly': 'Assinatura Mensal',
+            'pix_auto': 'PIX Automático',
+            'link_cadastro': 'Link Auto-Cadastro'
+        };
+        
+        return [
+            date,
+            t.description,
+            `R$ ${t.value.toFixed(2)}`,
+            t.status,
+            t.customer.name,
+            cpf,
+            birthdate,
+            chargeTypeLabels[t.chargeType] || 'Mensal'
+        ];
+    });
+    
+    // Adicionar tabela
+    doc.autoTable({
+        head: [['Data', 'Descrição', 'Valor', 'Status', 'Cliente', 'CPF', 'Nascimento', 'Tipo']],
+        body: tableData,
+        startY: yPos,
+        styles: { 
+            fontSize: 8,
+            cellPadding: 2
+        },
+        headStyles: {
+            fillColor: [249, 115, 22], // Orange-500
+            textColor: [255, 255, 255],
+            fontStyle: 'bold'
+        },
+        alternateRowStyles: {
+            fillColor: [249, 250, 251] // Gray-50
+        },
+        columnStyles: {
+            0: { cellWidth: 20 }, // Data
+            1: { cellWidth: 35 }, // Descrição
+            2: { cellWidth: 22 }, // Valor
+            3: { cellWidth: 20 }, // Status
+            4: { cellWidth: 30 }, // Cliente
+            5: { cellWidth: 25 }, // CPF
+            6: { cellWidth: 20 }, // Nascimento
+            7: { cellWidth: 28 }  // Tipo
+        }
+    });
+    
+    // Rodapé
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        doc.text(
+            `Gerado em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR')} - Página ${i} de ${pageCount}`,
+            pageWidth / 2,
+            doc.internal.pageSize.getHeight() - 10,
+            { align: 'center' }
+        );
+    }
+    
+    // Download
+    const fileName = `relatorio_${account.name.replace(/\s/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+    doc.save(fileName);
 }
 
 // Função para exportar para Excel
