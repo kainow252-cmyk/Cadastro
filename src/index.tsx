@@ -3545,7 +3545,7 @@ app.get('/api/pix/subscription-link/:linkId', async (c) => {
 app.post('/api/pix/subscription-signup/:linkId', async (c) => {
   try {
     const linkId = c.req.param('linkId')
-    const { customerName, customerEmail, customerCpf } = await c.req.json()
+    const { customerName, customerEmail, customerCpf, customerBirthdate } = await c.req.json()
     
     if (!customerName || !customerEmail || !customerCpf) {
       return c.json({ error: 'Nome, email e CPF são obrigatórios' }, 400)
@@ -3720,10 +3720,26 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
     }
     
     // 5. Registrar conversão
-    await c.env.DB.prepare(`
-      INSERT INTO subscription_conversions (link_id, customer_id, subscription_id, customer_name, customer_email, customer_cpf)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).bind(linkId, customerId, subscription?.id || null, customerName, customerEmail, customerCpf).run()
+    try {
+      await c.env.DB.prepare(`
+        INSERT INTO subscription_conversions (link_id, customer_id, subscription_id, customer_name, customer_email, customer_cpf, customer_birthdate)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).bind(linkId, customerId, subscription?.id || null, customerName, customerEmail, customerCpf, customerBirthdate || null).run()
+    } catch (dbError: any) {
+      // Se erro for "no column named customer_birthdate", aplicar migration automaticamente
+      if (dbError.message && dbError.message.includes('no column named customer_birthdate')) {
+        console.log('⚠️ Coluna customer_birthdate não existe, aplicando migration...')
+        await c.env.DB.prepare(`ALTER TABLE subscription_conversions ADD COLUMN customer_birthdate TEXT`).run()
+        console.log('✅ Migration aplicada, tentando novamente...')
+        // Tentar novamente após criar a coluna
+        await c.env.DB.prepare(`
+          INSERT INTO subscription_conversions (link_id, customer_id, subscription_id, customer_name, customer_email, customer_cpf, customer_birthdate)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).bind(linkId, customerId, subscription?.id || null, customerName, customerEmail, customerCpf, customerBirthdate || null).run()
+      } else {
+        throw dbError
+      }
+    }
     
     // 6. Salvar transação no banco D1 local
     const accountId = link.account_id as string
@@ -6454,6 +6470,12 @@ app.get('/subscription-signup/:linkId', async (c) => {
                     </label>
                     <input type="text" id="customer-cpf" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="000.000.000-00" maxlength="14" required>
                 </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-birthday-cake mr-1 text-indigo-500"></i>Data de Nascimento
+                    </label>
+                    <input type="date" id="customer-birthdate" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" required>
+                </div>
                 <button type="submit" id="submit-btn" class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold py-4 rounded-lg hover:from-indigo-700 hover:to-purple-700">
                     <i class="fas fa-check-circle mr-2"></i>Confirmar e Gerar PIX
                 </button>
@@ -6577,7 +6599,8 @@ app.get('/subscription-signup/:linkId', async (c) => {
                 const response = await axios.post(\`/api/pix/subscription-signup/\${linkId}\`, {
                     customerName: document.getElementById('customer-name').value,
                     customerEmail: document.getElementById('customer-email').value,
-                    customerCpf: document.getElementById('customer-cpf').value.replace(/\\D/g, '')
+                    customerCpf: document.getElementById('customer-cpf').value.replace(/\\D/g, ''),
+                    customerBirthdate: document.getElementById('customer-birthdate').value
                 });
                 
                 if (response.data.ok) {
