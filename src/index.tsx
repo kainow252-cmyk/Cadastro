@@ -1437,15 +1437,49 @@ app.post('/api/public/test-deltapag-debug', async (c) => {
     
     if (!customerId && location) {
       if (location.includes('/customers/document/')) {
-        log('🔍 Location usa /document/ - tentando buscar por CPF')
+        log('🔍 Location usa /document/ - tentando múltiplas abordagens...')
         const cpf = testCustomer.cpf
-        log(`🔄 GET /customers/document/${cpf}`)
         
-        const detailsResult = await deltapagRequest(c, `/customers/document/${cpf}`, 'GET')
-        log(`📥 Resposta da busca: ${JSON.stringify(detailsResult.data)}`)
+        // Tentativa 1: /customers/document/{cpf}
+        log(`🔄 Tentativa 1: GET /customers/document/${cpf}`)
+        let detailsResult = await deltapagRequest(c, `/customers/document/${cpf}`, 'GET')
+        log(`📥 Resposta: ${JSON.stringify(detailsResult.data)}`)
         
-        customerId = detailsResult.data.id || detailsResult.data.customerId
-        log(`✅ ID obtido via CPF: ${customerId}`)
+        if (detailsResult.ok && (detailsResult.data.id || detailsResult.data.customerId)) {
+          customerId = detailsResult.data.id || detailsResult.data.customerId
+          log(`✅ ID obtido (tentativa 1): ${customerId}`)
+        } else {
+          // Tentativa 2: /customers/cpf/{cpf}
+          log(`🔄 Tentativa 2: GET /customers/cpf/${cpf}`)
+          detailsResult = await deltapagRequest(c, `/customers/cpf/${cpf}`, 'GET')
+          log(`📥 Resposta: ${JSON.stringify(detailsResult.data)}`)
+          
+          if (detailsResult.ok && (detailsResult.data.id || detailsResult.data.customerId)) {
+            customerId = detailsResult.data.id || detailsResult.data.customerId
+            log(`✅ ID obtido (tentativa 2): ${customerId}`)
+          } else {
+            // Tentativa 3: Listar todos e buscar por email
+            log(`🔄 Tentativa 3: GET /customers?email=${testCustomer.email}`)
+            detailsResult = await deltapagRequest(c, `/customers?email=${testCustomer.email}`, 'GET')
+            log(`📥 Resposta: ${JSON.stringify(detailsResult.data)}`)
+            
+            if (detailsResult.ok) {
+              const customers = Array.isArray(detailsResult.data) ? detailsResult.data : [detailsResult.data]
+              if (customers.length > 0 && customers[0].id) {
+                customerId = customers[0].id
+                log(`✅ ID obtido (tentativa 3 - busca por email): ${customerId}`)
+              } else {
+                // Tentativa 4: Usar o content-id do header como ID
+                const contentId = result.headers.get('content-id')
+                log(`🔄 Tentativa 4: Usar content-id do header: ${contentId}`)
+                if (contentId) {
+                  customerId = contentId
+                  log(`✅ Usando content-id como ID: ${customerId}`)
+                }
+              }
+            }
+          }
+        }
       } else {
         const match = location.match(/\/customers\/([^\/]+)$/)
         log(`🔍 Regex match: ${JSON.stringify(match)}`)
@@ -1682,23 +1716,49 @@ app.post('/api/admin/create-evidence-transactions', authMiddleware, async (c) =>
             // Precisamos fazer GET em /customers/document/{cpf}
             
             if (locationHeader.includes('/customers/document/')) {
-              console.log('🔍 Location usa /document/ - buscando por CPF...')
+              console.log('🔍 Location usa /document/ - tentando múltiplas abordagens...')
               const cpf = customerData.cpf // Já está sem formatação
-              console.log(`🔄 Buscando cliente por CPF: ${cpf}`)
+              const email = customerData.email
               
-              const customerDetailsResult = await deltapagRequest(c, `/customers/document/${cpf}`, 'GET')
+              // Tentativa 1: Buscar por email (mais confiável que CPF recém-criado)
+              console.log(`🔄 Tentativa 1: GET /customers?email=${email}`)
+              let customerDetailsResult = await deltapagRequest(c, `/customers?email=${email}`, 'GET')
+              console.log('📥 Resposta busca por email:', JSON.stringify(customerDetailsResult.data, null, 2))
               
-              console.log('📥 Resposta da busca por CPF:', JSON.stringify(customerDetailsResult.data, null, 2))
+              if (customerDetailsResult.ok) {
+                const customers = Array.isArray(customerDetailsResult.data) ? customerDetailsResult.data : [customerDetailsResult.data]
+                if (customers.length > 0 && customers[0]?.id) {
+                  customerId = customers[0].id
+                  console.log(`✅ Customer ID obtido via email (tentativa 1): ${customerId}`)
+                }
+              }
               
-              if (customerDetailsResult.ok && customerDetailsResult.data.id) {
-                customerId = customerDetailsResult.data.id
-                console.log(`✅ Customer ID obtido via CPF: ${customerId}`)
-              } else if (customerDetailsResult.ok && customerDetailsResult.data.customerId) {
-                customerId = customerDetailsResult.data.customerId
-                console.log(`✅ Customer ID obtido via CPF (campo customerId): ${customerId}`)
-              } else {
-                console.error('❌ Não encontrou ID na busca por CPF')
-                console.error('❌ Resposta:', JSON.stringify(customerDetailsResult.data, null, 2))
+              // Tentativa 2: Usar content-id do header
+              if (!customerId) {
+                const contentId = customerResult.headers.get('content-id')
+                console.log(`🔄 Tentativa 2: Usar content-id do header: ${contentId}`)
+                if (contentId) {
+                  // Validar se é um ID válido (não vazio e não "0")
+                  if (contentId && contentId !== '0') {
+                    customerId = `cust_${contentId}`
+                    console.log(`✅ Customer ID usando content-id (tentativa 2): ${customerId}`)
+                  }
+                }
+              }
+              
+              // Tentativa 3: Buscar por CPF
+              if (!customerId) {
+                console.log(`🔄 Tentativa 3: GET /customers/document/${cpf}`)
+                customerDetailsResult = await deltapagRequest(c, `/customers/document/${cpf}`, 'GET')
+                console.log('📥 Resposta busca por CPF:', JSON.stringify(customerDetailsResult.data, null, 2))
+                
+                if (customerDetailsResult.ok && customerDetailsResult.data.id) {
+                  customerId = customerDetailsResult.data.id
+                  console.log(`✅ Customer ID obtido via CPF (tentativa 3): ${customerId}`)
+                } else if (customerDetailsResult.ok && customerDetailsResult.data.customerId) {
+                  customerId = customerDetailsResult.data.customerId
+                  console.log(`✅ Customer ID obtido via CPF campo customerId (tentativa 3): ${customerId}`)
+                }
               }
             } else {
               // Formato padrão: /customers/{id}
