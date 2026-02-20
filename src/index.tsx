@@ -668,16 +668,36 @@ app.get('/api/reports/:accountId', async (c) => {
     // Buscar informações da subconta do D1
     const accountQuery = await db.prepare('SELECT * FROM signup_links WHERE account_id = ? LIMIT 1').bind(accountId).first()
     
-    if (!accountQuery) {
-      return c.json({ error: 'Subconta não encontrada' }, 404)
-    }
+    let account: any = null
     
-    const account = {
-      id: accountQuery.account_id,
-      name: `Conta ${accountId.substring(0, 8)}`,
-      email: 'contato@exemplo.com',
-      cpfCnpj: '000.000.000-00',
-      walletId: accountQuery.account_id
+    if (accountQuery) {
+      // Subconta encontrada no D1
+      account = {
+        id: accountQuery.account_id,
+        name: `Conta ${accountId.substring(0, 8)}`,
+        email: 'contato@exemplo.com',
+        cpfCnpj: '000.000.000-00',
+        walletId: accountQuery.account_id
+      }
+    } else {
+      // Subconta não encontrada no D1, buscar direto do Asaas
+      console.log(`⚠️ Subconta ${accountId} não encontrada no D1, buscando no Asaas...`)
+      
+      const asaasAccount = await asaasRequest(c, `/accounts/${accountId}`, 'GET')
+      
+      if (!asaasAccount.ok || !asaasAccount.data) {
+        return c.json({ error: 'Subconta não encontrada no Asaas', accountId }, 404)
+      }
+      
+      account = {
+        id: asaasAccount.data.id,
+        name: asaasAccount.data.name || `Conta ${accountId.substring(0, 8)}`,
+        email: asaasAccount.data.email || 'N/A',
+        cpfCnpj: asaasAccount.data.cpfCnpj || 'N/A',
+        walletId: asaasAccount.data.walletId || accountId
+      }
+      
+      console.log('✅ Subconta encontrada no Asaas:', account.name)
     }
     
     // Buscar transações do banco D1 local
@@ -696,7 +716,33 @@ app.get('/api/reports/:accountId', async (c) => {
     query += ` ORDER BY created_at DESC`
     
     const result = await db.prepare(query).bind(...params).all()
-    const payments = result.results || []
+    let payments = result.results || []
+    
+    // Se não houver transações no D1, buscar direto do Asaas
+    if (payments.length === 0) {
+      console.log(`⚠️ Nenhuma transação no D1 para ${accountId}, buscando no Asaas...`)
+      
+      let asaasPaymentsUrl = `/payments?account=${accountId}&limit=100`
+      if (startDate) asaasPaymentsUrl += `&dateCreated[ge]=${startDate}`
+      if (endDate) asaasPaymentsUrl += `&dateCreated[le]=${endDate}`
+      
+      const asaasPayments = await asaasRequest(c, asaasPaymentsUrl, 'GET')
+      
+      if (asaasPayments.ok && asaasPayments.data?.data) {
+        payments = asaasPayments.data.data.map((p: any) => ({
+          id: p.id,
+          value: p.value,
+          description: p.description,
+          due_date: p.dueDate,
+          status: p.status,
+          created_at: p.dateCreated,
+          billing_type: p.billingType,
+          payment_date: p.paymentDate
+        }))
+        
+        console.log(`✅ ${payments.length} transações encontradas no Asaas`)
+      }
+    }
     
     // Calcular estatísticas
     let totalReceived = 0
