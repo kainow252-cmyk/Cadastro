@@ -59,6 +59,7 @@ function displayDetailedReport(data) {
     const resultsDiv = document.getElementById('report-results');
     
     const { account, period, filters, summary, transactions } = data;
+    const isConsolidated = account.id === 'ALL_ACCOUNTS';
     
     // Badge de tipo de cobrança
     const getChargeTypeBadge = (type) => {
@@ -150,6 +151,7 @@ function displayDetailedReport(data) {
         '<th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Descrição</th>' +
         '<th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Valor</th>' +
         '<th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Status</th>' +
+        (isConsolidated ? '<th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Subconta</th>' : '') +
         '<th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Nome Cliente</th>' +
         '<th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">CPF</th>' +
         '<th class="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">Nascimento</th>' +
@@ -164,6 +166,7 @@ function displayDetailedReport(data) {
             '<td class="px-4 py-3 text-sm text-gray-700">' + t.description + '</td>' +
             '<td class="px-4 py-3 text-sm font-semibold text-gray-900">R$ ' + t.value.toFixed(2) + '</td>' +
             '<td class="px-4 py-3">' + getStatusBadge(t.status) + '</td>' +
+            (isConsolidated ? '<td class="px-4 py-3 text-sm font-medium text-blue-700"><i class="fas fa-building mr-1"></i>' + (t.accountName || 'N/A') + '</td>' : '') +
             '<td class="px-4 py-3 text-sm text-gray-700">' + t.customer.name + '</td>' +
             '<td class="px-4 py-3 text-sm text-gray-700">' + formatCPF(t.customer.cpf) + '</td>' +
             '<td class="px-4 py-3 text-sm text-gray-700">' + formatDate(t.customer.birthdate) + '</td>' +
@@ -199,6 +202,7 @@ window.exportReportToPDF = async function() {
     }
     
     const { account, period, filters, summary, transactions } = window.ReportsDetailed.currentData;
+    const isConsolidated = account.id === 'ALL_ACCOUNTS';
     
     // Criar instância do jsPDF
     const { jsPDF } = window.jspdf;
@@ -253,26 +257,70 @@ window.exportReportToPDF = async function() {
             'link_cadastro': 'Link Auto-Cadastro'
         };
         
-        return [
+        const row = [
             date,
             t.description,
             `R$ ${t.value.toFixed(2)}`,
-            t.status,
+            t.status
+        ];
+        
+        // Adicionar coluna Subconta se for relatório consolidado
+        if (isConsolidated) {
+            row.push(t.accountName || 'N/A');
+        }
+        
+        row.push(
             t.customer.name,
             cpf,
             birthdate,
             chargeTypeLabels[t.chargeType] || 'Mensal'
-        ];
+        );
+        
+        return row;
     });
+    
+    // Cabeçalho da tabela (adiciona "Subconta" se for consolidado)
+    const tableHead = ['Data', 'Descrição', 'Valor', 'Status'];
+    if (isConsolidated) {
+        tableHead.push('Subconta');
+    }
+    tableHead.push('Cliente', 'CPF', 'Nascimento', 'Tipo');
+    
+    // Estilos de colunas (ajustado para incluir Subconta se necessário)
+    let columnStyles;
+    if (isConsolidated) {
+        columnStyles = {
+            0: { cellWidth: 18 },  // Data
+            1: { cellWidth: 28 },  // Descrição
+            2: { cellWidth: 18 },  // Valor
+            3: { cellWidth: 18 },  // Status
+            4: { cellWidth: 25 },  // Subconta
+            5: { cellWidth: 25 },  // Cliente
+            6: { cellWidth: 22 },  // CPF
+            7: { cellWidth: 18 },  // Nascimento
+            8: { cellWidth: 28 }   // Tipo
+        };
+    } else {
+        columnStyles = {
+            0: { cellWidth: 20 },  // Data
+            1: { cellWidth: 35 },  // Descrição
+            2: { cellWidth: 22 },  // Valor
+            3: { cellWidth: 20 },  // Status
+            4: { cellWidth: 30 },  // Cliente
+            5: { cellWidth: 25 },  // CPF
+            6: { cellWidth: 20 },  // Nascimento
+            7: { cellWidth: 28 }   // Tipo
+        };
+    }
     
     // Adicionar tabela
     doc.autoTable({
-        head: [['Data', 'Descrição', 'Valor', 'Status', 'Cliente', 'CPF', 'Nascimento', 'Tipo']],
+        head: [tableHead],
         body: tableData,
         startY: yPos,
         styles: { 
-            fontSize: 8,
-            cellPadding: 2
+            fontSize: 7,
+            cellPadding: 1.5
         },
         headStyles: {
             fillColor: [249, 115, 22], // Orange-500
@@ -282,16 +330,7 @@ window.exportReportToPDF = async function() {
         alternateRowStyles: {
             fillColor: [249, 250, 251] // Gray-50
         },
-        columnStyles: {
-            0: { cellWidth: 20 }, // Data
-            1: { cellWidth: 35 }, // Descrição
-            2: { cellWidth: 22 }, // Valor
-            3: { cellWidth: 20 }, // Status
-            4: { cellWidth: 30 }, // Cliente
-            5: { cellWidth: 25 }, // CPF
-            6: { cellWidth: 20 }, // Nascimento
-            7: { cellWidth: 28 }  // Tipo
-        }
+        columnStyles: columnStyles
     });
     
     // Rodapé
@@ -321,9 +360,14 @@ window.exportReportToExcel = function() {
     }
     
     const { account, transactions } = window.ReportsDetailed.currentData;
+    const isConsolidated = account.id === 'ALL_ACCOUNTS';
     
-    // Criar CSV
-    let csv = 'Data,Descrição,Valor,Status,Nome Cliente,Email,CPF,Nascimento,Tipo\n';
+    // Criar CSV com cabeçalho dinâmico
+    let csv = 'Data,Descrição,Valor,Status,';
+    if (isConsolidated) {
+        csv += 'Subconta,';
+    }
+    csv += 'Nome Cliente,Email,CPF,Nascimento,Tipo\n';
     
     transactions.forEach(t => {
         const date = new Date(t.dateCreated).toLocaleDateString('pt-BR');
@@ -333,8 +377,14 @@ window.exportReportToExcel = function() {
         csv += date + ',' +
             '"' + t.description + '",' +
             t.value.toFixed(2).replace('.', ',') + ',' +
-            t.status + ',' +
-            '"' + t.customer.name + '",' +
+            t.status + ',';
+        
+        // Adicionar subconta se for relatório consolidado
+        if (isConsolidated) {
+            csv += '"' + (t.accountName || 'N/A') + '",';
+        }
+        
+        csv += '"' + t.customer.name + '",' +
             '"' + t.customer.email + '",' +
             cpf + ',' +
             birthdate + ',' +

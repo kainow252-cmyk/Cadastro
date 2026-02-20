@@ -1023,10 +1023,11 @@ app.get('/api/reports/all-accounts/detailed', async (c) => {
     const result = await db.prepare(query).bind(...params).all()
     let payments = result.results || []
     
-    // Enriquecer cada pagamento com dados do cliente
+    // Enriquecer cada pagamento com dados do cliente e subconta
     for (let i = 0; i < payments.length; i++) {
       const payment = payments[i] as any
       
+      // Buscar dados do cliente
       const conversion = await db.prepare(`
         SELECT sc.*, ssl.charge_type 
         FROM subscription_conversions sc
@@ -1048,6 +1049,14 @@ app.get('/api/reports/all-accounts/detailed', async (c) => {
         payment.customer_birthdate = 'N/A'
         payment.charge_type = 'monthly'
       }
+      
+      // Buscar nome da subconta
+      const account = await db.prepare(`
+        SELECT name FROM signup_links WHERE id = ?
+        LIMIT 1
+      `).bind(payment.account_id).first()
+      
+      payment.account_name = account ? account.name : 'Subconta não identificada'
     }
     
     // Filtrar por tipo de cobrança
@@ -1076,6 +1085,7 @@ app.get('/api/reports/all-accounts/detailed', async (c) => {
     const transactions = payments.map((p: any) => ({
       id: p.id,
       accountId: p.account_id,
+      accountName: p.account_name || 'N/A',
       value: parseFloat(p.value || 0),
       description: p.description || 'Sem descrição',
       dueDate: p.due_date,
