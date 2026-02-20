@@ -25,7 +25,15 @@ window.generateDetailedReport = async function() {
     
     try {
         // Montar URL com filtros
-        let url = `/api/reports/${accountId}/detailed?`;
+        let url;
+        if (accountId === 'ALL_ACCOUNTS') {
+            // Relatório consolidado de todas as subcontas
+            url = `/api/reports/all-accounts/detailed?`;
+        } else {
+            // Relatório individual
+            url = `/api/reports/${accountId}/detailed?`;
+        }
+        
         if (startDate) url += `startDate=${startDate}&`;
         if (endDate) url += `endDate=${endDate}&`;
         if (chargeType) url += `chargeType=${chargeType}&`;
