@@ -6496,43 +6496,23 @@ app.get('/subscription-signup/:linkId', async (c) => {
                     <i class="fas fa-check-double text-white text-5xl"></i>
                 </div>
                 <h2 class="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-600 to-emerald-600 mb-3 animate-pulse">🎉 Pagamento Confirmado! 🎉</h2>
-                <p class="text-xl text-green-600 font-semibold mb-4">✅ Sua assinatura foi ativada com sucesso</p>
+                <p id="payment-subtitle" class="text-xl text-green-600 font-semibold mb-4">✅ Seu pagamento foi processado com sucesso</p>
                 <div class="bg-gradient-to-r from-yellow-200 via-green-200 to-blue-200 rounded-lg p-3 animate-pulse">
-                    <p class="text-lg font-bold text-gray-800">
+                    <p id="payment-welcome" class="text-lg font-bold text-gray-800">
                         <i class="fas fa-star text-yellow-500 mr-2"></i>
-                        Bem-vindo à sua assinatura!
+                        Obrigado pela sua compra!
                         <i class="fas fa-star text-yellow-500 ml-2"></i>
                     </p>
                 </div>
             </div>
             
-            <div class="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-6 mb-6 border-2 border-green-200">
+            <div id="payment-steps" class="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-6 mb-6 border-2 border-green-200">
                 <h3 class="text-lg font-bold text-gray-800 mb-4 text-center">
                     <i class="fas fa-calendar-check text-green-600 mr-2"></i>
                     O que acontece agora?
                 </h3>
-                <div class="space-y-4">
-                    <div class="flex items-start">
-                        <div class="bg-green-500 text-white rounded-full w-8 h-8 flex items-center justify-center mr-4 flex-shrink-0 font-bold">1</div>
-                        <div>
-                            <p class="font-semibold text-gray-800">Pagamento Processado</p>
-                            <p class="text-sm text-gray-600">Seu pagamento foi confirmado e registrado</p>
-                        </div>
-                    </div>
-                    <div class="flex items-start">
-                        <div class="bg-green-500 text-white rounded-full w-8 h-8 flex items-center justify-center mr-4 flex-shrink-0 font-bold">2</div>
-                        <div>
-                            <p class="font-semibold text-gray-800">Assinatura Ativa</p>
-                            <p class="text-sm text-gray-600">Sua assinatura mensal está ativa a partir de agora</p>
-                        </div>
-                    </div>
-                    <div class="flex items-start">
-                        <div class="bg-green-500 text-white rounded-full w-8 h-8 flex items-center justify-center mr-4 flex-shrink-0 font-bold">3</div>
-                        <div>
-                            <p class="font-semibold text-gray-800">Cobranças Automáticas</p>
-                            <p class="text-sm text-gray-600">Todo mês você receberá um novo PIX por email</p>
-                        </div>
-                    </div>
+                <div id="payment-steps-content" class="space-y-4">
+                    <!-- Conteúdo será preenchido dinamicamente -->
                 </div>
             </div>
             
@@ -6608,6 +6588,9 @@ app.get('/subscription-signup/:linkId', async (c) => {
                         document.getElementById('pix-payload').value = response.data.firstPayment.pix.payload;
                     }
                     
+                    // Salvar tipo de cobrança para usar depois
+                    window.chargeType = response.data.chargeType || 'monthly';
+                    
                     // Iniciar verificação de pagamento
                     window.paymentId = response.data.firstPayment.id;
                     startPaymentCheck();
@@ -6652,6 +6635,68 @@ app.get('/subscription-signup/:linkId', async (c) => {
             
             // Criar efeito confetti
             createConfetti();
+            
+            // Atualizar conteúdo dinâmico baseado no tipo de cobrança
+            const chargeType = window.chargeType || 'monthly';
+            const stepsContent = document.getElementById('payment-steps-content');
+            
+            if (chargeType === 'single') {
+                // Mensagem para pagamento único
+                document.getElementById('payment-subtitle').textContent = '✅ Seu pagamento foi processado com sucesso';
+                document.getElementById('payment-welcome').innerHTML = '<i class="fas fa-check-circle text-green-500 mr-2"></i>Obrigado pela sua compra!<i class="fas fa-check-circle text-green-500 ml-2"></i>';
+                
+                stepsContent.innerHTML = `
+                    <div class="flex items-start space-x-4">
+                        <div class="flex-shrink-0 w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white font-bold text-lg">1</div>
+                        <div class="flex-1">
+                            <h4 class="font-bold text-gray-800 mb-1">Pagamento Confirmado</h4>
+                            <p class="text-sm text-gray-600">Seu pagamento foi confirmado e processado</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start space-x-4">
+                        <div class="flex-shrink-0 w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white font-bold text-lg">2</div>
+                        <div class="flex-1">
+                            <h4 class="font-bold text-gray-800 mb-1">Compra Concluída</h4>
+                            <p class="text-sm text-gray-600">Sua compra foi registrada com sucesso</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start space-x-4">
+                        <div class="flex-shrink-0 w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white font-bold text-lg">3</div>
+                        <div class="flex-1">
+                            <h4 class="font-bold text-gray-800 mb-1">Recibo Enviado</h4>
+                            <p class="text-sm text-gray-600">Você receberá o comprovante por email</p>
+                        </div>
+                    </div>
+                `;
+            } else {
+                // Mensagem para assinatura mensal
+                document.getElementById('payment-subtitle').textContent = '✅ Sua assinatura foi ativada com sucesso';
+                document.getElementById('payment-welcome').innerHTML = '<i class="fas fa-star text-yellow-500 mr-2"></i>Bem-vindo à sua assinatura!<i class="fas fa-star text-yellow-500 ml-2"></i>';
+                
+                stepsContent.innerHTML = `
+                    <div class="flex items-start space-x-4">
+                        <div class="flex-shrink-0 w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white font-bold text-lg">1</div>
+                        <div class="flex-1">
+                            <h4 class="font-bold text-gray-800 mb-1">Pagamento Processado</h4>
+                            <p class="text-sm text-gray-600">Seu pagamento foi confirmado e registrado</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start space-x-4">
+                        <div class="flex-shrink-0 w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white font-bold text-lg">2</div>
+                        <div class="flex-1">
+                            <h4 class="font-bold text-gray-800 mb-1">Assinatura Ativa</h4>
+                            <p class="text-sm text-gray-600">Sua assinatura mensal está ativa a partir de agora</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start space-x-4">
+                        <div class="flex-shrink-0 w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white font-bold text-lg">3</div>
+                        <div class="flex-1">
+                            <h4 class="font-bold text-gray-800 mb-1">Cobranças Automáticas</h4>
+                            <p class="text-sm text-gray-600">Todo mês você receberá um novo PIX por email</p>
+                        </div>
+                    </div>
+                `;
+            }
             
             // Mostrar tela de confirmação
             document.getElementById('success-state').classList.add('hidden');
