@@ -3522,7 +3522,8 @@ app.get('/api/pix/subscription-link/:linkId', async (c) => {
         value: result.value,
         description: result.description,
         walletId: result.wallet_id,
-        accountId: result.account_id
+        accountId: result.account_id,
+        chargeType: result.charge_type || 'monthly' // Adicionar charge_type
       }
     })
   } catch (error: any) {
