@@ -1763,33 +1763,65 @@ app.post('/api/admin/create-evidence-transactions', authMiddleware, async (c) =>
         console.log('📤 Criando assinatura DeltaPag:', {
           customer: customerId,
           value: tx.value,
-          billingType: 'CREDIT_CARD'
+          billingType: 'CREDIT_CARD',
+          cycle: tx.recurrence_type
         })
+        console.log('📤 Payload completo:', JSON.stringify(subscriptionData, null, 2))
         
         const subscriptionResult = await deltapagRequest(c, '/subscriptions', 'POST', subscriptionData)
         
         console.log('🔍 Status assinatura:', subscriptionResult.status)
         console.log('🔍 Resposta assinatura:', JSON.stringify(subscriptionResult.data, null, 2))
         
+        // Log headers da assinatura
+        console.log('📋 Headers da resposta de assinatura:')
+        subscriptionResult.headers.forEach((value, key) => {
+          console.log(`  ${key}: ${value}`)
+        })
+        
         if (!subscriptionResult.ok) {
           console.error('❌ Erro ao criar assinatura:', subscriptionResult.data)
           const errorMessage = subscriptionResult.data?.message 
             || subscriptionResult.data?.error 
             || subscriptionResult.data?.errors?.[0]?.message
+            || subscriptionResult.data?.errors?.[0]
+            || subscriptionResult.data?.rawResponse
             || JSON.stringify(subscriptionResult.data)
             || 'Desconhecido'
           throw new Error(`Erro ao criar assinatura: ${errorMessage}`)
         }
         
-        // Se status 201 com resposta vazia, extrair ID do header Location
+        // Se status 201 com resposta vazia, extrair ID do header Location ou content-id
         let subscriptionId = subscriptionResult.data.id
         let subscription = subscriptionResult.data
         
         if (!subscriptionId && subscriptionResult.status === 201) {
-          const locationHeader = subscriptionResult.headers.get('location')
-          console.log('📍 Location header assinatura:', locationHeader)
+          console.log('⚠️ Status 201 mas sem ID no body, tentando headers...')
           
-          if (locationHeader) {
+          const locationHeader = subscriptionResult.headers.get('location')
+          const contentId = subscriptionResult.headers.get('content-id')
+          
+          console.log('📍 Location header assinatura:', locationHeader)
+          console.log('🔍 Content-ID header assinatura:', contentId)
+          
+          // Tentar content-id primeiro (igual ao customer)
+          if (contentId && contentId !== '0') {
+            subscriptionId = contentId
+            console.log(`✅ Subscription ID usando content-id: ${subscriptionId}`)
+            
+            // Tentar buscar detalhes
+            console.log('🔄 Buscando dados completos da assinatura...')
+            const subscriptionDetailsResult = await deltapagRequest(c, `/subscriptions/${subscriptionId}`, 'GET')
+            
+            if (subscriptionDetailsResult.ok && subscriptionDetailsResult.data.id) {
+              subscription = subscriptionDetailsResult.data
+              subscriptionId = subscription.id
+              console.log(`✅ Dados completos da assinatura obtidos: ${subscriptionId}`)
+            } else {
+              console.log('⚠️ Não conseguiu buscar detalhes, usando content-id diretamente')
+              subscription = { id: subscriptionId, status: 'ACTIVE' }
+            }
+          } else if (locationHeader) {
             // Extrair ID da URL: /api/v2/subscriptions/sub_123 -> sub_123
             const match = locationHeader.match(/\/subscriptions\/([^\/]+)$/)
             if (match) {
