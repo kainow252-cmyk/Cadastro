@@ -1555,7 +1555,36 @@ app.post('/api/admin/create-evidence-transactions', authMiddleware, async (c) =>
           throw new Error(`Erro ao criar cliente: ${errorMessage}`)
         }
         
-        const customerId = customerResult.data.id
+        // Se status 201 com resposta vazia, extrair ID do header Location
+        let customerId = customerResult.data.id
+        
+        if (!customerId && customerResult.status === 201) {
+          const locationHeader = customerResult.headers.get('location')
+          console.log('📍 Location header:', locationHeader)
+          
+          if (locationHeader) {
+            // Extrair ID da URL: /api/v2/customers/123 -> 123
+            const match = locationHeader.match(/\/customers\/([^\/]+)$/)
+            if (match) {
+              customerId = match[1]
+              console.log(`📍 Customer ID extraído do Location: ${customerId}`)
+              
+              // Fazer GET para buscar dados completos do cliente
+              console.log('🔄 Buscando dados completos do cliente...')
+              const customerDetailsResult = await deltapagRequest(c, `/customers/${customerId}`, 'GET')
+              
+              if (customerDetailsResult.ok && customerDetailsResult.data.id) {
+                customerId = customerDetailsResult.data.id
+                console.log(`✅ Dados completos obtidos: ${customerId}`)
+              }
+            }
+          }
+        }
+        
+        if (!customerId) {
+          throw new Error('Não foi possível obter o ID do cliente criado (nem no body nem no Location header)')
+        }
+        
         console.log(`✅ Cliente criado: ${customerId}`)
         
         // 2. Criar assinatura recorrente via API DeltaPag
@@ -1594,16 +1623,55 @@ app.post('/api/admin/create-evidence-transactions', authMiddleware, async (c) =>
         
         const subscriptionResult = await deltapagRequest(c, '/subscriptions', 'POST', subscriptionData)
         
+        console.log('🔍 Status assinatura:', subscriptionResult.status)
+        console.log('🔍 Resposta assinatura:', JSON.stringify(subscriptionResult.data, null, 2))
+        
         if (!subscriptionResult.ok) {
           console.error('❌ Erro ao criar assinatura:', subscriptionResult.data)
-          throw new Error(`Erro ao criar assinatura: ${subscriptionResult.data.message || 'Desconhecido'}`)
+          const errorMessage = subscriptionResult.data?.message 
+            || subscriptionResult.data?.error 
+            || subscriptionResult.data?.errors?.[0]?.message
+            || JSON.stringify(subscriptionResult.data)
+            || 'Desconhecido'
+          throw new Error(`Erro ao criar assinatura: ${errorMessage}`)
         }
         
-        const subscription = subscriptionResult.data
-        console.log(`✅ Assinatura DeltaPag criada: ${subscription.id}`)
+        // Se status 201 com resposta vazia, extrair ID do header Location
+        let subscriptionId = subscriptionResult.data.id
+        let subscription = subscriptionResult.data
+        
+        if (!subscriptionId && subscriptionResult.status === 201) {
+          const locationHeader = subscriptionResult.headers.get('location')
+          console.log('📍 Location header assinatura:', locationHeader)
+          
+          if (locationHeader) {
+            // Extrair ID da URL: /api/v2/subscriptions/sub_123 -> sub_123
+            const match = locationHeader.match(/\/subscriptions\/([^\/]+)$/)
+            if (match) {
+              subscriptionId = match[1]
+              console.log(`📍 Subscription ID extraído do Location: ${subscriptionId}`)
+              
+              // Fazer GET para buscar dados completos da assinatura
+              console.log('🔄 Buscando dados completos da assinatura...')
+              const subscriptionDetailsResult = await deltapagRequest(c, `/subscriptions/${subscriptionId}`, 'GET')
+              
+              if (subscriptionDetailsResult.ok) {
+                subscription = subscriptionDetailsResult.data
+                subscriptionId = subscription.id
+                console.log(`✅ Dados completos da assinatura obtidos: ${subscriptionId}`)
+              }
+            }
+          }
+        }
+        
+        if (!subscriptionId) {
+          throw new Error('Não foi possível obter o ID da assinatura criada')
+        }
+        
+        console.log(`✅ Assinatura DeltaPag criada: ${subscriptionId}`)
         
         // 3. Salvar no banco D1 local
-        const subscriptionId = crypto.randomUUID()
+        const localSubscriptionId = crypto.randomUUID()
         const cardLast4 = tx.card_number.slice(-4)
         
         await db.prepare(`
@@ -1614,13 +1682,13 @@ app.post('/api/admin/create-evidence-transactions', authMiddleware, async (c) =>
            next_due_date, created_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?, ?, ?, datetime('now'))
         `).bind(
-          subscriptionId,
+          localSubscriptionId,
           customerId,
           tx.customer_name,
           tx.customer_email,
           tx.customer_cpf,
           tx.customer_phone,
-          subscription.id,
+          subscriptionId,
           customerId,
           tx.value,
           tx.description,
@@ -1633,11 +1701,11 @@ app.post('/api/admin/create-evidence-transactions', authMiddleware, async (c) =>
           nextDueDate.toISOString().split('T')[0]
         ).run()
         
-        console.log(`💾 Salvo no banco D1: ${subscriptionId}`)
+        console.log(`💾 Salvo no banco D1: ${localSubscriptionId} (DeltaPag: ${subscriptionId})`)
         
         createdTransactions.push({
-          id: subscriptionId,
-          deltapag_id: subscription.id,
+          id: localSubscriptionId,
+          deltapag_id: subscriptionId,
           customer: tx.customer_name,
           email: tx.customer_email,
           value: tx.value,
