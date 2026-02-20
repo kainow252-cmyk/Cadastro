@@ -4616,78 +4616,93 @@ async function loadDeltapagSubscriptions() {
             const subscriptions = response.data.subscriptions;
             console.log('Assinaturas DeltaPag carregadas:', subscriptions.length);
             
-            // NOVO: Atualizar coluna CARTÃO com números mascarados
-            subscriptions.forEach((sub, index) => {
-                // Encontrar a linha da tabela correspondente
-                const rows = document.querySelectorAll('tbody tr');
-                if (rows[index]) {
-                    const cardCell = rows[index].querySelector('td:nth-child(3)'); // Coluna CARTÃO
-                    if (cardCell && sub.card_number_masked) {
-                        // Exibir número mascarado com ícone da bandeira
-                        const brandIcon = {
-                            'Visa': '<i class="fab fa-cc-visa text-blue-600"></i>',
-                            'Mastercard': '<i class="fab fa-cc-mastercard text-red-600"></i>',
-                            'Elo': '<i class="fas fa-credit-card text-yellow-600"></i>',
-                            'Amex': '<i class="fab fa-cc-amex text-blue-500"></i>',
-                            'Hipercard': '<i class="fas fa-credit-card text-orange-600"></i>'
-                        }[sub.card_brand] || '<i class="fas fa-credit-card text-gray-600"></i>';
-                        
-                        cardCell.innerHTML = `
-                            <div class="flex items-center gap-2">
-                                ${brandIcon}
-                                <span class="font-mono text-sm">${sub.card_number_masked}</span>
-                            </div>
-                        `;
-                    }
-                }
-            });
+            // Atualizar coluna CARTÃO com números mascarados
+            setTimeout(() => updateCardColumns(subscriptions), 200);
+            setTimeout(() => updateCardColumns(subscriptions), 500);
+            setTimeout(() => updateCardColumns(subscriptions), 1000);
         }
     } catch (error) {
         console.error('Erro ao carregar assinaturas DeltaPag:', error);
     }
 }
 
+// Expor função global para atualização manual se necessário
+window.atualizarCartoesMascarados = async function() {
+    try {
+        const response = await axios.get('/api/admin/deltapag/subscriptions');
+        if (response.data.ok) {
+            updateCardColumns(response.data.subscriptions);
+            console.log('✅ Cartões mascarados atualizados manualmente');
+        }
+    } catch (error) {
+        console.error('❌ Erro ao atualizar cartões:', error);
+    }
+};
+
 // Interceptor Axios para atualizar cartões mascarados automaticamente
 axios.interceptors.response.use(function (response) {
     // Se a resposta contém assinaturas DeltaPag com card_number_masked
     if (response.data?.subscriptions && Array.isArray(response.data.subscriptions)) {
-        // Aguardar um momento para a tabela ser renderizada
-        setTimeout(() => {
-            const subscriptions = response.data.subscriptions;
-            const rows = document.querySelectorAll('tbody tr');
-            
-            subscriptions.forEach((sub, index) => {
-                if (rows[index] && sub.card_number_masked) {
-                    const cells = rows[index].querySelectorAll('td');
-                    
-                    // Procurar a célula da coluna CARTÃO (pode variar)
-                    cells.forEach(cell => {
-                        // Se a célula está vazia ou tem "-" ou tem número sem máscara
-                        if (cell.textContent.trim() === '' || 
-                            cell.textContent.trim() === '-' ||
-                            /^\d{16}$/.test(cell.textContent.replace(/\s/g, ''))) {
-                            
-                            // Atualizar com número mascarado
-                            const brandIcon = {
-                                'Visa': '<i class="fab fa-cc-visa text-blue-600 mr-2"></i>',
-                                'Mastercard': '<i class="fab fa-cc-mastercard text-red-600 mr-2"></i>',
-                                'Elo': '<i class="fas fa-credit-card text-yellow-600 mr-2"></i>',
-                                'Amex': '<i class="fab fa-cc-amex text-blue-500 mr-2"></i>',
-                                'Hipercard': '<i class="fas fa-credit-card text-orange-600 mr-2"></i>'
-                            }[sub.card_brand] || '<i class="fas fa-credit-card text-gray-600 mr-2"></i>';
-                            
-                            cell.innerHTML = `${brandIcon}<span class="font-mono text-sm">${sub.card_number_masked}</span>`;
-                        }
-                    });
-                }
-            });
-        }, 100); // 100ms de delay
+        // Aguardar múltiplos momentos para garantir que a tabela foi renderizada
+        [100, 300, 500, 1000].forEach(delay => {
+            setTimeout(() => {
+                updateCardColumns(response.data.subscriptions);
+            }, delay);
+        });
     }
     
     return response;
 }, function (error) {
     return Promise.reject(error);
 });
+
+// Função para atualizar coluna CARTÃO com números mascarados
+function updateCardColumns(subscriptions) {
+    const rows = document.querySelectorAll('tbody tr');
+    
+    console.log(`🔍 Atualizando ${rows.length} linhas com números de cartão mascarados...`);
+    
+    subscriptions.forEach((sub, index) => {
+        if (!rows[index] || !sub.card_number_masked) return;
+        
+        const cells = rows[index].querySelectorAll('td');
+        
+        // Procurar célula CARTÃO (geralmente a 3ª coluna após CLIENTE e EMAIL)
+        for (let i = 0; i < cells.length; i++) {
+            const cell = cells[i];
+            const text = cell.textContent.trim();
+            
+            // Identificar célula vazia ou com placeholder que deve ter número de cartão
+            // Verificar se é a coluna correta (entre EMAIL e VALOR, ou após EMAIL)
+            const prevCell = cells[i-1];
+            const nextCell = cells[i+1];
+            
+            // Se célula vazia e próxima célula tem "R$" (VALOR), provavelmente é CARTÃO
+            if ((text === '' || text === '-') && 
+                nextCell && nextCell.textContent.includes('R$')) {
+                
+                // Ícones por bandeira
+                const brandIcon = {
+                    'Visa': '<i class="fab fa-cc-visa text-blue-600"></i>',
+                    'Mastercard': '<i class="fab fa-cc-mastercard text-red-600"></i>',
+                    'Elo': '<i class="fas fa-credit-card text-yellow-600"></i>',
+                    'Amex': '<i class="fab fa-cc-amex text-blue-500"></i>',
+                    'Hipercard': '<i class="fas fa-credit-card text-orange-600"></i>'
+                }[sub.card_brand] || '<i class="fas fa-credit-card text-gray-600"></i>';
+                
+                cell.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        ${brandIcon}
+                        <span class="font-mono text-sm text-gray-700">${sub.card_number_masked}</span>
+                    </div>
+                `;
+                
+                console.log(`✅ Linha ${index+1}: ${sub.customer_name} → ${sub.card_number_masked}`);
+                break; // Encontrou a célula, não precisa continuar
+            }
+        }
+    });
+}
 
 // Função para cancelar assinatura DeltaPag
 async function cancelDeltapagSubscription(subscriptionId) {
