@@ -834,9 +834,27 @@ app.get('/api/reports/all-accounts/detailed', async (c) => {
     const chargeType = c.req.query('chargeType') || 'all'
     const statusFilter = c.req.query('status') || 'all'
     
-    // Buscar todas as subcontas
+    // Buscar todas as subcontas e criar mapa de nomes
     const accountsResult = await db.prepare('SELECT DISTINCT account_id, wallet_id FROM transactions').all()
     const accounts = accountsResult.results || []
+    
+    // Criar mapa de account_id → nome da conta
+    const accountNamesMap: Record<string, string> = {}
+    for (const acc of accounts) {
+      const accountId = (acc as any).account_id
+      // Buscar nome da subconta na tabela subscription_signup_links
+      const linkInfo = await db.prepare(`
+        SELECT description FROM subscription_signup_links 
+        WHERE account_id = ? 
+        LIMIT 1
+      `).bind(accountId).first()
+      
+      if (linkInfo && linkInfo.description) {
+        accountNamesMap[accountId] = linkInfo.description
+      } else {
+        accountNamesMap[accountId] = `Conta ${accountId.substring(0, 8)}`
+      }
+    }
     
     // Buscar transações de todas as subcontas
     let query = `SELECT * FROM transactions WHERE 1=1`
@@ -887,13 +905,8 @@ app.get('/api/reports/all-accounts/detailed', async (c) => {
         payment.charge_type = 'monthly'
       }
       
-      // Buscar nome da subconta
-      const account = await db.prepare(`
-        SELECT name FROM signup_links WHERE id = ?
-        LIMIT 1
-      `).bind(payment.account_id).first()
-      
-      payment.account_name = account ? account.name : 'Subconta não identificada'
+      // Atribuir nome da subconta do mapa
+      payment.account_name = accountNamesMap[payment.account_id] || `Conta ${payment.account_id.substring(0, 8)}`
     }
     
     // Filtrar por tipo de cobrança
