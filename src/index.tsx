@@ -368,6 +368,37 @@ async function asaasRequest(
   }
 }
 
+/**
+ * Cria configuração de split para Asaas garantindo que a sub-conta receba o valor LÍQUIDO
+ * 
+ * IMPORTANTE: 
+ * - percentualValue: Desconta taxas proporcionalmente de cada parte (sub-conta paga parte das taxas)
+ * - totalFixedValue: Sub-conta recebe valor líquido, conta principal paga TODAS as taxas
+ * 
+ * Exemplo com cobrança de R$ 100,00 e taxa Asaas de R$ 3,49:
+ * 
+ * COM percentualValue (ERRADO - sub-conta recebe menos):
+ * - Sub-conta: R$ 20,00 - (20% de R$ 3,49) = R$ 20,00 - R$ 0,70 = R$ 19,30
+ * - Conta principal: R$ 80,00 - (80% de R$ 3,49) = R$ 80,00 - R$ 2,79 = R$ 77,21
+ * 
+ * COM totalFixedValue (CORRETO - sub-conta recebe líquido):
+ * - Sub-conta: R$ 20,00 (líquido, sem descontar taxas)
+ * - Conta principal: R$ 100,00 - R$ 20,00 - R$ 3,49 = R$ 76,51
+ * 
+ * @param walletId - ID da carteira (wallet) da sub-conta
+ * @param totalValue - Valor total da cobrança
+ * @param percentage - Percentual que a sub-conta deve receber (padrão: 20%)
+ * @returns Array de split para a API Asaas
+ */
+function createNetSplit(walletId: string, totalValue: number, percentage: number = 20) {
+  const fixedValue = (totalValue * percentage) / 100
+  
+  return [{
+    walletId: walletId,
+    totalFixedValue: fixedValue // Garante que a sub-conta recebe este valor LÍQUIDO
+  }]
+}
+
 // API Routes
 
 // Login route
@@ -2895,10 +2926,7 @@ app.post('/api/pix/static', async (c) => {
       value: value,
       dueDate: dueDate.toISOString().split('T')[0],
       description: description || 'Pagamento via PIX',
-      split: [{
-        walletId: walletId, // CORREÇÃO: usar walletId (chave PIX) ao invés de accountId
-        percentualValue: 20  // 20% para subconta
-      }]
+      split: createNetSplit(walletId, value, 20) // Sub-conta recebe 20% LÍQUIDO (após taxas)
     }
     
     console.log('📝 Criando cobrança PIX:', JSON.stringify(chargeData, null, 2))
@@ -3084,10 +3112,7 @@ app.post('/api/pix/subscription', async (c) => {
       nextDueDate: new Date(Date.now() + 24*60*60*1000).toISOString().split('T')[0], // Amanhã
       cycle: 'MONTHLY',
       description: description || 'Mensalidade',
-      split: [{
-        walletId: walletId,
-        percentualValue: 20
-      }]
+      split: createNetSplit(walletId, value, 20) // Sub-conta recebe 20% LÍQUIDO (após taxas)
     }
     
     console.log('📝 Criando assinatura:', JSON.stringify(subscriptionData, null, 2))
@@ -3337,10 +3362,7 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
       nextDueDate: new Date(Date.now() + 24*60*60*1000).toISOString().split('T')[0],
       cycle: 'MONTHLY',
       description: description,
-      split: [{
-        walletId: walletId,
-        percentualValue: 20
-      }]
+      split: createNetSplit(walletId, value, 20) // Sub-conta recebe 20% LÍQUIDO (após taxas)
     }
     
     const subscriptionResult = await asaasRequest(c, '/subscriptions', 'POST', subscriptionData)
@@ -3526,10 +3548,7 @@ app.post('/api/pix/automatic-authorization', async (c) => {
       recurrenceType: recurrenceType, // MONTHLY, WEEKLY, DAILY
       startDate: startDate || new Date(Date.now() + 24*60*60*1000).toISOString().split('T')[0],
       endDate: endDate || null, // Opcional
-      split: [{
-        walletId: walletId,
-        percentualValue: 20
-      }]
+      split: createNetSplit(walletId, value, 20) // Sub-conta recebe 20% LÍQUIDO (após taxas)
     }
     
     console.log('📝 Criando autorização PIX Automático:', JSON.stringify(authData, null, 2))
@@ -3845,10 +3864,7 @@ app.post('/api/pix/automatic-signup/:linkId', async (c) => {
         value: value,
         dueDate: nextDueDate.toISOString().split('T')[0]
       },
-      split: [{
-        walletId: walletId,
-        fixedValue: value * 0.20
-      }]
+      split: createNetSplit(walletId, value, 20) // Sub-conta recebe 20% LÍQUIDO (após taxas)
     }
     
     let authorizationResult = await asaasRequest(c, '/v3/pix/automatic/authorizations', 'POST', authorizationData)
@@ -3873,10 +3889,7 @@ app.post('/api/pix/automatic-signup/:linkId', async (c) => {
         nextDueDate: nextDueDate.toISOString().split('T')[0],
         cycle: frequency,
         description: `${description} - Débito Automático Mensal`,
-        split: [{
-          walletId: walletId,
-          fixedValue: value * 0.20
-        }]
+        split: createNetSplit(walletId, value, 20) // Sub-conta recebe 20% LÍQUIDO (após taxas)
       }
       
       const subscriptionResult = await asaasRequest(c, '/subscriptions', 'POST', subscriptionData)
@@ -5238,14 +5251,9 @@ app.post('/api/payments', async (c) => {
       dueDate: dueDate || new Date().toISOString().split('T')[0],
       description: description || 'Pagamento via PIX',
       
-      // Configurar split: 20% para subconta, 80% fica com conta principal
-      split: [
-        {
-          walletId: subAccountWalletId,
-          percentualValue: 20.00 // 20% para subconta
-        }
-        // 80% fica automaticamente com a conta principal (emissor da cobrança)
-      ]
+      // Configurar split: 20% LÍQUIDO para subconta, conta principal paga todas as taxas
+      split: createNetSplit(subAccountWalletId, value, 20)
+      // Sub-conta recebe 20% líquido, conta principal recebe o resto menos as taxas Asaas
     }
 
     // Se o customer não existir, criar automaticamente
@@ -5460,14 +5468,9 @@ app.post('/api/proxy/payments', async (c) => {
       billingType: paymentData.billingType || 'PIX',
       dueDate: paymentData.dueDate || new Date().toISOString().split('T')[0],
       
-      // Configurar split: 20% para subconta (quem está criando)
-      split: [
-        {
-          walletId: subaccountWalletId,
-          percentualValue: 20.00 // Subconta recebe 20%
-        }
-        // 80% fica automaticamente com a conta principal
-      ]
+      // Configurar split: 20% LÍQUIDO para subconta, conta principal paga todas as taxas
+      split: createNetSplit(subaccountWalletId, paymentData.value, 20)
+      // Sub-conta recebe 20% líquido, conta principal recebe o resto menos as taxas Asaas
     }
 
     // Criar cobrança pela conta principal
