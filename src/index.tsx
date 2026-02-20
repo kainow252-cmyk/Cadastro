@@ -8105,24 +8105,24 @@ app.get('/', (c) => {
                 </h3>
                 <div class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3">
                     <button onclick="openDeltapagModal()" 
-                        class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 font-semibold shadow-md transition">
-                        <i class="fas fa-qrcode text-3xl"></i>
-                        <span class="text-sm">QR Code Avulso</span>
+                        class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 font-semibold shadow-md transition">
+                        <i class="fas fa-credit-card text-3xl"></i>
+                        <span class="text-sm">Criar Assinatura</span>
                     </button>
                     <button onclick="openDeltapagLinkModal()" 
                         class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:from-purple-600 hover:to-pink-600 font-semibold shadow-md transition">
-                        <i class="fas fa-sync text-3xl"></i>
-                        <span class="text-sm">Assinatura Mensal</span>
-                    </button>
-                    <button onclick="showSection('payment-links')" 
-                        class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 font-semibold shadow-md transition">
-                        <i class="fas fa-robot text-3xl"></i>
-                        <span class="text-sm">PIX Automático</span>
-                    </button>
-                    <button onclick="showSection('accounts')" 
-                        class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-lg hover:from-orange-600 hover:to-red-600 font-semibold shadow-md transition">
                         <i class="fas fa-link text-3xl"></i>
-                        <span class="text-sm">Link Auto-Cadastro</span>
+                        <span class="text-sm">Criar Link</span>
+                    </button>
+                    <button onclick="showDeltapagLinksModal()" 
+                        class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 font-semibold shadow-md transition">
+                        <i class="fas fa-list text-3xl"></i>
+                        <span class="text-sm">Ver Links</span>
+                    </button>
+                    <button onclick="openDeltapagImportModal()" 
+                        class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 font-semibold shadow-md transition">
+                        <i class="fas fa-file-csv text-3xl"></i>
+                        <span class="text-sm">Importar CSV</span>
                     </button>
                 </div>
             </div>
