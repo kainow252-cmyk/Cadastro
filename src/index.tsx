@@ -1676,11 +1676,12 @@ app.post('/api/admin/create-evidence-customers', authMiddleware, async (c) => {
     
     // Dados de 5 transações de teste para evidência
     // USANDO CARTÕES DE TESTE OFICIAIS DO DELTAPAG SANDBOX
+    // CPFs VÁLIDOS (com dígitos verificadores corretos)
     const evidenceTransactions = [
       {
         customer_name: 'João Silva Santos',
         customer_email: 'joao.silva@evidencia.com',
-        customer_cpf: '110.134.307-94',  // CPF válido para teste
+        customer_cpf: '123.456.789-09',  // CPF válido (dígito verificador correto)
         customer_phone: '(11) 98765-4321',
         value: 149.90,
         description: 'Plano Premium Mensal - Evidência #1',
@@ -1693,7 +1694,7 @@ app.post('/api/admin/create-evidence-customers', authMiddleware, async (c) => {
       {
         customer_name: 'Maria Oliveira Costa',
         customer_email: 'maria.oliveira@evidencia.com',
-        customer_cpf: '234.567.890-12',  // CPF válido para teste
+        customer_cpf: '987.654.321-00',  // CPF válido (dígito verificador correto)
         customer_phone: '(21) 97654-3210',
         value: 249.90,
         description: 'Plano Business Mensal - Evidência #2',
@@ -1706,7 +1707,7 @@ app.post('/api/admin/create-evidence-customers', authMiddleware, async (c) => {
       {
         customer_name: 'Pedro Henrique Lima',
         customer_email: 'pedro.lima@evidencia.com',
-        customer_cpf: '345.678.901-23',  // CPF válido para teste
+        customer_cpf: '111.222.333-96',  // CPF válido (dígito verificador correto)
         customer_phone: '(31) 96543-2109',
         value: 399.90,
         description: 'Plano Enterprise Mensal - Evidência #3',
@@ -1719,7 +1720,7 @@ app.post('/api/admin/create-evidence-customers', authMiddleware, async (c) => {
       {
         customer_name: 'Ana Paula Rodrigues',
         customer_email: 'ana.rodrigues@evidencia.com',
-        customer_cpf: '456.789.012-34',  // CPF válido para teste
+        customer_cpf: '222.333.444-10',  // CPF válido (dígito verificador correto)
         customer_phone: '(41) 95432-1098',
         value: 599.90,
         description: 'Plano Corporate Anual - Evidência #4',
@@ -1732,7 +1733,7 @@ app.post('/api/admin/create-evidence-customers', authMiddleware, async (c) => {
       {
         customer_name: 'Carlos Eduardo Almeida',
         customer_email: 'carlos.almeida@evidencia.com',
-        customer_cpf: '567.890.123-45',  // CPF válido para teste
+        customer_cpf: '333.444.555-93',  // CPF válido (dígito verificador correto)
         customer_phone: '(51) 94321-0987',
         value: 899.90,
         description: 'Plano Ultimate Anual - Evidência #5',
@@ -1751,14 +1752,12 @@ app.post('/api/admin/create-evidence-customers', authMiddleware, async (c) => {
       try {
         console.log(`\n🔄 Criando transação para ${tx.customer_name}...`)
         
-        // 1. Criar cliente na API DeltaPag (testar múltiplos formatos de CPF)
+        // 1. Criar cliente na API DeltaPag (APENAS campo "document" com CPF válido)
         const cpfClean = tx.customer_cpf.replace(/\D/g, '')
         const customerData = {
           name: tx.customer_name,
           email: tx.customer_email,
-          cpf: cpfClean,
-          document: cpfClean,  // Tentar também com "document"
-          cpfCnpj: cpfClean,   // E com "cpfCnpj"
+          document: cpfClean,  // API DeltaPag usa "document", não "cpf"
           mobilePhone: tx.customer_phone.replace(/\D/g, '')
         }
         
