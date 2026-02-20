@@ -1373,6 +1373,115 @@ app.post('/api/admin/test-deltapag-api', authMiddleware, async (c) => {
   }
 })
 
+// Endpoint PÚBLICO para testar criação de assinatura completa
+app.post('/api/public/test-deltapag-subscription', async (c) => {
+  const debugLogs: string[] = []
+  const log = (msg: string) => {
+    console.log(msg)
+    debugLogs.push(msg)
+  }
+  
+  try {
+    log('🧪 [DEBUG] Testando criação de assinatura completa...')
+    
+    if (!c.env.DELTAPAG_API_KEY) {
+      return c.json({ ok: false, error: 'API key não configurada', debugLogs }, 400)
+    }
+    
+    // 1. Criar cliente
+    const customerData = {
+      name: 'Teste Assinatura',
+      email: 'teste-sub-' + Date.now() + '@example.com',
+      cpf: '12345678901',
+      mobilePhone: '11999999999'
+    }
+    
+    log('📤 Criando cliente: ' + JSON.stringify(customerData))
+    const customerResult = await deltapagRequest(c, '/customers', 'POST', customerData)
+    log(`📥 Cliente - Status: ${customerResult.status}`)
+    
+    const customerId = customerResult.data.id || customerResult.headers.get('content-id')
+    log(`✅ Customer ID: ${customerId}`)
+    
+    if (!customerId) {
+      return c.json({ ok: false, error: 'Não obteve customer ID', debugLogs }, 500)
+    }
+    
+    // 2. Criar assinatura
+    const nextDueDate = new Date()
+    nextDueDate.setDate(nextDueDate.getDate() + 1)
+    
+    const subscriptionData = {
+      customer: customerId,
+      billingType: 'CREDIT_CARD',
+      value: 99.90,
+      nextDueDate: nextDueDate.toISOString().split('T')[0],
+      cycle: 'MONTHLY',
+      description: 'Teste de Assinatura',
+      creditCard: {
+        holderName: 'Teste Assinatura',
+        number: '5428258051342340',
+        expiryMonth: '12',
+        expiryYear: '2027',
+        ccv: '123'
+      },
+      creditCardHolderInfo: {
+        name: 'Teste Assinatura',
+        email: customerData.email,
+        cpfCnpj: '12345678901',
+        postalCode: '01310100',
+        addressNumber: '1000',
+        phone: '11999999999'
+      }
+    }
+    
+    log('📤 Payload da assinatura: ' + JSON.stringify(subscriptionData, null, 2))
+    
+    const subscriptionResult = await deltapagRequest(c, '/subscriptions', 'POST', subscriptionData)
+    
+    log(`📥 Assinatura - Status: ${subscriptionResult.status}`)
+    log(`📥 Assinatura - OK: ${subscriptionResult.ok}`)
+    log(`📥 Assinatura - Body: ${JSON.stringify(subscriptionResult.data, null, 2)}`)
+    
+    // Log headers
+    log('📋 Headers da assinatura:')
+    const subHeaders: Record<string, string> = {}
+    subscriptionResult.headers.forEach((value, key) => {
+      log(`  ${key}: ${value}`)
+      subHeaders[key] = value
+    })
+    
+    const subscriptionId = subscriptionResult.data.id 
+      || subscriptionResult.headers.get('content-id')
+      || subscriptionResult.headers.get('location')?.match(/\/subscriptions\/([^\/]+)$/)?.[1]
+    
+    log(`🔍 Subscription ID final: ${subscriptionId}`)
+    
+    return c.json({
+      ok: true,
+      customerId,
+      subscriptionId,
+      customerStatus: customerResult.status,
+      subscriptionStatus: subscriptionResult.status,
+      subscriptionResponse: subscriptionResult.data,
+      subscriptionHeaders: subHeaders,
+      debugLogs,
+      timestamp: new Date().toISOString()
+    })
+    
+  } catch (error: any) {
+    log(`❌ Erro: ${error.message}`)
+    log(`❌ Stack: ${error.stack}`)
+    
+    return c.json({
+      ok: false,
+      error: error.message,
+      stack: error.stack,
+      debugLogs
+    }, 500)
+  }
+})
+
 // Endpoint PÚBLICO de teste DeltaPag com debug completo
 app.post('/api/public/test-deltapag-debug', async (c) => {
   try {
