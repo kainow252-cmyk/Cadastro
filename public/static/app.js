@@ -4610,20 +4610,101 @@ document.addEventListener('DOMContentLoaded', function() {
 // Função para carregar lista de assinaturas DeltaPag (admin)
 async function loadDeltapagSubscriptions() {
     try {
+        console.log('🔄 Carregando assinaturas DeltaPag...');
         const response = await axios.get('/api/admin/deltapag/subscriptions');
         
         if (response.data.ok) {
             const subscriptions = response.data.subscriptions;
-            console.log('Assinaturas DeltaPag carregadas:', subscriptions.length);
+            console.log(`✅ ${subscriptions.length} assinaturas carregadas`);
             
-            // Atualizar coluna CARTÃO com números mascarados
+            // Atualizar a tabela HTML diretamente
+            renderDeltapagTable(subscriptions);
+            
+            // Atualizar coluna CARTÃO com números mascarados (após tabela renderizada)
             setTimeout(() => updateCardColumns(subscriptions), 200);
             setTimeout(() => updateCardColumns(subscriptions), 500);
             setTimeout(() => updateCardColumns(subscriptions), 1000);
         }
     } catch (error) {
-        console.error('Erro ao carregar assinaturas DeltaPag:', error);
+        console.error('❌ Erro ao carregar assinaturas DeltaPag:', error);
     }
+}
+
+// Função para renderizar a tabela DeltaPag
+function renderDeltapagTable(subscriptions) {
+    const tbody = document.getElementById('deltapag-subscriptions-tbody');
+    if (!tbody) {
+        console.warn('⚠️ Tabela DeltaPag não encontrada (ID: deltapag-subscriptions-tbody)');
+        return;
+    }
+    
+    if (subscriptions.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="8" class="px-6 py-12 text-center text-gray-500">
+                    <i class="fas fa-inbox text-4xl mb-3"></i>
+                    <p>Nenhuma assinatura encontrada</p>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+    
+    console.log(`📊 Renderizando ${subscriptions.length} assinaturas na tabela...`);
+    
+    tbody.innerHTML = subscriptions.map(sub => {
+        // Formatar data
+        const date = new Date(sub.created_at);
+        const formattedDate = date.toLocaleDateString('pt-BR');
+        
+        // Status badge
+        const statusBadge = sub.status === 'ACTIVE' 
+            ? '<span class="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-semibold">ATIVA</span>'
+            : '<span class="px-2 py-1 bg-red-100 text-red-800 rounded-full text-xs font-semibold">CANCELADA</span>';
+        
+        // Recorrência
+        const recurrenceMap = {
+            'MONTHLY': 'Mensal',
+            'YEARLY': 'Anual',
+            'QUARTERLY': 'Trimestral',
+            'WEEKLY': 'Semanal',
+            'DAILY': 'Diária'
+        };
+        const recurrence = recurrenceMap[sub.recurrence_type] || sub.recurrence_type;
+        
+        return `
+            <tr class="hover:bg-gray-50">
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm font-medium text-gray-900">${sub.customer_name}</div>
+                    <div class="text-xs text-gray-500">${sub.customer_cpf || '-'}</div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm text-gray-900">${sub.customer_email}</div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm text-gray-500">-</div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm font-semibold text-gray-900">R$ ${sub.value.toFixed(2)}</div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm text-gray-900">${recurrence}</div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">${statusBadge}</td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm text-gray-900">${formattedDate}</div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <button onclick="cancelDeltapagSubscription('${sub.id}')" 
+                        class="text-red-600 hover:text-red-900 font-semibold">
+                        <i class="fas fa-ban mr-1"></i>Cancelar
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+    
+    console.log('✅ Tabela renderizada com sucesso');
 }
 
 // Expor função global para atualização manual se necessário
@@ -4658,8 +4739,14 @@ axios.interceptors.response.use(function (response) {
 
 // Função para atualizar coluna CARTÃO com números mascarados
 function updateCardColumns(subscriptions) {
-    const rows = document.querySelectorAll('tbody tr');
+    // Usar o ID correto da tabela DeltaPag
+    const tbody = document.getElementById('deltapag-subscriptions-tbody');
+    if (!tbody) {
+        console.warn('⚠️ Tabela DeltaPag não encontrada (ID: deltapag-subscriptions-tbody)');
+        return;
+    }
     
+    const rows = tbody.querySelectorAll('tr');
     console.log(`🔍 Atualizando ${rows.length} linhas com números de cartão mascarados...`);
     
     subscriptions.forEach((sub, index) => {
