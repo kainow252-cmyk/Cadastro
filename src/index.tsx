@@ -4580,9 +4580,15 @@ app.post('/api/pix/automatic-signup/:linkId', async (c) => {
       // Buscar primeira cobrança e QR Code
       const paymentsResult = await asaasRequest(c, `/payments?subscription=${authorizationId}`)
       
+      console.log('📋 Resultado da busca de pagamentos:', JSON.stringify(paymentsResult, null, 2))
+      
       if (paymentsResult.ok && paymentsResult.data?.data?.[0]?.id) {
         const firstPayment = paymentsResult.data.data[0]
+        console.log(`🎫 Buscando QR Code do pagamento: ${firstPayment.id}`)
+        
         const qrCodeResult = await asaasRequest(c, `/payments/${firstPayment.id}/pixQrCode`)
+        
+        console.log('🖼️ Resultado do QR Code:', JSON.stringify(qrCodeResult, null, 2))
         
         if (qrCodeResult.ok && qrCodeResult.data) {
           qrCodeData = {
@@ -4590,7 +4596,12 @@ app.post('/api/pix/automatic-signup/:linkId', async (c) => {
             encodedImage: qrCodeResult.data.encodedImage,
             expirationDate: qrCodeResult.data.expirationDate
           }
+          console.log('✅ QR Code obtido com sucesso')
+        } else {
+          console.error('❌ Falha ao obter QR Code:', qrCodeResult.data)
         }
+      } else {
+        console.error('❌ Nenhum pagamento encontrado para a assinatura')
       }
     } else {
       // PIX Automático funcionou
