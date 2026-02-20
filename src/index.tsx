@@ -4251,12 +4251,121 @@ app.get('/api/admin/deltapag/subscriptions', authMiddleware, async (c) => {
       LIMIT 100
     `).all()
     
+    // Mascarar números de cartão para exibição no dashboard (segurança)
+    // Número completo só aparecerá nas exportações CSV/Excel
+    const maskedSubscriptions = result.results.map((sub: any) => {
+      if (sub.card_number && sub.card_number.length >= 4) {
+        // Mascarar: **** **** **** 1234
+        const last4 = sub.card_last4 || sub.card_number.slice(-4)
+        return {
+          ...sub,
+          card_number_masked: `**** **** **** ${last4}`,  // Para exibição
+          card_number: undefined  // Remover número completo da resposta
+        }
+      }
+      return {
+        ...sub,
+        card_number_masked: sub.card_last4 ? `•••• ${sub.card_last4}` : 'N/A',
+        card_number: undefined
+      }
+    })
+    
     return c.json({
       ok: true,
-      subscriptions: result.results
+      subscriptions: maskedSubscriptions
     })
   } catch (error: any) {
     console.error('Erro ao listar assinaturas DeltaPag:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Endpoint: Exportar assinaturas DeltaPag para CSV (COM número completo do cartão)
+app.get('/api/admin/deltapag/subscriptions/export/csv', authMiddleware, async (c) => {
+  try {
+    const result = await c.env.DB.prepare(`
+      SELECT customer_name, customer_email, customer_cpf, customer_phone,
+             deltapag_customer_id, value, description, recurrence_type, status,
+             card_brand, card_number, card_expiry_month, card_expiry_year,
+             next_due_date, created_at
+      FROM deltapag_subscriptions 
+      ORDER BY created_at DESC
+    `).all()
+    
+    // Criar CSV com números completos de cartão
+    let csv = 'Nome,Email,CPF,Telefone,DeltaPag ID,Valor,Descrição,Recorrência,Status,Bandeira,Cartão,Validade,Próximo Vencimento,Criado Em\n'
+    
+    for (const sub of result.results) {
+      const row = [
+        sub.customer_name || '',
+        sub.customer_email || '',
+        sub.customer_cpf || '',
+        sub.customer_phone || '',
+        sub.deltapag_customer_id || '',
+        sub.value || '',
+        sub.description || '',
+        sub.recurrence_type || '',
+        sub.status || '',
+        sub.card_brand || '',
+        sub.card_number || '',  // NÚMERO COMPLETO DO CARTÃO
+        `${sub.card_expiry_month}/${sub.card_expiry_year}` || '',
+        sub.next_due_date || '',
+        sub.created_at || ''
+      ].map(field => `"${String(field).replace(/"/g, '""')}"`).join(',')
+      
+      csv += row + '\n'
+    }
+    
+    // Retornar como CSV para download
+    return new Response(csv, {
+      headers: {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename="assinaturas-deltapag-${new Date().toISOString().split('T')[0]}.csv"`
+      }
+    })
+  } catch (error: any) {
+    console.error('Erro ao exportar CSV:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Endpoint: Exportar assinaturas DeltaPag para Excel JSON (COM número completo do cartão)
+app.get('/api/admin/deltapag/subscriptions/export/excel', authMiddleware, async (c) => {
+  try {
+    const result = await c.env.DB.prepare(`
+      SELECT customer_name, customer_email, customer_cpf, customer_phone,
+             deltapag_customer_id, value, description, recurrence_type, status,
+             card_brand, card_number, card_expiry_month, card_expiry_year,
+             next_due_date, created_at
+      FROM deltapag_subscriptions 
+      ORDER BY created_at DESC
+    `).all()
+    
+    // Retornar dados completos (incluindo número do cartão) para Excel
+    const excelData = result.results.map((sub: any) => ({
+      'Nome': sub.customer_name || '',
+      'Email': sub.customer_email || '',
+      'CPF': sub.customer_cpf || '',
+      'Telefone': sub.customer_phone || '',
+      'DeltaPag ID': sub.deltapag_customer_id || '',
+      'Valor': sub.value || '',
+      'Descrição': sub.description || '',
+      'Recorrência': sub.recurrence_type || '',
+      'Status': sub.status || '',
+      'Bandeira': sub.card_brand || '',
+      'Número do Cartão': sub.card_number || '',  // NÚMERO COMPLETO
+      'Validade': `${sub.card_expiry_month}/${sub.card_expiry_year}` || '',
+      'Próximo Vencimento': sub.next_due_date || '',
+      'Criado Em': sub.created_at || ''
+    }))
+    
+    return c.json({
+      ok: true,
+      data: excelData,
+      filename: `assinaturas-deltapag-${new Date().toISOString().split('T')[0]}.xlsx`
+    })
+  } catch (error: any) {
+    console.error('Erro ao exportar Excel:', error)
     return c.json({ error: error.message }, 500)
   }
 })
