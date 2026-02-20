@@ -87,7 +87,7 @@ function displayDetailedReport(data) {
         return date.toLocaleDateString('pt-BR');
     };
     
-    const html = '<div class="space-y-6">' +
+    let html = '<div class="space-y-6">' +
         '<!-- Cabeçalho -->' +
         '<div class="bg-gradient-to-r from-orange-500 to-red-500 rounded-lg shadow-md p-6 text-white">' +
         '<h3 class="text-2xl font-bold mb-2"><i class="fas fa-chart-bar mr-2"></i>Relatório de Subconta</h3>' +
