@@ -1373,6 +1373,101 @@ app.post('/api/admin/test-deltapag-api', authMiddleware, async (c) => {
   }
 })
 
+// Endpoint PÚBLICO de teste DeltaPag com debug completo
+app.post('/api/public/test-deltapag-debug', async (c) => {
+  try {
+    const debugLogs: string[] = []
+    const log = (msg: string) => {
+      console.log(msg)
+      debugLogs.push(msg)
+    }
+    
+    log('🧪 [DEBUG] Testando API DeltaPag com logs completos...')
+    
+    // Verificar variáveis
+    const hasApiKey = !!c.env.DELTAPAG_API_KEY
+    const hasApiUrl = !!c.env.DELTAPAG_API_URL
+    const apiUrl = c.env.DELTAPAG_API_URL || 'https://api-sandbox.deltapag.io/api/v2'
+    
+    log(`✅ DELTAPAG_API_KEY existe: ${hasApiKey}`)
+    log(`✅ URL que será usada: ${apiUrl}`)
+    
+    if (!hasApiKey) {
+      return c.json({ 
+        ok: false, 
+        error: 'DELTAPAG_API_KEY não configurada',
+        debugLogs
+      }, 400)
+    }
+    
+    // Dados de cliente de teste
+    const testCustomer = {
+      name: 'Cliente Debug Teste',
+      email: 'debug-' + Date.now() + '@example.com',
+      cpf: '12345678901',
+      mobilePhone: '11999999999'
+    }
+    
+    log('📤 Enviando para DeltaPag: ' + JSON.stringify(testCustomer))
+    
+    // Fazer requisição
+    const result = await deltapagRequest(c, '/customers', 'POST', testCustomer)
+    
+    log(`📥 Status: ${result.status}`)
+    log(`📥 OK: ${result.ok}`)
+    log(`📥 Body: ${JSON.stringify(result.data)}`)
+    
+    // Listar TODOS os headers
+    log('📋 === HEADERS DA RESPOSTA ===')
+    const headers: Record<string, string> = {}
+    result.headers.forEach((value, key) => {
+      log(`  ${key}: ${value}`)
+      headers[key] = value
+    })
+    
+    // Tentar extrair Location
+    const location = result.headers.get('location') 
+      || result.headers.get('Location')
+      || result.headers.get('LOCATION')
+    
+    log(`📍 Location header: ${location}`)
+    
+    let customerId = result.data.id
+    log(`🔍 ID no body: ${customerId}`)
+    
+    if (!customerId && location) {
+      const match = location.match(/\/customers\/([^\/]+)$/)
+      log(`🔍 Regex match: ${JSON.stringify(match)}`)
+      
+      if (match) {
+        customerId = match[1]
+        log(`✅ ID extraído do Location: ${customerId}`)
+      }
+    }
+    
+    return c.json({
+      ok: true,
+      statusCode: result.status,
+      response: result.data,
+      headers,
+      locationHeader: location,
+      extractedCustomerId: customerId,
+      testData: testCustomer,
+      debugLogs,
+      timestamp: new Date().toISOString()
+    })
+    
+  } catch (error: any) {
+    console.error('❌ Erro:', error)
+    
+    return c.json({ 
+      ok: false, 
+      error: error.message,
+      stack: error.stack
+    }, 500)
+  }
+})
+
 // Endpoint PÚBLICO de teste DeltaPag (sem autenticação - apenas para diagnóstico)
 app.post('/api/public/test-deltapag', async (c) => {
   try {
