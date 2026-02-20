@@ -3585,6 +3585,9 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
     }
     
     // 2. Criar assinatura mensal com split
+    console.log('📝 Dados do link:', { linkId, walletId, value, description })
+    console.log('👤 Customer criado:', customerId)
+    
     const subscriptionData = {
       customer: customerId,
       billingType: 'PIX',
@@ -3595,12 +3598,23 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
       split: createNetSplit(walletId, value, 20) // Sub-conta recebe 20% LÍQUIDO (após taxas)
     }
     
+    console.log('📤 Criando assinatura:', JSON.stringify(subscriptionData, null, 2))
+    
     const subscriptionResult = await asaasRequest(c, '/subscriptions', 'POST', subscriptionData)
     
+    console.log('📥 Resposta Asaas:', {
+      ok: subscriptionResult.ok,
+      status: subscriptionResult.status,
+      data: subscriptionResult.data
+    })
+    
     if (!subscriptionResult.ok) {
+      console.error('❌ Erro ao criar assinatura:', subscriptionResult.data)
       return c.json({ 
         error: 'Erro ao criar assinatura',
-        details: subscriptionResult.data 
+        details: subscriptionResult.data,
+        walletId: walletId,
+        value: value
       }, 400)
     }
     
