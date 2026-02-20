@@ -1750,11 +1750,14 @@ app.post('/api/admin/create-evidence-customers', authMiddleware, async (c) => {
       try {
         console.log(`\n🔄 Criando transação para ${tx.customer_name}...`)
         
-        // 1. Criar cliente na API DeltaPag (apenas campos básicos - endereço será adicionado no charge)
+        // 1. Criar cliente na API DeltaPag (testar múltiplos formatos de CPF)
+        const cpfClean = tx.customer_cpf.replace(/\D/g, '')
         const customerData = {
           name: tx.customer_name,
           email: tx.customer_email,
-          cpf: tx.customer_cpf.replace(/\D/g, ''),
+          cpf: cpfClean,
+          document: cpfClean,  // Tentar também com "document"
+          cpfCnpj: cpfClean,   // E com "cpfCnpj"
           mobilePhone: tx.customer_phone.replace(/\D/g, '')
         }
         
