@@ -3238,11 +3238,23 @@ app.post('/api/pix/subscription-link', async (c) => {
       return c.json({ error: 'Token inválido' }, 401)
     }
     
-    const { walletId, accountId, value, description, maxUses } = await c.req.json()
+    const { walletId, accountId, value, description, maxUses, chargeType } = await c.req.json()
     
     if (!walletId || !accountId || !value || value <= 0) {
       return c.json({ error: 'walletId, accountId e value (> 0) são obrigatórios' }, 400)
     }
+    
+    // Validar chargeType
+    const validChargeTypes = ['single', 'monthly']
+    const finalChargeType = validChargeTypes.includes(chargeType) ? chargeType : 'monthly'
+    
+    console.log('📝 Criando link de auto-cadastro:', {
+      walletId,
+      accountId,
+      value,
+      description,
+      chargeType: finalChargeType
+    })
     
     // Gerar ID único para o link
     const linkId = crypto.randomUUID()
@@ -3250,11 +3262,19 @@ app.post('/api/pix/subscription-link', async (c) => {
     // Expiração: 30 dias
     const expiresAt = new Date(Date.now() + 30*24*60*60*1000).toISOString()
     
-    // Salvar no banco
+    // Salvar no banco (adicionar coluna charge_type se não existir)
     await c.env.DB.prepare(`
-      INSERT INTO subscription_signup_links (id, wallet_id, account_id, value, description, expires_at)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).bind(linkId, walletId, accountId || '', value, description || 'Mensalidade', expiresAt).run()
+      INSERT INTO subscription_signup_links (id, wallet_id, account_id, value, description, expires_at, charge_type)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      linkId, 
+      walletId, 
+      accountId || '', 
+      value, 
+      description || (finalChargeType === 'single' ? 'Pagamento Único' : 'Mensalidade'), 
+      expiresAt,
+      finalChargeType
+    ).run()
     
     // URL do link de auto-cadastro
     const linkUrl = `${new URL(c.req.url).origin}/subscription-signup/${linkId}`

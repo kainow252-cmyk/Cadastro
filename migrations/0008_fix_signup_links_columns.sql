@@ -29,8 +29,8 @@ CREATE TABLE signup_links (
   qr_code TEXT
 );
 
--- Restore data from backup
-INSERT INTO signup_links (id, account_id, url, expires_at, created_at, active, uses_count, max_uses, created_by, notes, qr_code)
+-- Restore data from backup (without qr_code since it doesn't exist in old table)
+INSERT INTO signup_links (id, account_id, url, expires_at, created_at, active, uses_count, max_uses, created_by, notes)
 SELECT 
   id, 
   account_id, 
@@ -41,8 +41,7 @@ SELECT
   COALESCE(uses_count, 0),
   max_uses,
   COALESCE(created_by, 'admin'),
-  notes,
-  qr_code
+  notes
 FROM signup_links_backup;
 
 -- Drop backup

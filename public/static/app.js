@@ -2402,23 +2402,66 @@ function displayAccounts(accounts) {
                         <div class="bg-yellow-50 border border-yellow-200 rounded p-3 mb-4">
                             <p class="text-sm text-yellow-800">
                                 <i class="fas fa-magic mr-1"></i>
-                                <strong>Link de Auto-Cadastro:</strong> Cliente lê QR Code → Preenche dados → Paga primeira parcela → Assinatura mensal criada automaticamente com Split 80/20!
+                                <strong>Link de Auto-Cadastro:</strong> Cliente lê QR Code → Preenche dados → Paga via PIX → Sistema processa automaticamente com Split 80/20!
                             </p>
                         </div>
                         
+                        <!-- Tipo de Cobrança -->
+                        <div class="mb-4">
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                <i class="fas fa-list mr-2"></i>Tipo de Cobrança:
+                            </label>
+                            <div class="grid grid-cols-2 gap-3">
+                                <label class="flex items-center p-3 border-2 border-gray-300 rounded-lg cursor-pointer hover:border-orange-500 transition">
+                                    <input type="radio" 
+                                        name="charge-type-${account.id}" 
+                                        value="single" 
+                                        checked
+                                        class="mr-2 text-orange-600 focus:ring-orange-500">
+                                    <div class="flex-1">
+                                        <div class="font-semibold text-gray-800">
+                                            <i class="fas fa-receipt mr-1 text-blue-600"></i>
+                                            Cobrança Única
+                                        </div>
+                                        <div class="text-xs text-gray-500">Pagamento único, sem recorrência</div>
+                                    </div>
+                                </label>
+                                
+                                <label class="flex items-center p-3 border-2 border-gray-300 rounded-lg cursor-pointer hover:border-orange-500 transition">
+                                    <input type="radio" 
+                                        name="charge-type-${account.id}" 
+                                        value="monthly" 
+                                        class="mr-2 text-orange-600 focus:ring-orange-500">
+                                    <div class="flex-1">
+                                        <div class="font-semibold text-gray-800">
+                                            <i class="fas fa-sync-alt mr-1 text-green-600"></i>
+                                            Assinatura Mensal
+                                        </div>
+                                        <div class="text-xs text-gray-500">Cobrança recorrente automática</div>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+                        
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <input type="number" 
-                                id="signup-value-${account.id}" 
-                                placeholder="Valor mensal (R$)" 
-                                step="0.01" 
-                                min="1"
-                                required
-                                class="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-orange-500">
-                            <input type="text" 
-                                id="signup-desc-${account.id}" 
-                                placeholder="Descrição" 
-                                value="Mensalidade"
-                                class="px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-orange-500">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Valor (R$)</label>
+                                <input type="number" 
+                                    id="signup-value-${account.id}" 
+                                    placeholder="Ex: 149.90" 
+                                    step="0.01" 
+                                    min="1"
+                                    required
+                                    class="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-orange-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
+                                <input type="text" 
+                                    id="signup-desc-${account.id}" 
+                                    placeholder="Ex: Plano Premium" 
+                                    value="Mensalidade"
+                                    class="w-full px-3 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-orange-500">
+                            </div>
                         </div>
                         <button onclick="generateSignupLink('${account.id}', '${account.walletId}')" 
                             class="w-full mt-3 px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700 font-semibold">
@@ -3515,6 +3558,16 @@ async function generateSignupLink(accountId, walletId) {
     const value = parseFloat(document.getElementById(`signup-value-${accountId}`).value);
     const description = document.getElementById(`signup-desc-${accountId}`).value.trim();
     
+    // Capturar tipo de cobrança selecionado
+    const chargeTypeInputs = document.getElementsByName(`charge-type-${accountId}`);
+    let chargeType = 'single'; // Padrão
+    for (const input of chargeTypeInputs) {
+        if (input.checked) {
+            chargeType = input.value;
+            break;
+        }
+    }
+    
     if (!value || value <= 0) {
         alert('⚠️ Digite um valor válido maior que zero!');
         return;
@@ -3539,7 +3592,8 @@ async function generateSignupLink(accountId, walletId) {
                 walletId,
                 accountId,
                 value,
-                description
+                description,
+                chargeType // 'single' ou 'monthly'
             })
         });
         
