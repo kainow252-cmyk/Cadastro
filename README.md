@@ -411,12 +411,63 @@ curl http://localhost:3000/api/admin/database-stats
 - [Hono Documentation](https://hono.dev/)
 - [Cloudflare Workers](https://developers.cloudflare.com/workers/)
 
+## 📊 Relatórios Detalhados com Dados dos Clientes
+
+### ✨ Funcionalidades
+- ✅ **Filtros Visuais**: 6 filtros (Subconta, Data Início, Data Fim, Tipo de Cobrança, Status, Botão Aplicar)
+- ✅ **Tabela Expandida**: 8 colunas (Data, Descrição, Valor, Status, Nome Cliente, CPF, Nascimento, Tipo)
+- ✅ **Badges Coloridos**:
+  - 🟢 QR Code Avulso (verde)
+  - 🟣 Assinatura Mensal (roxo)
+  - 🔵 PIX Automático (azul)
+  - 🟠 Link Auto-Cadastro (laranja)
+- ✅ **Relatório Consolidado**: Opção "Todas as Subcontas" para relatório unificado
+- ✅ **Exportação PDF**: Download automático com formatação profissional usando jsPDF
+  - Cabeçalho com logo e informações da conta
+  - Tabela formatada com todas as colunas
+  - Estatísticas financeiras no topo
+  - Rodapé com data/hora de geração e numeração de páginas
+  - Múltiplas páginas com quebra automática
+- ✅ **Exportação Excel/CSV**: Download de arquivo CSV com todos os dados
+- ✅ **Cards de Estatísticas**: Total Recebido, Pendente, Vencido, Transações
+- ✅ **Backend Otimizado**: JOIN entre tabelas (transactions, subscription_conversions, subscription_signup_links)
+- ✅ **Dados dos Clientes**: Nome, CPF, Email, Data de Nascimento incluídos
+
+### 📥 Como Usar Exportação PDF
+1. Acesse **Relatórios** no menu
+2. Configure os filtros desejados
+3. Clique em **Aplicar Filtros**
+4. Clique em **Exportar PDF** (botão vermelho)
+5. O PDF será gerado e baixado automaticamente
+6. Arquivo: `relatorio_NomeSubconta_2026-02-20.pdf`
+
+**Conteúdo do PDF:**
+- Título e cabeçalho estilizado
+- Informações da conta (nome, email, CPF/CNPJ, período, filtros)
+- Resumo financeiro (recebido, pendente, vencido, transações)
+- Tabela completa com todos os dados dos clientes
+- Rodapé com data/hora de geração e número de páginas
+
+### 📊 Endpoint da API
+```
+GET /api/reports/:accountId/detailed
+Query Params:
+  - startDate: YYYY-MM-DD
+  - endDate: YYYY-MM-DD
+  - chargeType: all|single|monthly|pix_auto|link_cadastro
+  - status: all|RECEIVED|PENDING|OVERDUE|REFUNDED
+
+GET /api/reports/all-accounts/detailed
+(mesmos query params para relatório consolidado)
+```
+
 ## 📊 Status do Projeto
 
-- **Ambiente**: Sandbox (desenvolvimento)
+- **Ambiente**: Produção (Cloudflare Pages)
 - **Status**: ✅ Funcional
-- **Última Atualização**: 14/02/2026
-- **Versão**: 1.0.0
+- **Última Atualização**: 20/02/2026
+- **Versão**: 1.2.0
+- **URL Produção**: https://corretoracorporate.pages.dev
 
 ## 🔗 URLs Importantes
 
