@@ -1331,6 +1331,70 @@ app.get('/api/admin/test-deltapag-config', authMiddleware, async (c) => {
   }
 })
 
+// Endpoint temporário para aplicar migration 0010 (charge_type)
+app.post('/api/admin/apply-migration-0010', authMiddleware, async (c) => {
+  try {
+    console.log('🔧 Aplicando migration 0010: charge_type...')
+    
+    const db = c.env.DB
+    
+    // 1. Adicionar coluna charge_type na tabela subscription_signup_links
+    await db.prepare(`
+      ALTER TABLE subscription_signup_links 
+      ADD COLUMN charge_type TEXT DEFAULT 'monthly' CHECK(charge_type IN ('single', 'monthly'))
+    `).run()
+    
+    console.log('✅ Coluna charge_type adicionada em subscription_signup_links')
+    
+    // 2. Adicionar coluna charge_type na tabela pix_automatic_signup_links
+    await db.prepare(`
+      ALTER TABLE pix_automatic_signup_links 
+      ADD COLUMN charge_type TEXT DEFAULT 'monthly' CHECK(charge_type IN ('single', 'monthly'))
+    `).run()
+    
+    console.log('✅ Coluna charge_type adicionada em pix_automatic_signup_links')
+    
+    // 3. Atualizar registros existentes
+    const result1 = await db.prepare(`
+      UPDATE subscription_signup_links SET charge_type = 'monthly' WHERE charge_type IS NULL
+    `).run()
+    
+    const result2 = await db.prepare(`
+      UPDATE pix_automatic_signup_links SET charge_type = 'monthly' WHERE charge_type IS NULL
+    `).run()
+    
+    console.log(`✅ ${result1.meta.changes} registros atualizados em subscription_signup_links`)
+    console.log(`✅ ${result2.meta.changes} registros atualizados em pix_automatic_signup_links`)
+    
+    return c.json({
+      ok: true,
+      message: 'Migration 0010 aplicada com sucesso',
+      updates: {
+        subscription_signup_links: result1.meta.changes,
+        pix_automatic_signup_links: result2.meta.changes
+      }
+    })
+    
+  } catch (error: any) {
+    console.error('❌ Erro ao aplicar migration:', error)
+    
+    // Se a coluna já existe, retornar sucesso
+    if (error.message?.includes('duplicate column name')) {
+      return c.json({
+        ok: true,
+        message: 'Migration já aplicada (coluna charge_type já existe)',
+        alreadyApplied: true
+      })
+    }
+    
+    return c.json({ 
+      ok: false, 
+      error: error.message,
+      hint: 'Coluna charge_type pode já existir ou houve erro de sintaxe'
+    }, 500)
+  }
+})
+
 // Endpoint de teste para criar um cliente de teste na DeltaPag
 app.post('/api/admin/test-deltapag-api', authMiddleware, async (c) => {
   try {
