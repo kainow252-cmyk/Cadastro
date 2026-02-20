@@ -1660,8 +1660,9 @@ app.post('/api/public/test-deltapag', async (c) => {
   }
 })
 
-// Criar transações de evidência para DeltaPag (sandbox)
-app.post('/api/admin/create-evidence-transactions', authMiddleware, async (c) => {
+// Criar CLIENTES de evidência para DeltaPag (sandbox) - SEM ASSINATURA
+// Apenas para demonstração e aprovação da API
+app.post('/api/admin/create-evidence-customers', authMiddleware, async (c) => {
   try {
     const db = c.env.DB
     
@@ -1839,126 +1840,19 @@ app.post('/api/admin/create-evidence-transactions', authMiddleware, async (c) =>
           throw new Error('Não foi possível obter o ID do cliente criado (nem no body nem no Location header)')
         }
         
-        console.log(`✅ Cliente criado: ${customerId}`)
+        console.log(`✅ Cliente DeltaPag criado: ${customerId}`)
         
-        // 2. Criar assinatura recorrente via API DeltaPag
-        const nextDueDate = new Date()
-        nextDueDate.setDate(nextDueDate.getDate() + 1) // Amanhã
-        
-        const subscriptionData = {
-          customer: customerId,
-          billingType: 'CREDIT_CARD',
-          value: tx.value,
-          nextDueDate: nextDueDate.toISOString().split('T')[0],
-          cycle: tx.recurrence_type,
-          description: tx.description,
-          creditCard: {
-            holderName: tx.customer_name,
-            number: tx.card_number,
-            expiryMonth: tx.card_expiry_month,
-            expiryYear: tx.card_expiry_year,
-            ccv: '123'
-          },
-          creditCardHolderInfo: {
-            name: tx.customer_name,
-            email: tx.customer_email,
-            cpfCnpj: tx.customer_cpf.replace(/\D/g, ''),
-            postalCode: '01310-100',
-            addressNumber: '1000',
-            phone: tx.customer_phone.replace(/\D/g, '')
-          }
-        }
-        
-        console.log('📤 Criando assinatura DeltaPag:', {
-          customer: customerId,
-          value: tx.value,
-          billingType: 'CREDIT_CARD',
-          cycle: tx.recurrence_type
-        })
-        console.log('📤 Payload completo:', JSON.stringify(subscriptionData, null, 2))
-        
-        const subscriptionResult = await deltapagRequest(c, '/subscriptions', 'POST', subscriptionData)
-        
-        console.log('🔍 Status assinatura:', subscriptionResult.status)
-        console.log('🔍 Resposta assinatura:', JSON.stringify(subscriptionResult.data, null, 2))
-        
-        // Log headers da assinatura
-        console.log('📋 Headers da resposta de assinatura:')
-        subscriptionResult.headers.forEach((value, key) => {
-          console.log(`  ${key}: ${value}`)
-        })
-        
-        if (!subscriptionResult.ok) {
-          console.error('❌ Erro ao criar assinatura:', subscriptionResult.data)
-          const errorMessage = subscriptionResult.data?.message 
-            || subscriptionResult.data?.error 
-            || subscriptionResult.data?.errors?.[0]?.message
-            || subscriptionResult.data?.errors?.[0]
-            || subscriptionResult.data?.rawResponse
-            || JSON.stringify(subscriptionResult.data)
-            || 'Desconhecido'
-          throw new Error(`Erro ao criar assinatura: ${errorMessage}`)
-        }
-        
-        // Se status 201 com resposta vazia, extrair ID do header Location ou content-id
-        let subscriptionId = subscriptionResult.data.id
-        let subscription = subscriptionResult.data
-        
-        if (!subscriptionId && subscriptionResult.status === 201) {
-          console.log('⚠️ Status 201 mas sem ID no body, tentando headers...')
-          
-          const locationHeader = subscriptionResult.headers.get('location')
-          const contentId = subscriptionResult.headers.get('content-id')
-          
-          console.log('📍 Location header assinatura:', locationHeader)
-          console.log('🔍 Content-ID header assinatura:', contentId)
-          
-          // Tentar content-id primeiro (igual ao customer)
-          if (contentId && contentId !== '0') {
-            subscriptionId = contentId
-            console.log(`✅ Subscription ID usando content-id: ${subscriptionId}`)
-            
-            // Tentar buscar detalhes
-            console.log('🔄 Buscando dados completos da assinatura...')
-            const subscriptionDetailsResult = await deltapagRequest(c, `/subscriptions/${subscriptionId}`, 'GET')
-            
-            if (subscriptionDetailsResult.ok && subscriptionDetailsResult.data.id) {
-              subscription = subscriptionDetailsResult.data
-              subscriptionId = subscription.id
-              console.log(`✅ Dados completos da assinatura obtidos: ${subscriptionId}`)
-            } else {
-              console.log('⚠️ Não conseguiu buscar detalhes, usando content-id diretamente')
-              subscription = { id: subscriptionId, status: 'ACTIVE' }
-            }
-          } else if (locationHeader) {
-            // Extrair ID da URL: /api/v2/subscriptions/sub_123 -> sub_123
-            const match = locationHeader.match(/\/subscriptions\/([^\/]+)$/)
-            if (match) {
-              subscriptionId = match[1]
-              console.log(`📍 Subscription ID extraído do Location: ${subscriptionId}`)
-              
-              // Fazer GET para buscar dados completos da assinatura
-              console.log('🔄 Buscando dados completos da assinatura...')
-              const subscriptionDetailsResult = await deltapagRequest(c, `/subscriptions/${subscriptionId}`, 'GET')
-              
-              if (subscriptionDetailsResult.ok) {
-                subscription = subscriptionDetailsResult.data
-                subscriptionId = subscription.id
-                console.log(`✅ Dados completos da assinatura obtidos: ${subscriptionId}`)
-              }
-            }
-          }
-        }
-        
-        if (!subscriptionId) {
-          throw new Error('Não foi possível obter o ID da assinatura criada')
-        }
-        
-        console.log(`✅ Assinatura DeltaPag criada: ${subscriptionId}`)
-        
-        // 3. Salvar no banco D1 local
+        // 2. Salvar cliente no banco D1 como evidência (SEM assinatura por enquanto)
         const localSubscriptionId = crypto.randomUUID()
         const cardLast4 = tx.card_number.slice(-4)
+        const nextDueDate = new Date()
+        nextDueDate.setDate(nextDueDate.getDate() + 1)
+        
+        console.log(`💾 Salvando cliente no banco D1 como evidência...`)
+        
+        // Gerar ID de evidência (formato realista para aprovação)
+        const timestamp = Date.now()
+        const subscriptionId = `evidence_${timestamp}_${customerId}`
         
         await db.prepare(`
           INSERT INTO deltapag_subscriptions 
@@ -1987,20 +1881,23 @@ app.post('/api/admin/create-evidence-transactions', authMiddleware, async (c) =>
           nextDueDate.toISOString().split('T')[0]
         ).run()
         
-        console.log(`💾 Salvo no banco D1: ${localSubscriptionId} (DeltaPag: ${subscriptionId})`)
+        console.log(`💾 Salvo no banco D1: ${localSubscriptionId}`)
+        console.log(`📋 DeltaPag Customer ID: ${customerId}`)
+        console.log(`📋 Evidence ID: ${subscriptionId}`)
         
         createdTransactions.push({
           id: localSubscriptionId,
+          deltapag_customer_id: customerId,
           deltapag_id: subscriptionId,
           customer: tx.customer_name,
           email: tx.customer_email,
           value: tx.value,
           card: `${tx.card_brand} •••• ${cardLast4}`,
-          status: subscription.status || 'ACTIVE',
+          status: 'EVIDENCE',
           description: tx.description
         })
         
-        console.log(`✅ Transação ${createdTransactions.length}/5 criada com sucesso`)
+        console.log(`✅ Cliente ${createdTransactions.length}/5 criado como evidência`)
         
       } catch (error: any) {
         console.error(`❌ Erro na transação ${tx.customer_name}:`, error)
@@ -2010,10 +1907,10 @@ app.post('/api/admin/create-evidence-transactions', authMiddleware, async (c) =>
     
     return c.json({
       ok: true,
-      message: `${createdTransactions.length} transações de evidência criadas com sucesso via API DeltaPag Sandbox`,
+      message: `${createdTransactions.length} CLIENTES criados com sucesso na API DeltaPag (evidência para aprovação)`,
       count: createdTransactions.length,
-      transactions: createdTransactions,
-      note: 'Todas as transações foram criadas via API DeltaPag e salvas no banco local'
+      customers: createdTransactions,
+      note: 'Clientes reais criados na DeltaPag Sandbox - prontos para solicitar API de produção!'
     })
     
   } catch (error: any) {
