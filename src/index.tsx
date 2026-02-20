@@ -9291,12 +9291,32 @@ async function handlePaymentRefunded(c: any, payload: any) {
 }
 
 async function handleAccountEvent(c: any, payload: any) {
-  console.log('Evento de subconta:', payload.event, payload.account?.id)
+  console.log('📋 Evento de subconta:', payload.event, payload.account?.id)
   
   // Atualizar cache de subcontas
   if (payload.account) {
     const account = payload.account
+    const previousStatus = await c.env.DB.prepare(`
+      SELECT status FROM cached_accounts WHERE id = ?
+    `).bind(account.id).first()
     
+    const oldStatus = previousStatus?.status || 'UNKNOWN'
+    const newStatus = account.status || ''
+    
+    // Detectar mudança de status
+    const statusChanged = oldStatus !== newStatus
+    
+    console.log('📊 Status da conta:', {
+      accountId: account.id,
+      accountName: account.name,
+      accountEmail: account.email,
+      oldStatus,
+      newStatus,
+      statusChanged,
+      event: payload.event
+    })
+    
+    // Atualizar cache no banco
     await c.env.DB.prepare(`
       INSERT OR REPLACE INTO cached_accounts 
       (id, wallet_id, name, email, status, data, last_updated)
@@ -9306,9 +9326,73 @@ async function handleAccountEvent(c: any, payload: any) {
       account.walletId || '',
       account.name || '',
       account.email || '',
-      account.status || '',
+      newStatus,
       JSON.stringify(account)
     ).run()
+    
+    // ========================================
+    // DETECTAR APROVAÇÃO DA CONTA
+    // ========================================
+    if (statusChanged && newStatus === 'APPROVED') {
+      console.log('🎉 CONTA APROVADA:', {
+        id: account.id,
+        name: account.name,
+        email: account.email,
+        walletId: account.walletId
+      })
+      
+      // Registrar log de aprovação
+      await c.env.DB.prepare(`
+        INSERT INTO activity_logs (user_id, action, details, ip_address)
+        VALUES (NULL, 'ACCOUNT_APPROVED', ?, 'webhook')
+      `).bind(
+        JSON.stringify({
+          accountId: account.id,
+          accountName: account.name,
+          accountEmail: account.email,
+          walletId: account.walletId,
+          oldStatus,
+          newStatus,
+          approvedAt: new Date().toISOString()
+        })
+      ).run()
+      
+      // Enviar email de congratulações (opcional)
+      try {
+        console.log('📧 Enviando email de aprovação para:', account.email)
+        // Aqui você pode adicionar lógica de envio de email via Mailersend
+        // await sendApprovalEmail(c, account)
+      } catch (emailError) {
+        console.error('❌ Erro ao enviar email de aprovação:', emailError)
+      }
+    }
+    
+    // ========================================
+    // DETECTAR REJEIÇÃO DA CONTA
+    // ========================================
+    if (statusChanged && (newStatus === 'REJECTED' || newStatus === 'SUSPENDED')) {
+      console.log('⚠️ CONTA REJEITADA/SUSPENSA:', {
+        id: account.id,
+        name: account.name,
+        email: account.email,
+        status: newStatus
+      })
+      
+      // Registrar log
+      await c.env.DB.prepare(`
+        INSERT INTO activity_logs (user_id, action, details, ip_address)
+        VALUES (NULL, 'ACCOUNT_REJECTED', ?, 'webhook')
+      `).bind(
+        JSON.stringify({
+          accountId: account.id,
+          accountName: account.name,
+          accountEmail: account.email,
+          oldStatus,
+          newStatus,
+          rejectedAt: new Date().toISOString()
+        })
+      ).run()
+    }
   }
 }
 
