@@ -1377,9 +1377,23 @@ app.post('/api/admin/test-deltapag-api', authMiddleware, async (c) => {
 app.post('/api/public/test-deltapag', async (c) => {
   try {
     console.log('🧪 [PÚBLICO] Testando API DeltaPag...')
+    console.log('🔍 Verificando variáveis de ambiente...')
     
-    if (!c.env.DELTAPAG_API_KEY) {
-      return c.json({ ok: false, error: 'DELTAPAG_API_KEY não configurada' }, 400)
+    // Verificar variáveis
+    const hasApiKey = !!c.env.DELTAPAG_API_KEY
+    const hasApiUrl = !!c.env.DELTAPAG_API_URL
+    const apiUrl = c.env.DELTAPAG_API_URL || 'https://api-sandbox.deltapag.io/api/v2'
+    
+    console.log(`✅ DELTAPAG_API_KEY existe: ${hasApiKey}`)
+    console.log(`✅ DELTAPAG_API_URL existe: ${hasApiUrl}`)
+    console.log(`✅ URL que será usada: ${apiUrl}`)
+    
+    if (!hasApiKey) {
+      return c.json({ 
+        ok: false, 
+        error: 'DELTAPAG_API_KEY não configurada',
+        config: { hasApiKey, hasApiUrl, apiUrl }
+      }, 400)
     }
     
     // Dados de cliente de teste
@@ -1390,27 +1404,39 @@ app.post('/api/public/test-deltapag', async (c) => {
       mobilePhone: '11999999999'
     }
     
-    console.log('📤 Enviando para DeltaPag:', testCustomer)
+    console.log('📤 Enviando para DeltaPag:', JSON.stringify(testCustomer, null, 2))
+    
+    // Verificar se deltapagRequest existe
+    if (typeof deltapagRequest !== 'function') {
+      throw new Error('Função deltapagRequest não encontrada')
+    }
+    
+    console.log('🔷 Chamando deltapagRequest...')
     
     // Tentar criar cliente
     const result = await deltapagRequest(c, '/customers', 'POST', testCustomer)
     
-    console.log('📥 Resposta DeltaPag:', result)
+    console.log('📥 Resposta DeltaPag recebida:', JSON.stringify(result, null, 2))
     
     return c.json({
       ok: result.ok,
       statusCode: result.status,
       response: result.data,
       testData: testCustomer,
+      config: { hasApiKey, hasApiUrl, apiUrl },
       timestamp: new Date().toISOString()
     })
     
   } catch (error: any) {
     console.error('❌ Erro ao testar API DeltaPag:', error)
+    console.error('❌ Stack trace:', error.stack)
+    
     return c.json({ 
       ok: false, 
-      error: error.message,
-      stack: error.stack 
+      error: error.message || 'Erro desconhecido',
+      errorType: error.name || 'Error',
+      stack: error.stack || 'No stack trace',
+      timestamp: new Date().toISOString()
     }, 500)
   }
 })
