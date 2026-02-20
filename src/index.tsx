@@ -469,40 +469,8 @@ app.post('/api/public/signup', async (c) => {
       customerId = customerResult.data.id
     }
     
-    // 3. Gerar cobrança PIX automática de R$ 50,00 (taxa de cadastro)
-    if (customerId && account.walletId) {
-      const paymentData = {
-        customer: customerId,
-        billingType: 'PIX',
-        value: 50.00, // Taxa de cadastro
-        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 7 dias
-        description: 'Taxa de cadastro e ativação da conta',
-        
-        // Split 20/80
-        split: [{
-          walletId: account.walletId,
-          percentualValue: 20.00 // 20% para a subconta
-        }]
-      }
-      
-      const paymentResult = await asaasRequest(c, '/payments', 'POST', paymentData)
-      
-      // Adicionar dados da cobrança ao retorno
-      if (paymentResult.ok && paymentResult.data) {
-        account.payment = {
-          id: paymentResult.data.id,
-          value: paymentResult.data.value,
-          status: paymentResult.data.status,
-          dueDate: paymentResult.data.dueDate,
-          invoiceUrl: paymentResult.data.invoiceUrl,
-          pixQrCode: {
-            qrCodeId: paymentResult.data.pixQrCodeId,
-            payload: paymentResult.data.pixQrCodePayload,
-            expirationDate: paymentResult.data.pixQrCodeExpirationDate
-          }
-        }
-      }
-    }
+    // 3. [REMOVIDO] Cobrança automática de R$ 50,00 removida
+    // Agora apenas envia email de boas-vindas, sem criar cobrança
     
     // 4. Enviar email de boas-vindas
     await sendWelcomeEmail(
