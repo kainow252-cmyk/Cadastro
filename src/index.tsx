@@ -9415,4 +9415,294 @@ app.post('/api/webhooks/:id/reprocess', async (c) => {
   }
 })
 
+// ============================================
+// SISTEMA DE LIMPEZA E OTIMIZAÇÃO
+// ============================================
+
+// Endpoint: Executar limpeza e otimização do banco de dados
+app.post('/api/admin/cleanup', authMiddleware, async (c) => {
+  const startTime = Date.now()
+  
+  try {
+    const db = c.env.DB
+    const cleanupResults = {
+      expired_links: 0,
+      old_webhooks: 0,
+      old_conversions: 0,
+      old_trash: 0,
+      total_freed_kb: 0
+    }
+    
+    console.log('🧹 Iniciando limpeza do banco de dados...')
+    
+    // 1. Mover links expirados há mais de 30 dias para a lixeira
+    const expiredLinksQuery = await db.prepare(`
+      SELECT * FROM signup_links 
+      WHERE active = 0 
+      AND datetime(expires_at) < datetime('now', '-30 days')
+    `).all()
+    
+    if (expiredLinksQuery.results && expiredLinksQuery.results.length > 0) {
+      for (const link of expiredLinksQuery.results) {
+        // Mover para lixeira
+        await db.prepare(`
+          INSERT INTO trash_bin (original_table, original_id, data, deleted_reason, metadata)
+          VALUES (?, ?, ?, ?, ?)
+        `).bind(
+          'signup_links',
+          link.id,
+          JSON.stringify(link),
+          'Link expirado há mais de 30 dias',
+          JSON.stringify({ expired_at: link.expires_at, uses_count: link.uses_count })
+        ).run()
+        
+        // Deletar da tabela original
+        await db.prepare(`DELETE FROM signup_links WHERE id = ?`).bind(link.id).run()
+        cleanupResults.expired_links++
+      }
+      console.log(`✅ ${cleanupResults.expired_links} links expirados movidos para lixeira`)
+    }
+    
+    // 2. Deletar webhooks antigos (mais de 90 dias)
+    const oldWebhooksResult = await db.prepare(`
+      DELETE FROM webhooks 
+      WHERE datetime(created_at) < datetime('now', '-90 days')
+    `).run()
+    
+    cleanupResults.old_webhooks = oldWebhooksResult.meta.changes || 0
+    if (cleanupResults.old_webhooks > 0) {
+      console.log(`✅ ${cleanupResults.old_webhooks} webhooks antigos deletados`)
+    }
+    
+    // 3. Deletar conversões antigas (mais de 180 dias)
+    const oldConversionsResult = await db.prepare(`
+      DELETE FROM link_conversions 
+      WHERE datetime(converted_at) < datetime('now', '-180 days')
+    `).run()
+    
+    cleanupResults.old_conversions = oldConversionsResult.meta.changes || 0
+    if (cleanupResults.old_conversions > 0) {
+      console.log(`✅ ${cleanupResults.old_conversions} conversões antigas deletadas`)
+    }
+    
+    // 4. Deletar permanentemente itens da lixeira com mais de 30 dias
+    const oldTrashResult = await db.prepare(`
+      DELETE FROM trash_bin 
+      WHERE datetime(deleted_at) < datetime('now', '-30 days')
+      AND can_restore = 1
+    `).run()
+    
+    cleanupResults.old_trash = oldTrashResult.meta.changes || 0
+    if (cleanupResults.old_trash > 0) {
+      console.log(`✅ ${cleanupResults.old_trash} itens antigos removidos da lixeira`)
+    }
+    
+    // 5. Executar VACUUM para recuperar espaço
+    console.log('🔧 Executando VACUUM para otimizar banco...')
+    await db.prepare('VACUUM').run()
+    console.log('✅ VACUUM executado com sucesso')
+    
+    // 6. Registrar log de limpeza
+    const executionTime = Date.now() - startTime
+    await db.prepare(`
+      INSERT INTO cleanup_logs (cleanup_type, items_deleted, items_moved_to_trash, execution_time_ms, details)
+      VALUES (?, ?, ?, ?, ?)
+    `).bind(
+      'manual_cleanup',
+      cleanupResults.old_webhooks + cleanupResults.old_conversions + cleanupResults.old_trash,
+      cleanupResults.expired_links,
+      executionTime,
+      JSON.stringify(cleanupResults)
+    ).run()
+    
+    const totalItemsRemoved = cleanupResults.expired_links + 
+                              cleanupResults.old_webhooks + 
+                              cleanupResults.old_conversions + 
+                              cleanupResults.old_trash
+    
+    return c.json({
+      ok: true,
+      message: `Limpeza concluída! ${totalItemsRemoved} itens removidos`,
+      execution_time_ms: executionTime,
+      results: cleanupResults,
+      summary: {
+        expired_links: `${cleanupResults.expired_links} links expirados movidos para lixeira`,
+        old_webhooks: `${cleanupResults.old_webhooks} webhooks antigos deletados`,
+        old_conversions: `${cleanupResults.old_conversions} conversões antigas deletadas`,
+        old_trash: `${cleanupResults.old_trash} itens removidos da lixeira`,
+        vacuum: 'Banco de dados otimizado'
+      }
+    })
+    
+  } catch (error: any) {
+    console.error('❌ Erro na limpeza:', error)
+    return c.json({ 
+      ok: false, 
+      error: error.message,
+      details: error.stack 
+    }, 500)
+  }
+})
+
+// Endpoint: Ver conteúdo da lixeira
+app.get('/api/admin/trash', authMiddleware, async (c) => {
+  try {
+    const db = c.env.DB
+    
+    const trashItems = await db.prepare(`
+      SELECT 
+        id,
+        original_table,
+        original_id,
+        deleted_at,
+        deleted_reason,
+        can_restore
+      FROM trash_bin
+      WHERE can_restore = 1
+      ORDER BY deleted_at DESC
+      LIMIT 100
+    `).all()
+    
+    const stats = await db.prepare(`
+      SELECT 
+        original_table,
+        COUNT(*) as count,
+        MIN(deleted_at) as oldest,
+        MAX(deleted_at) as newest
+      FROM trash_bin
+      WHERE can_restore = 1
+      GROUP BY original_table
+    `).all()
+    
+    return c.json({
+      ok: true,
+      items: trashItems.results || [],
+      stats: stats.results || [],
+      total: trashItems.results?.length || 0
+    })
+    
+  } catch (error: any) {
+    return c.json({ ok: false, error: error.message }, 500)
+  }
+})
+
+// Endpoint: Restaurar item da lixeira
+app.post('/api/admin/trash/restore/:id', authMiddleware, async (c) => {
+  try {
+    const db = c.env.DB
+    const trashId = c.req.param('id')
+    
+    // Buscar item na lixeira
+    const trashItem = await db.prepare(`
+      SELECT * FROM trash_bin WHERE id = ? AND can_restore = 1
+    `).bind(trashId).first()
+    
+    if (!trashItem) {
+      return c.json({ ok: false, error: 'Item não encontrado ou não pode ser restaurado' }, 404)
+    }
+    
+    const originalData = JSON.parse(trashItem.data as string)
+    
+    // Restaurar para tabela original
+    if (trashItem.original_table === 'signup_links') {
+      await db.prepare(`
+        INSERT INTO signup_links (id, account_id, url, expires_at, created_at, active, uses_count, max_uses, created_by, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        originalData.id,
+        originalData.account_id,
+        originalData.url,
+        originalData.expires_at,
+        originalData.created_at,
+        originalData.active,
+        originalData.uses_count,
+        originalData.max_uses,
+        originalData.created_by,
+        originalData.notes
+      ).run()
+    }
+    
+    // Remover da lixeira
+    await db.prepare(`DELETE FROM trash_bin WHERE id = ?`).bind(trashId).run()
+    
+    return c.json({
+      ok: true,
+      message: 'Item restaurado com sucesso',
+      restored_table: trashItem.original_table,
+      restored_id: trashItem.original_id
+    })
+    
+  } catch (error: any) {
+    return c.json({ ok: false, error: error.message }, 500)
+  }
+})
+
+// Endpoint: Ver logs de limpeza
+app.get('/api/admin/cleanup-logs', authMiddleware, async (c) => {
+  try {
+    const db = c.env.DB
+    
+    const logs = await db.prepare(`
+      SELECT * FROM cleanup_logs
+      ORDER BY executed_at DESC
+      LIMIT 50
+    `).all()
+    
+    return c.json({
+      ok: true,
+      logs: logs.results || [],
+      total: logs.results?.length || 0
+    })
+    
+  } catch (error: any) {
+    return c.json({ ok: false, error: error.message }, 500)
+  }
+})
+
+// Endpoint: Estatísticas do banco de dados
+app.get('/api/admin/database-stats', authMiddleware, async (c) => {
+  try {
+    const db = c.env.DB
+    
+    const tables = [
+      'signup_links',
+      'link_conversions',
+      'subscription_signup_links',
+      'subscription_conversions',
+      'webhooks',
+      'users',
+      'trash_bin',
+      'cleanup_logs',
+      'deltapag_subscriptions'
+    ]
+    
+    const stats = []
+    
+    for (const table of tables) {
+      try {
+        const count = await db.prepare(`SELECT COUNT(*) as count FROM ${table}`).first()
+        stats.push({
+          table,
+          count: count?.count || 0
+        })
+      } catch (e) {
+        stats.push({
+          table,
+          count: 0,
+          error: 'Tabela não existe'
+        })
+      }
+    }
+    
+    return c.json({
+      ok: true,
+      stats,
+      total_tables: stats.length
+    })
+    
+  } catch (error: any) {
+    return c.json({ ok: false, error: error.message }, 500)
+  }
+})
+
 export default app

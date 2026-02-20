@@ -297,17 +297,91 @@ npm run deploy:prod
 https://seu-dominio.com/cadastro/62118294-2d2b-4df7-b4a1-af31fa80e065-1771102043405-8dh2tnxbu
 ```
 
+## 🧹 Sistema de Limpeza e Otimização
+
+### O Que Faz
+O sistema automaticamente limpa dados antigos e desnecessários para manter o banco de dados rápido e eficiente.
+
+### Funcionalidades de Limpeza
+- ✅ **Lixeira Inteligente**: Move dados antigos para lixeira em vez de deletar permanentemente
+- ✅ **Restauração**: Recupera itens deletados por engano (até 30 dias)
+- ✅ **Limpeza Automática**:
+  - Links expirados há mais de 30 dias → Lixeira
+  - Webhooks antigos (>90 dias) → Deletados
+  - Conversões antigas (>180 dias) → Deletadas
+  - Itens da lixeira (>30 dias) → Deletados permanentemente
+- ✅ **Otimização VACUUM**: Recupera espaço em disco
+- ✅ **Logs Detalhados**: Histórico de todas as limpezas realizadas
+
+### Como Usar
+
+#### Via API (Recomendado)
+```bash
+# Executar limpeza manual
+POST /api/admin/cleanup
+
+# Ver estatísticas do banco
+GET /api/admin/database-stats
+
+# Ver conteúdo da lixeira
+GET /api/admin/trash
+
+# Restaurar item da lixeira
+POST /api/admin/trash/restore/:id
+
+# Ver histórico de limpezas
+GET /api/admin/cleanup-logs
+```
+
+#### Via Script (Local)
+```bash
+# Limpar arquivos desnecessários do projeto
+./cleanup-project.sh
+
+# Resultado:
+# - Remove backups (.backup, .bak)
+# - Organiza documentação em docs/archive/
+# - Limpa cache do Wrangler
+# - Atualiza .gitignore
+```
+
+### Configuração de Limpeza
+As configurações estão no banco de dados (tabela `cleanup_config`):
+- `expired_links_days`: 30 dias (mover links expirados para lixeira)
+- `old_webhooks_days`: 90 dias (deletar webhooks antigos)
+- `trash_retention_days`: 30 dias (manter na lixeira)
+- `cleanup_enabled`: 1 (ativar limpeza automática)
+
+### Estatísticas do Banco
+```bash
+# Ver quantos registros existem em cada tabela
+curl http://localhost:3000/api/admin/database-stats
+
+# Resposta:
+{
+  "ok": true,
+  "stats": [
+    { "table": "signup_links", "count": 15 },
+    { "table": "link_conversions", "count": 45 },
+    { "table": "webhooks", "count": 230 },
+    { "table": "trash_bin", "count": 8 },
+    ...
+  ]
+}
+```
+
 ## 🔄 Próximos Passos Recomendados
 
 ### Funcionalidades Pendentes
-- [ ] Persistência de links em banco de dados (D1 ou KV)
-- [ ] Validação de expiração de links
+- [x] Persistência de links em banco de dados (D1 ou KV)
+- [x] Validação de expiração de links
+- [x] Sistema de limpeza e otimização automática
 - [ ] Edição de subcontas existentes
 - [ ] Exclusão de subcontas
-- [ ] Webhooks para notificações
+- [x] Webhooks para notificações
 - [ ] Filtros e busca na lista de subcontas
 - [ ] Paginação para grandes quantidades de subcontas
-- [ ] Exportação de dados (CSV, Excel)
+- [x] Exportação de dados (CSV, Excel)
 - [ ] Relatórios e analytics
 - [ ] Sistema de permissões/usuários
 
