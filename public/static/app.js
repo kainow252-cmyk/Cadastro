@@ -4875,3 +4875,35 @@ async function createEvidenceTransactions() {
     }
 }
 
+
+// =====================================
+// DELTAPAG - CRIAR EVIDÊNCIAS
+// =====================================
+async function createEvidenceTransactions() {
+    if (!confirm('🧪 Criar 5 clientes de EVIDÊNCIA no DeltaPag Sandbox?\n\nIsto irá:\n• Criar 5 clientes com CPF válidos\n• Tentar criar assinaturas recorrentes\n• Salvar no banco de dados D1\n\nDeseja continuar?')) {
+        return;
+    }
+    
+    try {
+        console.log('🔄 Criando evidências DeltaPag...');
+        
+        const response = await axios.post('/api/admin/create-evidence-customers');
+        
+        if (response.data.ok) {
+            const count = response.data.count || response.data.customers?.length || 0;
+            
+            console.log('✅ SUCESSO! Total de evidências criadas:', count);
+            console.log('📋 Detalhes:', response.data);
+            
+            alert(`✅ ${count} evidências criadas com sucesso!\n\nVerificar no painel DeltaPag:\nhttps://painel-sandbox.deltapag.io/marketplaces/clients`);
+            
+            await loadDeltapagSubscriptions();
+        } else {
+            console.error('❌ Erro:', response.data);
+            alert('❌ Erro ao criar evidências:\n\n' + (response.data.error || 'Erro desconhecido'));
+        }
+    } catch (error) {
+        console.error('❌ Erro ao criar evidências:', error);
+        alert('❌ Erro ao criar transações de evidência:\n\n' + (error.response?.data?.error || error.message));
+    }
+}
