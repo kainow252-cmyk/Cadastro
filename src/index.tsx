@@ -391,7 +391,16 @@ async function asaasRequest(
  * @returns Array de split para a API Asaas
  */
 function createNetSplit(walletId: string, totalValue: number, percentage: number = 20) {
-  const fixedValue = (totalValue * percentage) / 100
+  // Calcular valor e arredondar para 2 casas decimais
+  const fixedValue = Math.round((totalValue * percentage) / 100 * 100) / 100
+  
+  console.log('🔧 createNetSplit:', { walletId, totalValue, percentage, fixedValue })
+  
+  // Validar que o valor não seja 0 ou negativo
+  if (fixedValue <= 0) {
+    console.error('❌ Split value is 0 or negative:', fixedValue)
+    throw new Error(`Split value must be greater than 0. Calculated: ${fixedValue}`)
+  }
   
   return [{
     walletId: walletId,
