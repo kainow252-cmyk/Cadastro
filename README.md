@@ -415,7 +415,7 @@ curl http://localhost:3000/api/admin/database-stats
 
 ### ✨ Funcionalidades
 - ✅ **Filtros Visuais**: 6 filtros (Subconta, Data Início, Data Fim, Tipo de Cobrança, Status, Botão Aplicar)
-- ✅ **Tabela Expandida**: 8 colunas (Data, Descrição, Valor, Status, Nome Cliente, CPF, Nascimento, Tipo)
+- ✅ **Tabela Expandida**: 9 colunas (Data, Descrição, Valor, Status, **Subconta**, Nome Cliente, CPF, Nascimento, Tipo)
 - ✅ **Badges Coloridos**:
   - 🟢 QR Code Avulso (verde)
   - 🟣 Assinatura Mensal (roxo)
@@ -424,14 +424,15 @@ curl http://localhost:3000/api/admin/database-stats
 - ✅ **Relatório Consolidado**: Opção "Todas as Subcontas" para relatório unificado
 - ✅ **Exportação PDF**: Download automático com formatação profissional usando jsPDF
   - Cabeçalho com logo e informações da conta
-  - Tabela formatada com todas as colunas
+  - Tabela formatada com todas as colunas (incluindo Subconta)
   - Estatísticas financeiras no topo
   - Rodapé com data/hora de geração e numeração de páginas
   - Múltiplas páginas com quebra automática
-- ✅ **Exportação Excel/CSV**: Download de arquivo CSV com todos os dados
+- ✅ **Exportação Excel/CSV**: Download de arquivo CSV com todos os dados (incluindo Subconta)
 - ✅ **Cards de Estatísticas**: Total Recebido, Pendente, Vencido, Transações
 - ✅ **Backend Otimizado**: JOIN entre tabelas (transactions, subscription_conversions, subscription_signup_links)
 - ✅ **Dados dos Clientes**: Nome, CPF, Email, Data de Nascimento incluídos
+- ✅ **APIs para Sistemas Externos**: Endpoints específicos por status com autenticação via API Key
 
 ### 📥 Como Usar Exportação PDF
 1. Acesse **Relatórios** no menu
@@ -448,7 +449,9 @@ curl http://localhost:3000/api/admin/database-stats
 - Tabela completa com todos os dados dos clientes
 - Rodapé com data/hora de geração e número de páginas
 
-### 📊 Endpoint da API
+### 📊 Endpoints da API
+
+**Relatórios Detalhados (Interface Web):**
 ```
 GET /api/reports/:accountId/detailed
 Query Params:
@@ -460,6 +463,38 @@ Query Params:
 GET /api/reports/all-accounts/detailed
 (mesmos query params para relatório consolidado)
 ```
+
+**APIs para Sistemas Externos (requer X-API-Key):**
+```bash
+# Pagamentos Recebidos
+GET /api/reports/all-accounts/received
+Header: X-API-Key: sua-api-key
+
+# Pagamentos Pendentes
+GET /api/reports/all-accounts/pending
+Header: X-API-Key: sua-api-key
+
+# Pagamentos Vencidos
+GET /api/reports/all-accounts/overdue
+Header: X-API-Key: sua-api-key
+
+# Pagamentos Reembolsados
+GET /api/reports/all-accounts/refunded
+Header: X-API-Key: sua-api-key
+
+Query Params opcionais:
+  - startDate: YYYY-MM-DD
+  - endDate: YYYY-MM-DD
+  - chargeType: all|single|monthly|pix_auto|link_cadastro
+```
+
+**Exemplo de uso:**
+```bash
+curl -H "X-API-Key: demo-key-123" \
+  "https://corretoracorporate.pages.dev/api/reports/all-accounts/received?startDate=2026-02-01"
+```
+
+Para documentação completa das APIs externas, consulte: [`API_RELATORIOS_EXTERNOS.md`](./API_RELATORIOS_EXTERNOS.md)
 
 ## 📊 Status do Projeto
 
