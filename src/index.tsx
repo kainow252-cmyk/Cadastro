@@ -1003,6 +1003,30 @@ app.get('/api/reports/all-accounts/detailed', async (c) => {
 
 // ===== ENDPOINTS ESPECÍFICOS POR STATUS (para sistemas externos) =====
 
+// Middleware de autenticação via API Key para sistemas externos
+async function externalApiAuth(c: any, next: any) {
+  const apiKey = c.req.header('X-API-Key')
+  const validApiKey = c.env.EXTERNAL_API_KEY || 'demo-key-123' // Default para desenvolvimento
+  
+  // Se não forneceu API Key, bloquear
+  if (!apiKey) {
+    return c.json({ 
+      error: 'API Key obrigatória. Envie no header X-API-Key',
+      docs: 'https://github.com/kainow252-cmyk/Cadastro/blob/main/API_RELATORIOS_EXTERNOS.md'
+    }, 401)
+  }
+  
+  // Validar API Key
+  if (apiKey !== validApiKey) {
+    return c.json({ 
+      error: 'API Key inválida',
+      docs: 'https://github.com/kainow252-cmyk/Cadastro/blob/main/API_RELATORIOS_EXTERNOS.md'
+    }, 403)
+  }
+  
+  await next()
+}
+
 // Helper function para buscar relatório consolidado com status específico
 async function getConsolidatedReportByStatus(c: any, statusFilter: string) {
   try {
@@ -1164,22 +1188,22 @@ async function getConsolidatedReportByStatus(c: any, statusFilter: string) {
 }
 
 // API para sistemas externos: PAGAMENTOS RECEBIDOS
-app.get('/api/reports/all-accounts/received', async (c) => {
+app.get('/api/reports/all-accounts/received', externalApiAuth, async (c) => {
   return await getConsolidatedReportByStatus(c, 'RECEIVED')
 })
 
 // API para sistemas externos: PAGAMENTOS PENDENTES
-app.get('/api/reports/all-accounts/pending', async (c) => {
+app.get('/api/reports/all-accounts/pending', externalApiAuth, async (c) => {
   return await getConsolidatedReportByStatus(c, 'PENDING')
 })
 
 // API para sistemas externos: PAGAMENTOS VENCIDOS
-app.get('/api/reports/all-accounts/overdue', async (c) => {
+app.get('/api/reports/all-accounts/overdue', externalApiAuth, async (c) => {
   return await getConsolidatedReportByStatus(c, 'OVERDUE')
 })
 
 // API para sistemas externos: PAGAMENTOS REEMBOLSADOS
-app.get('/api/reports/all-accounts/refunded', async (c) => {
+app.get('/api/reports/all-accounts/refunded', externalApiAuth, async (c) => {
   return await getConsolidatedReportByStatus(c, 'REFUNDED')
 })
 

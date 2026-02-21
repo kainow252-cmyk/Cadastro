@@ -27,7 +27,8 @@ Retorna apenas pagamentos com status **RECEIVED** (pagos e confirmados).
 
 **Exemplo de Request:**
 ```bash
-curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/received?startDate=2026-02-01&endDate=2026-02-28&chargeType=all"
+curl -H "X-API-Key: sua-api-key" \
+  "https://corretoracorporate.pages.dev/api/reports/all-accounts/received?startDate=2026-02-01&endDate=2026-02-28&chargeType=all"
 ```
 
 ---
@@ -43,7 +44,8 @@ Retorna apenas pagamentos com status **PENDING** (aguardando pagamento dentro do
 
 **Exemplo de Request:**
 ```bash
-curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/pending?startDate=2026-02-20"
+curl -H "X-API-Key: sua-api-key" \
+  "https://corretoracorporate.pages.dev/api/reports/all-accounts/pending?startDate=2026-02-20"
 ```
 
 ---
@@ -59,7 +61,8 @@ Retorna apenas pagamentos com status **OVERDUE** (vencidos e não pagos).
 
 **Exemplo de Request:**
 ```bash
-curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/overdue?chargeType=monthly"
+curl -H "X-API-Key: sua-api-key" \
+  "https://corretoracorporate.pages.dev/api/reports/all-accounts/overdue?chargeType=monthly"
 ```
 
 ---
@@ -75,7 +78,8 @@ Retorna apenas pagamentos com status **REFUNDED** (pagamentos estornados/reembol
 
 **Exemplo de Request:**
 ```bash
-curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?endDate=2026-02-28"
+curl -H "X-API-Key: sua-api-key" \
+  "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?endDate=2026-02-28"
 ```
 
 ---
@@ -164,7 +168,12 @@ Todos os endpoints retornam JSON no seguinte formato:
 ```javascript
 // Buscar todos os pagamentos recebidos do mês atual
 const response = await fetch(
-  'https://corretoracorporate.pages.dev/api/reports/all-accounts/received?startDate=2026-02-01&endDate=2026-02-28'
+  'https://corretoracorporate.pages.dev/api/reports/all-accounts/received?startDate=2026-02-01&endDate=2026-02-28',
+  {
+    headers: {
+      'X-API-Key': 'sua-api-key-aqui'
+    }
+  }
 )
 const data = await response.json()
 
@@ -180,7 +189,12 @@ sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
 const startDate = sevenDaysAgo.toISOString().split('T')[0]
 
 const response = await fetch(
-  `https://corretoracorporate.pages.dev/api/reports/all-accounts/overdue?startDate=${startDate}`
+  `https://corretoracorporate.pages.dev/api/reports/all-accounts/overdue?startDate=${startDate}`,
+  {
+    headers: {
+      'X-API-Key': 'sua-api-key-aqui'
+    }
+  }
 )
 const data = await response.json()
 
@@ -193,7 +207,12 @@ if (data.data.summary.totalTransactions > 0) {
 ```javascript
 // Exportar todas as transações recebidas para processamento externo
 const response = await fetch(
-  'https://corretoracorporate.pages.dev/api/reports/all-accounts/received'
+  'https://corretoracorporate.pages.dev/api/reports/all-accounts/received',
+  {
+    headers: {
+      'X-API-Key': 'sua-api-key-aqui'
+    }
+  }
 )
 const data = await response.json()
 
@@ -205,25 +224,59 @@ const transactions = data.data.transactions
 
 ## 🔒 Segurança e Autenticação
 
-### ⚠️ IMPORTANTE - Implementação Pendente
+### ✅ Autenticação via API Key (Implementada)
 
-**Atualmente as APIs estão públicas (sem autenticação).** Para uso em produção com sistemas externos, é necessário implementar:
+**Todas as APIs externas requerem autenticação via API Key no header `X-API-Key`.**
 
-1. **API Key Authentication**
-```typescript
-// Middleware de autenticação (a implementar)
-app.use('/api/reports/all-accounts/*', async (c, next) => {
-  const apiKey = c.req.header('X-API-Key')
-  
-  if (!apiKey || apiKey !== c.env.EXTERNAL_API_KEY) {
-    return c.json({ error: 'Unauthorized' }, 401)
-  }
-  
-  await next()
-})
+### Como usar:
+
+**1. Desenvolvimento (Sandbox/Local)**
+```bash
+# API Key padrão para desenvolvimento
+curl -H "X-API-Key: demo-key-123" \
+  "http://localhost:3000/api/reports/all-accounts/received"
 ```
 
-2. **Rate Limiting**
+**2. Produção**
+```bash
+# Use a API Key configurada no Cloudflare
+curl -H "X-API-Key: sua-chave-secreta-aqui" \
+  "https://corretoracorporate.pages.dev/api/reports/all-accounts/received"
+```
+
+### Configurar API Key em Produção:
+
+```bash
+# 1. Gerar uma chave segura
+openssl rand -base64 32
+
+# 2. Adicionar no Cloudflare Pages
+npx wrangler pages secret put EXTERNAL_API_KEY --project-name corretoracorporate
+
+# 3. Digitar a chave quando solicitado
+```
+
+### Respostas de Erro:
+
+**401 Unauthorized (sem API Key):**
+```json
+{
+  "error": "API Key obrigatória. Envie no header X-API-Key",
+  "docs": "https://github.com/kainow252-cmyk/Cadastro/blob/main/API_RELATORIOS_EXTERNOS.md"
+}
+```
+
+**403 Forbidden (API Key inválida):**
+```json
+{
+  "error": "API Key inválida",
+  "docs": "https://github.com/kainow252-cmyk/Cadastro/blob/main/API_RELATORIOS_EXTERNOS.md"
+}
+```
+
+### Próximas melhorias:
+
+1. **Rate Limiting** (a implementar)
 ```typescript
 // Limitar requisições por IP (a implementar)
 // Ex: 100 requisições por hora
@@ -266,27 +319,33 @@ npx wrangler pages secret put EXTERNAL_API_KEY --project-name corretoracorporate
 
 ### Teste Local (Sandbox)
 ```bash
-# Com PM2 rodando
-curl http://localhost:3000/api/reports/all-accounts/received
-curl http://localhost:3000/api/reports/all-accounts/pending
-curl http://localhost:3000/api/reports/all-accounts/overdue
-curl http://localhost:3000/api/reports/all-accounts/refunded
+# Com PM2 rodando (API Key padrão: demo-key-123)
+curl -H "X-API-Key: demo-key-123" http://localhost:3000/api/reports/all-accounts/received
+curl -H "X-API-Key: demo-key-123" http://localhost:3000/api/reports/all-accounts/pending
+curl -H "X-API-Key: demo-key-123" http://localhost:3000/api/reports/all-accounts/overdue
+curl -H "X-API-Key: demo-key-123" http://localhost:3000/api/reports/all-accounts/refunded
 ```
 
 ### Teste em Produção
 ```bash
-# Após deploy
+# Após deploy (use sua API Key real)
+curl -H "X-API-Key: sua-api-key" https://corretoracorporate.pages.dev/api/reports/all-accounts/received
+curl -H "X-API-Key: sua-api-key" https://corretoracorporate.pages.dev/api/reports/all-accounts/pending
+curl -H "X-API-Key: sua-api-key" https://corretoracorporate.pages.dev/api/reports/all-accounts/overdue
+curl -H "X-API-Key: sua-api-key" https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded
+
+# Testar sem API Key (deve retornar 401)
 curl https://corretoracorporate.pages.dev/api/reports/all-accounts/received
-curl https://corretoracorporate.pages.dev/api/reports/all-accounts/pending
-curl https://corretoracorporate.pages.dev/api/reports/all-accounts/overdue
-curl https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded
+
+# Testar com API Key inválida (deve retornar 403)
+curl -H "X-API-Key: chave-errada" https://corretoracorporate.pages.dev/api/reports/all-accounts/received
 ```
 
 ---
 
 ## 📈 Próximos Passos
 
-- [ ] Implementar autenticação via API Key
+- [x] ✅ Implementar autenticação via API Key
 - [ ] Adicionar rate limiting
 - [ ] Configurar CORS para domínios específicos
 - [ ] Criar documentação OpenAPI/Swagger
