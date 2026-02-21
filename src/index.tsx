@@ -107,7 +107,11 @@ app.use('/api/*', async (c, next) => {
       path.startsWith('/api/pix/automatic-signup-link/') ||
       path.startsWith('/api/pix/automatic-signup/') ||
       path.startsWith('/api/payment-status/') ||
-      path.startsWith('/api/webhooks/')) {
+      path.startsWith('/api/webhooks/') ||
+      path.startsWith('/api/reports/all-accounts/received') ||
+      path.startsWith('/api/reports/all-accounts/pending') ||
+      path.startsWith('/api/reports/all-accounts/overdue') ||
+      path.startsWith('/api/reports/all-accounts/refunded')) {
     return next()
   }
   
