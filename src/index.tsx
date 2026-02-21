@@ -1001,6 +1001,188 @@ app.get('/api/reports/all-accounts/detailed', async (c) => {
   }
 })
 
+// ===== ENDPOINTS ESPECÍFICOS POR STATUS (para sistemas externos) =====
+
+// Helper function para buscar relatório consolidado com status específico
+async function getConsolidatedReportByStatus(c: any, statusFilter: string) {
+  try {
+    const db = c.env.DB
+    const startDate = c.req.query('startDate')
+    const endDate = c.req.query('endDate')
+    const chargeType = c.req.query('chargeType') || 'all'
+    
+    // Buscar todas as subcontas e criar mapa de nomes
+    const accountsResult = await db.prepare('SELECT DISTINCT account_id, wallet_id FROM transactions').all()
+    const accounts = accountsResult.results || []
+    
+    // Criar mapa de account_id → nome da conta
+    const accountNamesMap: Record<string, string> = {}
+    for (const acc of accounts) {
+      const accountId = (acc as any).account_id
+      const linkInfo = await db.prepare(`
+        SELECT description FROM subscription_signup_links 
+        WHERE account_id = ? 
+        LIMIT 1
+      `).bind(accountId).first()
+      
+      if (linkInfo && linkInfo.description) {
+        accountNamesMap[accountId] = linkInfo.description
+      } else {
+        accountNamesMap[accountId] = `Conta ${accountId.substring(0, 8)}`
+      }
+    }
+    
+    // Buscar transações com filtro de status
+    let query = `SELECT * FROM transactions WHERE status = ?`
+    const params: any[] = [statusFilter]
+    
+    if (startDate) {
+      query += ` AND created_at >= ?`
+      params.push(startDate)
+    }
+    if (endDate) {
+      query += ` AND created_at <= ?`
+      params.push(endDate + ' 23:59:59')
+    }
+    
+    query += ` ORDER BY created_at DESC`
+    
+    const result = await db.prepare(query).bind(...params).all()
+    let payments = result.results || []
+    
+    // Enriquecer cada pagamento com dados do cliente e subconta
+    for (let i = 0; i < payments.length; i++) {
+      const payment = payments[i] as any
+      
+      // Buscar dados do cliente
+      const conversion = await db.prepare(`
+        SELECT sc.*, ssl.charge_type 
+        FROM subscription_conversions sc
+        LEFT JOIN subscription_signup_links ssl ON sc.link_id = ssl.id
+        WHERE sc.subscription_id = ?
+        LIMIT 1
+      `).bind(payment.id).first()
+      
+      let finalConversion = conversion
+      
+      // Se não encontrou, tentar buscar pelo account_id
+      if (!finalConversion) {
+        finalConversion = await db.prepare(`
+          SELECT sc.*, ssl.charge_type 
+          FROM subscription_conversions sc
+          LEFT JOIN subscription_signup_links ssl ON sc.link_id = ssl.id
+          WHERE ssl.account_id = ?
+          ORDER BY sc.converted_at DESC
+          LIMIT 1
+        `).bind(payment.account_id).first()
+      }
+      
+      if (finalConversion) {
+        payment.customer_name = finalConversion.customer_name
+        payment.customer_email = finalConversion.customer_email
+        payment.customer_cpf = finalConversion.customer_cpf
+        payment.customer_birthdate = finalConversion.customer_birthdate
+        payment.charge_type = finalConversion.charge_type || 'monthly'
+      } else {
+        payment.customer_name = 'N/A'
+        payment.customer_email = 'N/A'
+        payment.customer_cpf = 'N/A'
+        payment.customer_birthdate = 'N/A'
+        payment.charge_type = 'monthly'
+      }
+      
+      // Atribuir nome da subconta
+      payment.account_name = accountNamesMap[payment.account_id] || `Conta ${payment.account_id.substring(0, 8)}`
+    }
+    
+    // Filtrar por tipo de cobrança
+    if (chargeType && chargeType !== 'all') {
+      payments = payments.filter((p: any) => {
+        const pChargeType = p.charge_type || 'monthly'
+        return pChargeType === chargeType
+      })
+    }
+    
+    // Calcular estatísticas (apenas para o status solicitado)
+    let totalValue = 0
+    payments.forEach((payment: any) => {
+      totalValue += parseFloat(payment.value || 0)
+    })
+    
+    // Preparar transações
+    const transactions = payments.map((p: any) => ({
+      id: p.id,
+      accountId: p.account_id,
+      accountName: p.account_name || 'N/A',
+      value: parseFloat(p.value || 0),
+      description: p.description || 'Sem descrição',
+      dueDate: p.due_date,
+      status: p.status,
+      dateCreated: p.created_at,
+      billingType: p.billing_type,
+      paymentDate: p.payment_date,
+      chargeType: p.charge_type || 'monthly',
+      customer: {
+        name: p.customer_name || 'N/A',
+        email: p.customer_email || 'N/A',
+        cpf: p.customer_cpf || 'N/A',
+        birthdate: p.customer_birthdate || 'N/A'
+      }
+    }))
+    
+    return c.json({
+      ok: true,
+      data: {
+        account: {
+          id: 'ALL_ACCOUNTS',
+          name: 'Todas as Subcontas',
+          email: 'consolidado@sistema.com',
+          cpfCnpj: '-',
+          walletId: '-'
+        },
+        period: {
+          startDate: startDate || 'Início',
+          endDate: endDate || 'Hoje'
+        },
+        filters: {
+          chargeType: chargeType || 'all',
+          status: statusFilter
+        },
+        summary: {
+          totalValue,
+          totalTransactions: payments.length,
+          totalAccounts: accounts.length,
+          status: statusFilter
+        },
+        transactions
+      }
+    })
+  } catch (error: any) {
+    console.error(`Erro ao buscar relatório consolidado (status: ${statusFilter}):`, error)
+    return c.json({ error: error.message }, 500)
+  }
+}
+
+// API para sistemas externos: PAGAMENTOS RECEBIDOS
+app.get('/api/reports/all-accounts/received', async (c) => {
+  return await getConsolidatedReportByStatus(c, 'RECEIVED')
+})
+
+// API para sistemas externos: PAGAMENTOS PENDENTES
+app.get('/api/reports/all-accounts/pending', async (c) => {
+  return await getConsolidatedReportByStatus(c, 'PENDING')
+})
+
+// API para sistemas externos: PAGAMENTOS VENCIDOS
+app.get('/api/reports/all-accounts/overdue', async (c) => {
+  return await getConsolidatedReportByStatus(c, 'OVERDUE')
+})
+
+// API para sistemas externos: PAGAMENTOS REEMBOLSADOS
+app.get('/api/reports/all-accounts/refunded', async (c) => {
+  return await getConsolidatedReportByStatus(c, 'REFUNDED')
+})
+
 // Endpoint aprimorado de relatórios com dados dos clientes
 app.get('/api/reports/:accountId/detailed', async (c) => {
   try {
