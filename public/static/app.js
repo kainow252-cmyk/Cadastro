@@ -5115,4 +5115,93 @@ function expandJson(status) {
     });
 }
 
+// Construir query string com filtros
+function buildQueryString() {
+    const startDate = document.getElementById('api-filter-start-date')?.value;
+    const endDate = document.getElementById('api-filter-end-date')?.value;
+    const chargeType = document.getElementById('api-filter-charge-type')?.value;
+    
+    const params = [];
+    if (startDate) params.push(`startDate=${startDate}`);
+    if (endDate) params.push(`endDate=${endDate}`);
+    if (chargeType) params.push(`chargeType=${chargeType}`);
+    
+    return params.length > 0 ? '?' + params.join('&') : '';
+}
+
+// Atualizar todos os links com os filtros atuais
+function updateApiLinks() {
+    const queryString = buildQueryString();
+    const baseUrl = 'https://corretoracorporate.pages.dev/api/reports/all-accounts';
+    
+    // Atualizar URLs dos inputs
+    const statuses = ['received', 'pending', 'overdue', 'refunded'];
+    statuses.forEach(status => {
+        const input = document.getElementById(`link-${status}`);
+        if (input) {
+            input.value = `${baseUrl}/${status}${queryString}`;
+        }
+    });
+    
+    // Atualizar exemplos curl
+    statuses.forEach(status => {
+        const curlExample = document.querySelector(`#api-links-section .bg-gradient-to-r.from-${getStatusColor(status)}-500`);
+        if (curlExample) {
+            const curlDiv = curlExample.closest('.bg-white').querySelector('.bg-gray-800');
+            if (curlDiv) {
+                curlDiv.innerHTML = `curl "${baseUrl}/${status}${queryString}"`;
+            }
+        }
+    });
+}
+
+// Obter cor do status
+function getStatusColor(status) {
+    const colors = {
+        'received': 'green',
+        'pending': 'yellow',
+        'overdue': 'red',
+        'refunded': 'gray'
+    };
+    return colors[status] || 'gray';
+}
+
+// Aplicar filtros de exemplo (Fevereiro 2026, Mensais)
+function applyExampleFilters() {
+    document.getElementById('api-filter-start-date').value = '2026-02-01';
+    document.getElementById('api-filter-end-date').value = '2026-02-28';
+    document.getElementById('api-filter-charge-type').value = 'monthly';
+    updateApiLinks();
+    
+    // Feedback visual
+    const button = event.target;
+    const originalText = button.innerHTML;
+    button.innerHTML = '<i class="fas fa-check mr-2"></i>Aplicado!';
+    button.classList.add('bg-green-600');
+    button.classList.remove('bg-blue-600');
+    
+    setTimeout(() => {
+        button.innerHTML = originalText;
+        button.classList.remove('bg-green-600');
+        button.classList.add('bg-blue-600');
+    }, 2000);
+}
+
+// Limpar filtros
+function clearApiFilters() {
+    document.getElementById('api-filter-start-date').value = '';
+    document.getElementById('api-filter-end-date').value = '';
+    document.getElementById('api-filter-charge-type').value = '';
+    updateApiLinks();
+    
+    // Feedback visual
+    const button = event.target;
+    const originalText = button.innerHTML;
+    button.innerHTML = '<i class="fas fa-check mr-2"></i>Limpo!';
+    
+    setTimeout(() => {
+        button.innerHTML = originalText;
+    }, 1500);
+}
+
 console.log('✅ Funções de APIs Externas carregadas');

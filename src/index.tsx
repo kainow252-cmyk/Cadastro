@@ -8554,6 +8554,59 @@ app.get('/', (c) => {
                 </div>
             </div>
 
+            <!-- Construtor de Filtros -->
+            <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+                <h3 class="text-xl font-bold text-gray-800 mb-4">
+                    <i class="fas fa-sliders-h mr-2 text-blue-600"></i>
+                    🎛️ Construtor de Filtros
+                </h3>
+                <p class="text-sm text-gray-600 mb-4">Configure os filtros abaixo e os links serão atualizados automaticamente</p>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">
+                            <i class="fas fa-calendar mr-1"></i>Data Início
+                        </label>
+                        <input type="date" id="api-filter-start-date" 
+                            onchange="updateApiLinks()"
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">
+                            <i class="fas fa-calendar mr-1"></i>Data Fim
+                        </label>
+                        <input type="date" id="api-filter-end-date" 
+                            onchange="updateApiLinks()"
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">
+                            <i class="fas fa-tags mr-1"></i>Tipo de Cobrança
+                        </label>
+                        <select id="api-filter-charge-type" 
+                            onchange="updateApiLinks()"
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                            <option value="">Todos (padrão)</option>
+                            <option value="single">QR Code Avulso</option>
+                            <option value="monthly">Assinatura Mensal</option>
+                            <option value="pix_auto">PIX Automático</option>
+                            <option value="link_cadastro">Link Auto-Cadastro</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="flex gap-2">
+                    <button onclick="applyExampleFilters()" 
+                        class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold transition">
+                        <i class="fas fa-magic mr-2"></i>Exemplo: Fevereiro 2026 (Mensais)
+                    </button>
+                    <button onclick="clearApiFilters()" 
+                        class="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 font-semibold transition">
+                        <i class="fas fa-eraser mr-2"></i>Limpar Filtros
+                    </button>
+                </div>
+            </div>
+
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                 <!-- Card: Pagamentos Recebidos -->
                 <div class="bg-white rounded-lg shadow-lg">
