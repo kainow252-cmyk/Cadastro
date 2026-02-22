@@ -1191,23 +1191,23 @@ async function getConsolidatedReportByStatus(c: any, statusFilter: string) {
   }
 }
 
-// API para sistemas externos: PAGAMENTOS RECEBIDOS
-app.get('/api/reports/all-accounts/received', externalApiAuth, async (c) => {
+// API para sistemas externos: PAGAMENTOS RECEBIDOS (PÚBLICA - SEM AUTENTICAÇÃO)
+app.get('/api/reports/all-accounts/received', async (c) => {
   return await getConsolidatedReportByStatus(c, 'RECEIVED')
 })
 
-// API para sistemas externos: PAGAMENTOS PENDENTES
-app.get('/api/reports/all-accounts/pending', externalApiAuth, async (c) => {
+// API para sistemas externos: PAGAMENTOS PENDENTES (PÚBLICA - SEM AUTENTICAÇÃO)
+app.get('/api/reports/all-accounts/pending', async (c) => {
   return await getConsolidatedReportByStatus(c, 'PENDING')
 })
 
-// API para sistemas externos: PAGAMENTOS VENCIDOS
-app.get('/api/reports/all-accounts/overdue', externalApiAuth, async (c) => {
+// API para sistemas externos: PAGAMENTOS VENCIDOS (PÚBLICA - SEM AUTENTICAÇÃO)
+app.get('/api/reports/all-accounts/overdue', async (c) => {
   return await getConsolidatedReportByStatus(c, 'OVERDUE')
 })
 
-// API para sistemas externos: PAGAMENTOS REEMBOLSADOS
-app.get('/api/reports/all-accounts/refunded', externalApiAuth, async (c) => {
+// API para sistemas externos: PAGAMENTOS REEMBOLSADOS (PÚBLICA - SEM AUTENTICAÇÃO)
+app.get('/api/reports/all-accounts/refunded', async (c) => {
   return await getConsolidatedReportByStatus(c, 'REFUNDED')
 })
 
@@ -8580,8 +8580,7 @@ app.get('/', (c) => {
                         <div class="mb-4">
                             <label class="block text-sm font-semibold text-gray-700 mb-2">Exemplo curl:</label>
                             <div class="bg-gray-800 text-green-400 p-3 rounded text-xs font-mono overflow-x-auto">
-curl -H "X-API-Key: demo-key-123" \\<br>
-  "https://corretoracorporate.pages.dev/api/reports/all-accounts/received"
+curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/received"
                             </div>
                         </div>
                         <button onclick="testApiLink('received')"
@@ -8616,8 +8615,7 @@ curl -H "X-API-Key: demo-key-123" \\<br>
                         <div class="mb-4">
                             <label class="block text-sm font-semibold text-gray-700 mb-2">Exemplo curl:</label>
                             <div class="bg-gray-800 text-yellow-400 p-3 rounded text-xs font-mono overflow-x-auto">
-curl -H "X-API-Key: demo-key-123" \\<br>
-  "https://corretoracorporate.pages.dev/api/reports/all-accounts/pending"
+curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/pending"
                             </div>
                         </div>
                         <button onclick="testApiLink('pending')"
@@ -8652,8 +8650,7 @@ curl -H "X-API-Key: demo-key-123" \\<br>
                         <div class="mb-4">
                             <label class="block text-sm font-semibold text-gray-700 mb-2">Exemplo curl:</label>
                             <div class="bg-gray-800 text-red-400 p-3 rounded text-xs font-mono overflow-x-auto">
-curl -H "X-API-Key: demo-key-123" \\<br>
-  "https://corretoracorporate.pages.dev/api/reports/all-accounts/overdue"
+curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/overdue"
                             </div>
                         </div>
                         <button onclick="testApiLink('overdue')"
@@ -8688,8 +8685,7 @@ curl -H "X-API-Key: demo-key-123" \\<br>
                         <div class="mb-4">
                             <label class="block text-sm font-semibold text-gray-700 mb-2">Exemplo curl:</label>
                             <div class="bg-gray-800 text-gray-400 p-3 rounded text-xs font-mono overflow-x-auto">
-curl -H "X-API-Key: demo-key-123" \\<br>
-  "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded"
+curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded"
                             </div>
                         </div>
                         <button onclick="testApiLink('refunded')"
@@ -8700,32 +8696,18 @@ curl -H "X-API-Key: demo-key-123" \\<br>
                 </div>
             </div>
 
-            <!-- Seção de Autenticação -->
-            <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
-                <h3 class="text-xl font-bold text-gray-800 mb-4">
-                    <i class="fas fa-key mr-2 text-blue-600"></i>
-                    Autenticação
+            <!-- Seção de Acesso Público -->
+            <div class="bg-gradient-to-r from-green-500 to-teal-500 rounded-lg shadow-lg p-6 mb-6 text-white">
+                <h3 class="text-xl font-bold mb-2">
+                    <i class="fas fa-globe mr-2"></i>
+                    🌐 APIs Públicas - Acesso Livre
                 </h3>
-                <div class="space-y-4">
-                    <div class="bg-blue-50 border-l-4 border-blue-600 p-4">
-                        <p class="font-semibold text-blue-900 mb-2">🔐 Requer API Key no header</p>
-                        <p class="text-sm text-blue-800">Todas as requisições devem incluir o header <code class="bg-blue-100 px-2 py-1 rounded">X-API-Key</code></p>
-                    </div>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <h4 class="font-semibold text-gray-700 mb-2">🧪 Desenvolvimento / Teste:</h4>
-                            <div class="bg-gray-100 p-3 rounded border border-gray-300">
-                                <code class="text-sm">X-API-Key: demo-key-123</code>
-                            </div>
-                        </div>
-                        <div>
-                            <h4 class="font-semibold text-gray-700 mb-2">🏭 Produção:</h4>
-                            <div class="bg-gray-100 p-3 rounded border border-gray-300">
-                                <code class="text-sm">X-API-Key: sua-chave-secreta</code>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <p class="text-lg opacity-90">
+                    ✅ Sem autenticação necessária - basta copiar e usar os links!
+                </p>
+                <p class="text-sm opacity-80 mt-2">
+                    Acesse diretamente no navegador, terminal, Postman, JavaScript, Python, etc.
+                </p>
             </div>
 
             <!-- Seção de Filtros -->

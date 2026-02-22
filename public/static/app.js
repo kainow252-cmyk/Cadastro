@@ -4995,11 +4995,7 @@ async function testApiLink(status) {
     
     try {
         const startTime = performance.now();
-        const response = await fetch(url, {
-            headers: {
-                'X-API-Key': 'demo-key-123'
-            }
-        });
+        const response = await fetch(url);
         const endTime = performance.now();
         const responseTime = Math.round(endTime - startTime);
         
@@ -5085,11 +5081,7 @@ async function testApiLink(status) {
 function expandJson(status) {
     const url = `https://corretoracorporate.pages.dev/api/reports/all-accounts/${status}`;
     
-    fetch(url, {
-        headers: {
-            'X-API-Key': 'demo-key-123'
-        }
-    })
+    fetch(url)
     .then(response => response.json())
     .then(data => {
         const newWindow = window.open('', '_blank');
