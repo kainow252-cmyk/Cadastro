@@ -7722,6 +7722,11 @@ app.get('/', (c) => {
                             <i class="fas fa-chart-bar text-3xl"></i>
                             <span class="text-sm">Relatórios</span>
                         </button>
+                        <button onclick="showSection('api-links')" 
+                            class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-green-500 to-teal-500 text-white rounded-lg hover:from-green-600 hover:to-teal-600 font-semibold shadow-md transition">
+                            <i class="fas fa-plug text-3xl"></i>
+                            <span class="text-sm">APIs Externas</span>
+                        </button>
                         <button onclick="showSection('payment-links')" 
                             class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-lg hover:from-cyan-600 hover:to-blue-600 font-semibold shadow-md transition">
                             <i class="fas fa-money-bill-wave text-3xl"></i>
@@ -8524,6 +8529,280 @@ app.get('/', (c) => {
                         <i class="fas fa-chart-line text-6xl mb-4 opacity-30"></i>
                         <p class="text-lg">Selecione uma subconta e clique em "Aplicar Filtros"</p>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- API Links Section -->
+        <div id="api-links-section" class="section hidden">
+            <div class="mb-4">
+                <button onclick="showSection('dashboard')" 
+                    class="flex items-center gap-2 text-gray-600 hover:text-gray-800 font-semibold transition">
+                    <i class="fas fa-arrow-left"></i>
+                    <span>Voltar ao Dashboard</span>
+                </button>
+            </div>
+            
+            <div class="bg-gradient-to-r from-green-600 to-teal-600 rounded-lg shadow-xl p-8 text-white mb-6">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h1 class="text-3xl font-bold mb-2">
+                            <i class="fas fa-plug mr-2"></i>APIs Externas - Links por Status
+                        </h1>
+                        <p class="text-lg opacity-90">Links diretos para integração com sistemas externos</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <!-- Card: Pagamentos Recebidos -->
+                <div class="bg-white rounded-lg shadow-lg">
+                    <div class="p-6 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-t-lg">
+                        <h3 class="text-xl font-bold flex items-center gap-2">
+                            <i class="fas fa-check-circle"></i>
+                            Pagamentos Recebidos
+                        </h3>
+                        <p class="text-sm opacity-90 mt-1">Status: RECEIVED</p>
+                    </div>
+                    <div class="p-6">
+                        <div class="mb-4">
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">URL Completa:</label>
+                            <div class="flex gap-2">
+                                <input type="text" readonly value="https://corretoracorporate.pages.dev/api/reports/all-accounts/received"
+                                    class="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded text-sm font-mono"
+                                    id="link-received">
+                                <button onclick="copyToClipboard('link-received')"
+                                    class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Exemplo curl:</label>
+                            <div class="bg-gray-800 text-green-400 p-3 rounded text-xs font-mono overflow-x-auto">
+curl -H "X-API-Key: demo-key-123" \\<br>
+  "https://corretoracorporate.pages.dev/api/reports/all-accounts/received"
+                            </div>
+                        </div>
+                        <button onclick="testApiLink('received')"
+                            class="w-full bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 font-semibold transition">
+                            <i class="fas fa-play mr-2"></i>Testar API
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Card: Pagamentos Pendentes -->
+                <div class="bg-white rounded-lg shadow-lg">
+                    <div class="p-6 bg-gradient-to-r from-yellow-500 to-orange-500 text-white rounded-t-lg">
+                        <h3 class="text-xl font-bold flex items-center gap-2">
+                            <i class="fas fa-clock"></i>
+                            Pagamentos Pendentes
+                        </h3>
+                        <p class="text-sm opacity-90 mt-1">Status: PENDING</p>
+                    </div>
+                    <div class="p-6">
+                        <div class="mb-4">
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">URL Completa:</label>
+                            <div class="flex gap-2">
+                                <input type="text" readonly value="https://corretoracorporate.pages.dev/api/reports/all-accounts/pending"
+                                    class="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded text-sm font-mono"
+                                    id="link-pending">
+                                <button onclick="copyToClipboard('link-pending')"
+                                    class="px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700 transition">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Exemplo curl:</label>
+                            <div class="bg-gray-800 text-yellow-400 p-3 rounded text-xs font-mono overflow-x-auto">
+curl -H "X-API-Key: demo-key-123" \\<br>
+  "https://corretoracorporate.pages.dev/api/reports/all-accounts/pending"
+                            </div>
+                        </div>
+                        <button onclick="testApiLink('pending')"
+                            class="w-full bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-700 font-semibold transition">
+                            <i class="fas fa-play mr-2"></i>Testar API
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Card: Pagamentos Vencidos -->
+                <div class="bg-white rounded-lg shadow-lg">
+                    <div class="p-6 bg-gradient-to-r from-red-500 to-pink-500 text-white rounded-t-lg">
+                        <h3 class="text-xl font-bold flex items-center gap-2">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            Pagamentos Vencidos
+                        </h3>
+                        <p class="text-sm opacity-90 mt-1">Status: OVERDUE</p>
+                    </div>
+                    <div class="p-6">
+                        <div class="mb-4">
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">URL Completa:</label>
+                            <div class="flex gap-2">
+                                <input type="text" readonly value="https://corretoracorporate.pages.dev/api/reports/all-accounts/overdue"
+                                    class="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded text-sm font-mono"
+                                    id="link-overdue">
+                                <button onclick="copyToClipboard('link-overdue')"
+                                    class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Exemplo curl:</label>
+                            <div class="bg-gray-800 text-red-400 p-3 rounded text-xs font-mono overflow-x-auto">
+curl -H "X-API-Key: demo-key-123" \\<br>
+  "https://corretoracorporate.pages.dev/api/reports/all-accounts/overdue"
+                            </div>
+                        </div>
+                        <button onclick="testApiLink('overdue')"
+                            class="w-full bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 font-semibold transition">
+                            <i class="fas fa-play mr-2"></i>Testar API
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Card: Pagamentos Reembolsados -->
+                <div class="bg-white rounded-lg shadow-lg">
+                    <div class="p-6 bg-gradient-to-r from-gray-500 to-slate-600 text-white rounded-t-lg">
+                        <h3 class="text-xl font-bold flex items-center gap-2">
+                            <i class="fas fa-undo"></i>
+                            Pagamentos Reembolsados
+                        </h3>
+                        <p class="text-sm opacity-90 mt-1">Status: REFUNDED</p>
+                    </div>
+                    <div class="p-6">
+                        <div class="mb-4">
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">URL Completa:</label>
+                            <div class="flex gap-2">
+                                <input type="text" readonly value="https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded"
+                                    class="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded text-sm font-mono"
+                                    id="link-refunded">
+                                <button onclick="copyToClipboard('link-refunded')"
+                                    class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Exemplo curl:</label>
+                            <div class="bg-gray-800 text-gray-400 p-3 rounded text-xs font-mono overflow-x-auto">
+curl -H "X-API-Key: demo-key-123" \\<br>
+  "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded"
+                            </div>
+                        </div>
+                        <button onclick="testApiLink('refunded')"
+                            class="w-full bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 font-semibold transition">
+                            <i class="fas fa-play mr-2"></i>Testar API
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Seção de Autenticação -->
+            <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+                <h3 class="text-xl font-bold text-gray-800 mb-4">
+                    <i class="fas fa-key mr-2 text-blue-600"></i>
+                    Autenticação
+                </h3>
+                <div class="space-y-4">
+                    <div class="bg-blue-50 border-l-4 border-blue-600 p-4">
+                        <p class="font-semibold text-blue-900 mb-2">🔐 Requer API Key no header</p>
+                        <p class="text-sm text-blue-800">Todas as requisições devem incluir o header <code class="bg-blue-100 px-2 py-1 rounded">X-API-Key</code></p>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <h4 class="font-semibold text-gray-700 mb-2">🧪 Desenvolvimento / Teste:</h4>
+                            <div class="bg-gray-100 p-3 rounded border border-gray-300">
+                                <code class="text-sm">X-API-Key: demo-key-123</code>
+                            </div>
+                        </div>
+                        <div>
+                            <h4 class="font-semibold text-gray-700 mb-2">🏭 Produção:</h4>
+                            <div class="bg-gray-100 p-3 rounded border border-gray-300">
+                                <code class="text-sm">X-API-Key: sua-chave-secreta</code>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Seção de Filtros -->
+            <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+                <h3 class="text-xl font-bold text-gray-800 mb-4">
+                    <i class="fas fa-filter mr-2 text-purple-600"></i>
+                    Filtros Disponíveis (Query Parameters)
+                </h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-gray-100">
+                            <tr>
+                                <th class="px-4 py-2 text-left font-semibold">Parâmetro</th>
+                                <th class="px-4 py-2 text-left font-semibold">Formato</th>
+                                <th class="px-4 py-2 text-left font-semibold">Exemplo</th>
+                                <th class="px-4 py-2 text-left font-semibold">Descrição</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y">
+                            <tr>
+                                <td class="px-4 py-2"><code>startDate</code></td>
+                                <td class="px-4 py-2">YYYY-MM-DD</td>
+                                <td class="px-4 py-2"><code>2026-02-01</code></td>
+                                <td class="px-4 py-2">Data inicial</td>
+                            </tr>
+                            <tr>
+                                <td class="px-4 py-2"><code>endDate</code></td>
+                                <td class="px-4 py-2">YYYY-MM-DD</td>
+                                <td class="px-4 py-2"><code>2026-02-28</code></td>
+                                <td class="px-4 py-2">Data final</td>
+                            </tr>
+                            <tr>
+                                <td class="px-4 py-2"><code>chargeType</code></td>
+                                <td class="px-4 py-2">string</td>
+                                <td class="px-4 py-2"><code>monthly</code></td>
+                                <td class="px-4 py-2">Tipo: all, single, monthly, pix_auto, link_cadastro</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mt-4 bg-yellow-50 border-l-4 border-yellow-500 p-4">
+                    <p class="text-sm text-yellow-800">
+                        <strong>Exemplo com filtros:</strong><br>
+                        <code class="text-xs">https://corretoracorporate.pages.dev/api/reports/all-accounts/received?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly</code>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Resultados do Teste -->
+            <div id="api-test-results" class="hidden bg-white rounded-lg shadow-lg p-6">
+                <h3 class="text-xl font-bold text-gray-800 mb-4">
+                    <i class="fas fa-vial mr-2 text-green-600"></i>
+                    Resultados do Teste
+                </h3>
+                <div id="api-test-content"></div>
+            </div>
+
+            <!-- Documentação -->
+            <div class="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-lg shadow-xl p-6 text-white">
+                <h3 class="text-2xl font-bold mb-4">
+                    <i class="fas fa-book mr-2"></i>
+                    Documentação Completa
+                </h3>
+                <p class="mb-4">Para mais informações, exemplos de código em diferentes linguagens e casos de uso:</p>
+                <div class="flex gap-4">
+                    <a href="https://github.com/kainow252-cmyk/Cadastro/blob/main/API_RELATORIOS_EXTERNOS.md" 
+                       target="_blank"
+                       class="bg-white text-indigo-600 px-6 py-3 rounded-lg font-semibold hover:bg-indigo-50 transition inline-flex items-center gap-2">
+                        <i class="fas fa-external-link-alt"></i>
+                        Ver Documentação Completa
+                    </a>
+                    <a href="https://github.com/kainow252-cmyk/Cadastro/blob/main/LINKS_API_EXTERNOS.md" 
+                       target="_blank"
+                       class="bg-white text-purple-600 px-6 py-3 rounded-lg font-semibold hover:bg-purple-50 transition inline-flex items-center gap-2">
+                        <i class="fas fa-link"></i>
+                        Ver Guia de Links
+                    </a>
                 </div>
             </div>
         </div>

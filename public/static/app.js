@@ -4952,3 +4952,175 @@ async function createEvidenceTransactions() {
         alert('❌ Erro ao criar transações de evidência:\n\n' + (error.response?.data?.error || error.message));
     }
 }
+
+// ===== FUNÇÕES PARA APIS EXTERNAS =====
+
+// Copiar link para área de transferência
+function copyToClipboard(elementId) {
+    const input = document.getElementById(elementId);
+    input.select();
+    input.setSelectionRange(0, 99999); // Para mobile
+    
+    try {
+        document.execCommand('copy');
+        
+        // Feedback visual
+        const button = event.target.closest('button');
+        const originalHTML = button.innerHTML;
+        button.innerHTML = '<i class="fas fa-check"></i>';
+        button.classList.add('opacity-75');
+        
+        setTimeout(() => {
+            button.innerHTML = originalHTML;
+            button.classList.remove('opacity-75');
+        }, 1500);
+    } catch (err) {
+        alert('Erro ao copiar: ' + err);
+    }
+}
+
+// Testar API Link
+async function testApiLink(status) {
+    const url = `https://corretoracorporate.pages.dev/api/reports/all-accounts/${status}`;
+    const resultsDiv = document.getElementById('api-test-results');
+    const contentDiv = document.getElementById('api-test-content');
+    
+    resultsDiv.classList.remove('hidden');
+    contentDiv.innerHTML = `
+        <div class="flex items-center gap-3 text-blue-600">
+            <i class="fas fa-spinner fa-spin text-2xl"></i>
+            <span class="font-semibold">Testando API...</span>
+        </div>
+    `;
+    
+    try {
+        const startTime = performance.now();
+        const response = await fetch(url, {
+            headers: {
+                'X-API-Key': 'demo-key-123'
+            }
+        });
+        const endTime = performance.now();
+        const responseTime = Math.round(endTime - startTime);
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            contentDiv.innerHTML = `
+                <div class="space-y-4">
+                    <div class="flex items-center gap-3 text-green-600 mb-4">
+                        <i class="fas fa-check-circle text-3xl"></i>
+                        <div>
+                            <div class="font-bold text-xl">✅ API Funcionando!</div>
+                            <div class="text-sm text-gray-600">Tempo de resposta: ${responseTime}ms</div>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                        <div class="bg-gradient-to-r from-green-500 to-emerald-500 text-white p-4 rounded-lg">
+                            <div class="text-sm opacity-90">Total</div>
+                            <div class="text-2xl font-bold">R$ ${(data.data.summary.totalValue || 0).toFixed(2)}</div>
+                        </div>
+                        <div class="bg-gradient-to-r from-blue-500 to-cyan-500 text-white p-4 rounded-lg">
+                            <div class="text-sm opacity-90">Transações</div>
+                            <div class="text-2xl font-bold">${data.data.summary.totalTransactions || 0}</div>
+                        </div>
+                        <div class="bg-gradient-to-r from-purple-500 to-pink-500 text-white p-4 rounded-lg">
+                            <div class="text-sm opacity-90">Subcontas</div>
+                            <div class="text-2xl font-bold">${data.data.summary.totalAccounts || 0}</div>
+                        </div>
+                        <div class="bg-gradient-to-r from-orange-500 to-red-500 text-white p-4 rounded-lg">
+                            <div class="text-sm opacity-90">Status</div>
+                            <div class="text-lg font-bold">${data.data.summary.status || status.toUpperCase()}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <div class="flex items-center justify-between mb-2">
+                            <h4 class="font-semibold text-gray-800">Resposta JSON (primeiros 500 caracteres):</h4>
+                            <button onclick="expandJson('${status}')" class="text-sm text-blue-600 hover:text-blue-800">
+                                <i class="fas fa-expand mr-1"></i>Ver Completo
+                            </button>
+                        </div>
+                        <pre class="text-xs bg-gray-800 text-green-400 p-3 rounded overflow-x-auto">${JSON.stringify(data, null, 2).substring(0, 500)}...</pre>
+                    </div>
+                </div>
+            `;
+        } else {
+            contentDiv.innerHTML = `
+                <div class="bg-red-50 border-l-4 border-red-600 p-4">
+                    <div class="flex items-center gap-3 text-red-600 mb-2">
+                        <i class="fas fa-times-circle text-2xl"></i>
+                        <div class="font-bold text-lg">❌ Erro na API</div>
+                    </div>
+                    <div class="text-sm text-red-800 mb-2">
+                        <strong>Status HTTP:</strong> ${response.status} ${response.statusText}
+                    </div>
+                    <div class="text-sm text-red-800">
+                        <strong>Mensagem:</strong> ${data.error || 'Erro desconhecido'}
+                    </div>
+                    ${data.docs ? `<div class="mt-2"><a href="${data.docs}" target="_blank" class="text-blue-600 hover:underline text-sm">📖 Ver Documentação</a></div>` : ''}
+                </div>
+            `;
+        }
+    } catch (error) {
+        contentDiv.innerHTML = `
+            <div class="bg-red-50 border-l-4 border-red-600 p-4">
+                <div class="flex items-center gap-3 text-red-600 mb-2">
+                    <i class="fas fa-exclamation-triangle text-2xl"></i>
+                    <div class="font-bold text-lg">❌ Erro de Conexão</div>
+                </div>
+                <div class="text-sm text-red-800">
+                    <strong>Erro:</strong> ${error.message}
+                </div>
+                <div class="text-sm text-gray-600 mt-2">
+                    Verifique sua conexão com a internet e tente novamente.
+                </div>
+            </div>
+        `;
+    }
+}
+
+// Expandir JSON completo
+function expandJson(status) {
+    const url = `https://corretoracorporate.pages.dev/api/reports/all-accounts/${status}`;
+    
+    fetch(url, {
+        headers: {
+            'X-API-Key': 'demo-key-123'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        const newWindow = window.open('', '_blank');
+        newWindow.document.write(`
+            <html>
+            <head>
+                <title>API Response - ${status.toUpperCase()}</title>
+                <style>
+                    body {
+                        background: #1a1a1a;
+                        color: #4ade80;
+                        font-family: 'Courier New', monospace;
+                        padding: 20px;
+                        margin: 0;
+                    }
+                    pre {
+                        white-space: pre-wrap;
+                        word-wrap: break-word;
+                    }
+                </style>
+            </head>
+            <body>
+                <h1 style="color: white;">API Response - ${status.toUpperCase()}</h1>
+                <pre>${JSON.stringify(data, null, 2)}</pre>
+            </body>
+            </html>
+        `);
+    })
+    .catch(error => {
+        alert('Erro ao expandir JSON: ' + error.message);
+    });
+}
+
+console.log('✅ Funções de APIs Externas carregadas');
