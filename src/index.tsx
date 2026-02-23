@@ -7704,38 +7704,38 @@ app.get('/', (c) => {
                         <i class="fas fa-bolt mr-2 text-yellow-500"></i>
                         Ações Rápidas
                     </h3>
-                    <div class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                    <div class="flex flex-wrap gap-3 justify-center">
                         <button onclick="showSection('dashboard')" 
-                            class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 font-semibold shadow-md transition">
-                            <i class="fas fa-chart-line text-3xl"></i>
+                            class="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 font-semibold shadow-md transition">
+                            <i class="fas fa-chart-line text-xl"></i>
                             <span class="text-sm">Dashboard</span>
                         </button>
                         <!-- Botão "Criar Subconta" removido - use o menu "Subcontas" -->
                         <!-- Botão "Gerar Link" removido - use "Links Pagamento" -->
                         <button onclick="showSection('accounts')" 
-                            class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 font-semibold shadow-md transition">
-                            <i class="fas fa-list text-3xl"></i>
-                            <span class="text-sm">Ver Subcontas</span>
+                            class="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 font-semibold shadow-md transition">
+                            <i class="fas fa-list text-xl"></i>
+                            <span class="text-sm">Subcontas</span>
                         </button>
                         <button onclick="showSection('reports')" 
-                            class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-lg hover:from-orange-600 hover:to-red-600 font-semibold shadow-md transition">
-                            <i class="fas fa-chart-bar text-3xl"></i>
+                            class="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-lg hover:from-orange-600 hover:to-red-600 font-semibold shadow-md transition">
+                            <i class="fas fa-chart-bar text-xl"></i>
                             <span class="text-sm">Relatórios</span>
                         </button>
                         <button onclick="showSection('api-links')" 
-                            class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-green-500 to-teal-500 text-white rounded-lg hover:from-green-600 hover:to-teal-600 font-semibold shadow-md transition">
-                            <i class="fas fa-plug text-3xl"></i>
+                            class="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-green-500 to-teal-500 text-white rounded-lg hover:from-green-600 hover:to-teal-600 font-semibold shadow-md transition">
+                            <i class="fas fa-plug text-xl"></i>
                             <span class="text-sm">APIs Externas</span>
                         </button>
                         <button onclick="showSection('payment-links')" 
-                            class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-lg hover:from-cyan-600 hover:to-blue-600 font-semibold shadow-md transition">
-                            <i class="fas fa-money-bill-wave text-3xl"></i>
-                            <span class="text-sm">Links Pagamento</span>
+                            class="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-lg hover:from-cyan-600 hover:to-blue-600 font-semibold shadow-md transition">
+                            <i class="fas fa-money-bill-wave text-xl"></i>
+                            <span class="text-sm">Links Pgto</span>
                         </button>
                         <button onclick="showSection('deltapag-section')" 
-                            class="flex flex-col items-center justify-center gap-2 px-4 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 font-semibold shadow-md transition">
-                            <i class="fas fa-credit-card text-3xl"></i>
-                            <span class="text-sm">Cartão Crédito</span>
+                            class="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 font-semibold shadow-md transition">
+                            <i class="fas fa-credit-card text-xl"></i>
+                            <span class="text-sm">Cartão</span>
                         </button>
                     </div>
                 </div>
