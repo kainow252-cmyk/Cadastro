@@ -4725,7 +4725,7 @@ app.post('/api/pix/automatic-signup/:linkId', async (c) => {
       customerId = createResult.data.id
     }
     
-    // 2. Criar autorização PIX Automático com QR Code imediato (Jornada 3)
+    // 2. Criar autorização PIX Automático SEM cobrança imediata
     // IMPORTANTE: PIX Automático requer habilitação prévia com time de sucesso Asaas
     // Email: [email protected]
     // Se não habilitado, faz fallback para assinatura recorrente PIX
@@ -4733,7 +4733,7 @@ app.post('/api/pix/automatic-signup/:linkId', async (c) => {
     const nextDueDate = new Date()
     nextDueDate.setDate(nextDueDate.getDate() + 1)
     
-    // Tentar PIX Automático primeiro
+    // Tentar PIX Automático primeiro (SEM immediateCharge)
     const authorizationData = {
       customer: customerId,
       value: value,
@@ -4741,10 +4741,7 @@ app.post('/api/pix/automatic-signup/:linkId', async (c) => {
       recurrence: {
         type: frequency, // MONTHLY, WEEKLY, etc
       },
-      immediateCharge: {
-        value: value,
-        dueDate: nextDueDate.toISOString().split('T')[0]
-      },
+      // immediateCharge REMOVIDO - não gera cobrança inicial automática
       split: createNetSplit(walletId, value, 20) // Sub-conta recebe 20% LÍQUIDO (após taxas)
     }
     
