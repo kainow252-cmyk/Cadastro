@@ -662,4 +662,23 @@ curl -X POST http://localhost:3000/api/payments \
 
 Consulte o guia completo: [`GUIA_API_KEY.md`](./GUIA_API_KEY.md)
 
+---
+
+## 🔧 Correções Recentes
+
+### ✅ Correção: Cobrança Automática Inicial Removida (23 Fev 2026)
+**Problema**: Ao fazer signup via PIX Automático, o sistema criava automaticamente uma cobrança inicial de R$50 (ou outro valor configurado) que não deveria ser gerada.
+
+**Solução**: Removido o campo `immediateCharge` do `authorizationData` no endpoint `/api/pix/automatic-signup/:linkId`.
+
+**Resultado**: 
+- ✅ Clientes não recebem mais cobranças automáticas ao fazer cadastro
+- ✅ Autorização PIX Automático registra apenas a recorrência mensal
+- ✅ Cobranças são criadas apenas nos ciclos mensais configurados
+- ✅ Comportamento alinhado com expectativa do negócio
+
+**Commit**: `91ef6d7` - "fix: Remover cobrança automática inicial de R$50 no PIX Automático"
+
+---
+
 # Force rebuild Thu Feb 19 20:57:31 UTC 2026
