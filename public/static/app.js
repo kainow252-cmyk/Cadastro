@@ -3559,12 +3559,19 @@ async function generateSignupLink(accountId, walletId) {
     // Capturar tipo de cobrança selecionado
     const chargeTypeInputs = document.getElementsByName(`charge-type-${accountId}`);
     let chargeType = 'single'; // Padrão
+    console.log('🔍 Buscando radio buttons com name:', `charge-type-${accountId}`);
+    console.log('📻 Radio buttons encontrados:', chargeTypeInputs.length);
+    
     for (const input of chargeTypeInputs) {
+        console.log('📡 Radio:', input.value, '- Checked:', input.checked);
         if (input.checked) {
             chargeType = input.value;
+            console.log('✅ ChargeType selecionado:', chargeType);
             break;
         }
     }
+    
+    console.log('📊 ChargeType final em generateSignupLink:', chargeType);
     
     if (!value || value <= 0) {
         alert('⚠️ Digite um valor válido maior que zero!');
@@ -5262,6 +5269,14 @@ async function openQuickBannerEditor(accountId, walletId, accountName) {
 
 // Abrir modal de edição de banner
 function openBannerEditor(linkUrl, qrCodeBase64, value, description, chargeType, accountId = null, walletId = null) {
+    console.log('🎨 openBannerEditor chamado com:');
+    console.log('  linkUrl:', linkUrl);
+    console.log('  value:', value);
+    console.log('  description:', description);
+    console.log('  chargeType:', chargeType, '← IMPORTANTE!');
+    console.log('  accountId:', accountId);
+    console.log('  walletId:', walletId);
+    
     // Armazenar dados
     document.getElementById('promo-banner-link').value = linkUrl;
     document.getElementById('promo-banner-qrcode').value = qrCodeBase64;
