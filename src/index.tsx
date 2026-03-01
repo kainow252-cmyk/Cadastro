@@ -11179,10 +11179,10 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?sta
                     <div class="flex items-center justify-between">
                         <div>
                             <h2 class="text-2xl font-bold flex items-center gap-2">
-                                <i class="fas fa-edit"></i>
-                                Personalizar Banner de Propaganda
+                                <i class="fas fa-image"></i>
+                                Gerar Banner com QR Code
                             </h2>
-                            <p class="text-orange-100 mt-1 text-sm">Edite o conteúdo antes de gerar</p>
+                            <p class="text-orange-100 mt-1 text-sm">Faça upload de um banner personalizado ou crie um novo</p>
                         </div>
                         <button onclick="closePromoBannerEditor()" 
                             class="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2 transition">
@@ -11192,6 +11192,67 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?sta
                 </div>
 
                 <div class="p-6">
+                    <!-- Seção de Upload de Banner Personalizado -->
+                    <div class="mb-6 p-6 bg-gradient-to-r from-orange-50 to-red-50 border-2 border-orange-300 rounded-xl">
+                        <div class="flex items-start gap-4">
+                            <div class="flex-shrink-0">
+                                <div class="w-12 h-12 bg-orange-600 rounded-full flex items-center justify-center">
+                                    <i class="fas fa-upload text-white text-xl"></i>
+                                </div>
+                            </div>
+                            <div class="flex-1">
+                                <h3 class="text-lg font-bold text-gray-800 mb-2">
+                                    📸 Opção Rápida: Enviar Banner Personalizado
+                                </h3>
+                                <p class="text-sm text-gray-600 mb-4">
+                                    Faça upload de um banner pronto e nós adicionaremos automaticamente o QR Code e link de pagamento!
+                                </p>
+                                
+                                <input type="file" 
+                                    id="custom-banner-upload" 
+                                    accept="image/*"
+                                    onchange="handleCustomBannerUpload(event)"
+                                    class="hidden">
+                                <input type="hidden" id="custom-banner-base64" value="">
+                                
+                                <button type="button" 
+                                    onclick="document.getElementById('custom-banner-upload').click()"
+                                    class="px-6 py-3 bg-gradient-to-r from-orange-600 to-red-600 text-white rounded-lg hover:from-orange-700 hover:to-red-700 font-semibold shadow-lg transition-all hover:scale-105">
+                                    <i class="fas fa-cloud-upload-alt mr-2"></i>
+                                    Escolher Banner Personalizado
+                                </button>
+                                
+                                <!-- Preview do Banner Personalizado -->
+                                <div id="custom-banner-preview-container" class="hidden mt-4">
+                                    <div class="bg-white rounded-lg p-4 border-2 border-green-300">
+                                        <div class="flex items-center justify-between mb-2">
+                                            <p class="text-sm font-semibold text-green-700">
+                                                <i class="fas fa-check-circle mr-1"></i>
+                                                Banner carregado com sucesso!
+                                            </p>
+                                            <button type="button"
+                                                onclick="saveCustomBanner()"
+                                                class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold transition">
+                                                <i class="fas fa-save mr-1"></i>Salvar Banner
+                                            </button>
+                                        </div>
+                                        <img id="custom-banner-preview" src="" alt="Preview" class="w-full h-auto rounded-lg shadow-md">
+                                        <p class="text-xs text-gray-500 mt-2 text-center">
+                                            O QR Code e link serão adicionados automaticamente ao salvar
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Divisor -->
+                    <div class="flex items-center gap-4 mb-6">
+                        <div class="flex-1 h-px bg-gray-300"></div>
+                        <span class="text-sm font-semibold text-gray-500">OU PERSONALIZE ABAIXO</span>
+                        <div class="flex-1 h-px bg-gray-300"></div>
+                    </div>
+                    
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         <!-- Coluna Esquerda: Formulário de Edição -->
                         <div class="space-y-4">

@@ -5328,7 +5328,14 @@ function openBannerEditor(linkUrl, qrCodeBase64, value, description, chargeType,
     }
     document.getElementById('promo-banner-charge-type').value = chargeType || 'monthly';
     
-    // Mostrar modal
+    // Resetar upload de imagem personalizada
+    const uploadInput = document.getElementById('custom-banner-upload');
+    if (uploadInput) {
+        uploadInput.value = '';
+        document.getElementById('custom-banner-preview-container').classList.add('hidden');
+    }
+    
+    // Mostrar modal simplificado (modo upload)
     document.getElementById('promo-banner-editor-modal').classList.remove('hidden');
     
     // Atualizar preview
@@ -5601,6 +5608,155 @@ function copyPromoBannerLink() {
         document.execCommand('copy');
         document.body.removeChild(input);
         alert('✅ Link copiado!\n\n' + linkUrl);
+    });
+}
+
+// Upload de banner personalizado
+function handleCustomBannerUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    // Validar tipo de arquivo
+    if (!file.type.startsWith('image/')) {
+        alert('❌ Por favor, selecione um arquivo de imagem válido (PNG, JPG, etc)');
+        return;
+    }
+    
+    // Validar tamanho (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+        alert('❌ Imagem muito grande! Tamanho máximo: 5MB');
+        return;
+    }
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        // Mostrar preview
+        const previewContainer = document.getElementById('custom-banner-preview-container');
+        const previewImg = document.getElementById('custom-banner-preview');
+        previewImg.src = e.target.result;
+        previewContainer.classList.remove('hidden');
+        
+        // Armazenar base64 da imagem personalizada
+        document.getElementById('custom-banner-base64').value = e.target.result;
+        
+        console.log('✅ Banner personalizado carregado');
+    };
+    reader.readAsDataURL(file);
+}
+
+// Salvar banner com imagem personalizada
+async function saveCustomBanner() {
+    const customBannerBase64 = document.getElementById('custom-banner-base64').value;
+    
+    if (!customBannerBase64) {
+        alert('❌ Por favor, faça upload de um banner primeiro!');
+        return;
+    }
+    
+    const linkUrl = document.getElementById('promo-banner-link').value;
+    const qrCodeBase64 = document.getElementById('promo-banner-qrcode').value;
+    const accountId = document.getElementById('promo-banner-account-id')?.value;
+    const chargeType = document.getElementById('promo-banner-charge-type')?.value || 'monthly';
+    const value = parseFloat(document.getElementById('promo-banner-value').value) || 0;
+    
+    if (!linkUrl || !qrCodeBase64) {
+        alert('❌ Dados incompletos!');
+        return;
+    }
+    
+    try {
+        // Gerar banner final com QR Code sobreposto
+        const finalBannerBase64 = await addQRCodeToCustomBanner(customBannerBase64, qrCodeBase64, linkUrl);
+        
+        // Salvar no localStorage
+        const bannerData = {
+            id: Date.now().toString(),
+            linkUrl: linkUrl,
+            qrCodeBase64: qrCodeBase64,
+            bannerImageBase64: finalBannerBase64,
+            value: value,
+            chargeType: chargeType,
+            isCustomBanner: true,
+            createdAt: new Date().toISOString()
+        };
+        
+        if (accountId) {
+            saveBanner(accountId, bannerData);
+            console.log('✅ Banner personalizado salvo com sucesso!');
+            alert('✅ Banner salvo com sucesso!\n\nVocê pode visualizá-lo em "Banners Salvos"');
+        }
+        
+        // Fechar modal
+        closePromoBannerEditor();
+        
+    } catch (error) {
+        console.error('❌ Erro ao salvar banner:', error);
+        alert('❌ Erro ao processar banner: ' + error.message);
+    }
+}
+
+// Adicionar QR Code ao banner personalizado
+async function addQRCodeToCustomBanner(bannerBase64, qrCodeBase64, linkUrl) {
+    return new Promise((resolve, reject) => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Carregar imagem do banner
+        const bannerImg = new Image();
+        bannerImg.onload = function() {
+            // Definir tamanho do canvas baseado na imagem
+            canvas.width = bannerImg.width;
+            canvas.height = bannerImg.height;
+            
+            // Desenhar banner de fundo
+            ctx.drawImage(bannerImg, 0, 0);
+            
+            // Carregar QR Code
+            const qrImg = new Image();
+            qrImg.onload = function() {
+                // Calcular posição do QR Code (centro-inferior)
+                const qrSize = Math.min(canvas.width, canvas.height) * 0.25; // 25% do tamanho
+                const qrX = (canvas.width - qrSize) / 2;
+                const qrY = canvas.height - qrSize - (canvas.height * 0.15);
+                
+                // Fundo branco para o QR Code
+                ctx.fillStyle = 'white';
+                ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+                ctx.shadowBlur = 20;
+                ctx.shadowOffsetX = 0;
+                ctx.shadowOffsetY = 10;
+                
+                const padding = 20;
+                ctx.fillRect(qrX - padding, qrY - padding, qrSize + padding * 2, qrSize + padding * 2 + 60);
+                
+                // Resetar sombra
+                ctx.shadowColor = 'transparent';
+                ctx.shadowBlur = 0;
+                
+                // Desenhar QR Code
+                ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize);
+                
+                // Adicionar texto "Escaneie para pagar"
+                ctx.font = 'bold 24px Inter, sans-serif';
+                ctx.fillStyle = '#1f2937';
+                ctx.textAlign = 'center';
+                ctx.fillText('Escaneie para pagar', canvas.width / 2, qrY + qrSize + padding + 30);
+                
+                // Adicionar link copiável abaixo
+                ctx.font = '16px monospace';
+                ctx.fillStyle = '#6b7280';
+                const shortLink = linkUrl.substring(0, 35) + '...';
+                ctx.fillText(shortLink, canvas.width / 2, qrY + qrSize + padding + 55);
+                
+                // Converter para base64
+                const finalBase64 = canvas.toDataURL('image/png');
+                resolve(finalBase64);
+            };
+            qrImg.onerror = () => reject(new Error('Erro ao carregar QR Code'));
+            qrImg.src = qrCodeBase64;
+        };
+        bannerImg.onerror = () => reject(new Error('Erro ao carregar banner personalizado'));
+        bannerImg.src = bannerBase64;
     });
 }
 
