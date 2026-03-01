@@ -8540,11 +8540,6 @@ app.get('/', (c) => {
                             <i class="fas fa-plug text-xl"></i>
                             <span class="text-sm">APIs Externas</span>
                         </button>
-                        <button onclick="showSection('payment-links')" 
-                            class="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-lg hover:from-cyan-600 hover:to-blue-600 font-semibold shadow-md transition">
-                            <i class="fas fa-money-bill-wave text-xl"></i>
-                            <span class="text-sm">Links Pgto</span>
-                        </button>
                         <button onclick="showSection('deltapag-section')" 
                             class="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 font-semibold shadow-md transition">
                             <i class="fas fa-credit-card text-xl"></i>
