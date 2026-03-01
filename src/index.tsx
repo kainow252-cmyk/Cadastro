@@ -10664,10 +10664,6 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?sta
                             class="px-6 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-lg hover:from-blue-700 hover:to-cyan-700 font-semibold shadow-lg transition">
                             <i class="fas fa-download mr-2"></i>Baixar Banner (PNG)
                         </button>
-                        <button onclick="copyPromoBannerLink()" 
-                            class="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-700 hover:to-pink-700 font-semibold shadow-lg transition">
-                            <i class="fas fa-link mr-2"></i>Copiar Link da Propaganda
-                        </button>
                         <button onclick="closePromoBannerEditor()"
                             class="px-6 py-3 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-semibold">
                             <i class="fas fa-times mr-2"></i>Fechar
@@ -10683,8 +10679,8 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?sta
                         <ul class="text-sm text-blue-800 mt-2 space-y-1 ml-4">
                             <li>📝 Edite título, descrição, valor e detalhes da oferta</li>
                             <li>🎨 Escolha a cor do banner que combina com sua marca</li>
+                            <li>🔲 Ajuste o tamanho das fontes (Pequeno, Médio ou Grande)</li>
                             <li>📥 Baixe o banner PNG para postar nas redes sociais</li>
-                            <li>🔗 Ou copie o link para compartilhar diretamente</li>
                             <li>📱 QR Code no banner leva direto para pagamento</li>
                         </ul>
                     </div>
