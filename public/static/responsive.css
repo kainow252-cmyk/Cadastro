@@ -13,6 +13,8 @@ body {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     font-size: 14px;
+    margin: 0;
+    padding: 0;
 }
 
 /* Ajustes globais de tamanho de fonte */
@@ -33,9 +35,28 @@ h1, h2, h3, h4, h5, h6 {
     font-size: 0.875rem !important;
 }
 
-/* Container mais compacto */
+/* Container mais compacto - SEM espaços laterais desperdiçados */
 .max-w-7xl {
-    max-width: 1400px;
+    max-width: 100% !important;
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+}
+
+/* Remover padding vertical excessivo */
+.py-8 {
+    padding-top: 0.5rem !important;
+    padding-bottom: 0.5rem !important;
+}
+
+/* Navbar sem espaço extra */
+nav {
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+nav > div {
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
 }
 
 /* Scroll suave */
@@ -204,10 +225,17 @@ img, video, canvas {
    DESKTOP (acima de 1024px) - LAYOUT COMPACTO E RESPONSIVO
    ======================================== */
 @media (min-width: 1025px) {
-    /* Container normal */
+    /* Container SEM padding lateral desperdiçado */
     .max-w-7xl {
-        padding-left: 1.5rem;
-        padding-right: 1.5rem;
+        max-width: 100% !important;
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+    }
+    
+    /* Remover espaço superior */
+    .py-8 {
+        padding-top: 0.25rem !important;
+        padding-bottom: 0.25rem !important;
     }
     
     /* Cards de Estatísticas - 4 colunas */
@@ -319,23 +347,35 @@ img, video, canvas {
    COMPONENTES ESPECÍFICOS
    ======================================== */
 
-/* Dashboard - Ajustes globais */
+/* Dashboard - Ajustes globais - MÁXIMO COMPACTO */
 .space-y-6 {
-    gap: 0.75rem !important;
+    gap: 0.5rem !important;
 }
 
 .space-y-6 > * + * {
-    margin-top: 0.75rem !important;
+    margin-top: 0.5rem !important;
 }
 
 /* Reduzir espaçamento entre seções */
 .mb-6 {
-    margin-bottom: 0.75rem !important;
+    margin-bottom: 0.5rem !important;
 }
 
-/* Grid de cards com gap menor */
+/* Grid de cards com gap MÍNIMO */
 .grid.gap-6 {
-    gap: 0.75rem !important;
+    gap: 0.5rem !important;
+}
+
+/* Remover margens laterais dos containers */
+div[class*="mx-auto"] {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+}
+
+/* Remover padding superior da página */
+.py-8 {
+    padding-top: 0.25rem !important;
+    padding-bottom: 0.25rem !important;
 }
 
 /* Cards de estatísticas MUITO compactos */
@@ -410,10 +450,17 @@ button i.fab {
     font-size: 0.875rem !important;
 }
 
-/* Seção de ações rápidas com menos padding */
+/* Seção de ações rápidas com menos padding e margin */
 .bg-white.rounded-lg.shadow-md.p-6.mb-6 {
-    padding: 0.75rem !important;
-    margin-bottom: 0.75rem !important;
+    padding: 0.5rem !important;
+    margin-bottom: 0.5rem !important;
+    margin-top: 0 !important;
+}
+
+/* Remover espaços em branco extras */
+.bg-white.rounded-lg.shadow-md.p-6 {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
 }
 
 /* Título "Ações Rápidas" menor */
