@@ -11226,73 +11226,76 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?sta
 
                 <div class="p-6">
                     <!-- Seção de Upload de Banner Personalizado -->
-                    <div class="mb-6 p-6 bg-gradient-to-r from-orange-50 to-red-50 border-2 border-orange-300 rounded-xl">
-                        <div class="flex items-start gap-4">
-                            <div class="flex-shrink-0">
-                                <div class="w-12 h-12 bg-orange-600 rounded-full flex items-center justify-center">
-                                    <i class="fas fa-upload text-white text-xl"></i>
+                    <div class="max-w-2xl mx-auto">
+                        <div class="mb-6 p-6 bg-gradient-to-r from-orange-50 to-red-50 border-2 border-orange-300 rounded-xl">
+                            <div class="flex items-start gap-4">
+                                <div class="flex-shrink-0">
+                                    <div class="w-12 h-12 bg-orange-600 rounded-full flex items-center justify-center">
+                                        <i class="fas fa-upload text-white text-xl"></i>
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="flex-1">
-                                <h3 class="text-lg font-bold text-gray-800 mb-2">
-                                    📸 Opção Rápida: Enviar Banner Personalizado
-                                </h3>
-                                <p class="text-sm text-gray-600 mb-4">
-                                    Faça upload de um banner pronto e nós adicionaremos automaticamente o QR Code e link de pagamento!
-                                </p>
-                                
-                                <input type="file" 
-                                    id="custom-banner-upload" 
-                                    accept="image/*"
-                                    onchange="handleCustomBannerUpload(event)"
-                                    class="hidden">
-                                <input type="hidden" id="custom-banner-base64" value="">
-                                
-                                <button type="button" 
-                                    onclick="document.getElementById('custom-banner-upload').click()"
-                                    class="px-6 py-3 bg-gradient-to-r from-orange-600 to-red-600 text-white rounded-lg hover:from-orange-700 hover:to-red-700 font-semibold shadow-lg transition-all hover:scale-105">
-                                    <i class="fas fa-cloud-upload-alt mr-2"></i>
-                                    Escolher Banner Personalizado
-                                </button>
-                                
-                                <!-- Preview do Banner Personalizado -->
-                                <div id="custom-banner-preview-container" class="hidden mt-4">
-                                    <div class="bg-white rounded-lg p-4 border-2 border-green-300">
-                                        <div class="flex items-center justify-between mb-2">
-                                            <p class="text-sm font-semibold text-green-700">
-                                                <i class="fas fa-check-circle mr-1"></i>
-                                                Banner carregado com sucesso!
+                                <div class="flex-1">
+                                    <h3 class="text-lg font-bold text-gray-800 mb-2">
+                                        📸 Upload de Banner Personalizado
+                                    </h3>
+                                    <p class="text-sm text-gray-600 mb-4">
+                                        Envie seu banner e adicionaremos automaticamente o QR Code e link de pagamento!
+                                    </p>
+                                    
+                                    <input type="file" 
+                                        id="custom-banner-upload" 
+                                        accept="image/*"
+                                        onchange="handleCustomBannerUpload(event)"
+                                        class="hidden">
+                                    <input type="hidden" id="custom-banner-base64" value="">
+                                    
+                                    <button type="button" 
+                                        onclick="document.getElementById('custom-banner-upload').click()"
+                                        class="w-full px-6 py-3 bg-gradient-to-r from-orange-600 to-red-600 text-white rounded-lg hover:from-orange-700 hover:to-red-700 font-semibold shadow-lg transition-all hover:scale-105">
+                                        <i class="fas fa-cloud-upload-alt mr-2"></i>
+                                        Escolher Banner Personalizado
+                                    </button>
+                                    
+                                    <!-- Preview do Banner Personalizado -->
+                                    <div id="custom-banner-preview-container" class="hidden mt-4">
+                                        <div class="bg-white rounded-lg p-4 border-2 border-green-300">
+                                            <img id="custom-banner-preview" src="" alt="Preview" class="w-full h-auto rounded-lg shadow-md mb-4">
+                                            
+                                            <!-- Campo de Valor -->
+                                            <div class="mb-4">
+                                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                                    <i class="fas fa-dollar-sign mr-1 text-orange-600"></i>Valor (R$)
+                                                </label>
+                                                <input type="number" id="promo-banner-value" 
+                                                    placeholder="Ex: 10.00"
+                                                    value="10.00"
+                                                    step="0.01"
+                                                    class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500">
+                                            </div>
+                                            
+                                            <div class="flex items-center justify-between">
+                                                <p class="text-sm font-semibold text-green-700">
+                                                    <i class="fas fa-check-circle mr-1"></i>
+                                                    Banner carregado com sucesso!
+                                                </p>
+                                                <button type="button"
+                                                    onclick="saveCustomBanner()"
+                                                    class="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold transition shadow-lg">
+                                                    <i class="fas fa-save mr-1"></i>Salvar Banner
+                                                </button>
+                                            </div>
+                                            <p class="text-xs text-gray-500 mt-3 text-center">
+                                                O QR Code e link de pagamento serão adicionados automaticamente
                                             </p>
-                                            <button type="button"
-                                                onclick="saveCustomBanner()"
-                                                class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold transition">
-                                                <i class="fas fa-save mr-1"></i>Salvar Banner
-                                            </button>
                                         </div>
-                                        <img id="custom-banner-preview" src="" alt="Preview" class="w-full h-auto rounded-lg shadow-md">
-                                        <p class="text-xs text-gray-500 mt-2 text-center">
-                                            O QR Code e link serão adicionados automaticamente ao salvar
-                                        </p>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                    
-                    <!-- Divisor -->
-                    <div class="flex items-center gap-4 mb-6">
-                        <div class="flex-1 h-px bg-gray-300"></div>
-                        <span class="text-sm font-semibold text-gray-500">OU PERSONALIZE ABAIXO</span>
-                        <div class="flex-1 h-px bg-gray-300"></div>
-                    </div>
-                    
-                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <!-- Coluna Esquerda: Formulário de Edição -->
-                        <div class="space-y-4">
-                            <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-2">
-                                    <i class="fas fa-heading mr-1 text-orange-600"></i>Título Principal
-                                </label>
+                        
+                        <!-- Campos Hidden necessários -->
+                        <div class="hidden">
+                            <input type="hidden" id="promo-banner-title" value="">
                                 <input type="text" id="promo-banner-title" 
                                     placeholder="Ex: ASSINE AGORA"
                                     value="ASSINE AGORA"
@@ -11307,128 +11310,14 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?sta
                                 <textarea id="promo-banner-description" rows="3"
                                     placeholder="Ex: Plano Premium com benefícios exclusivos"
                                     class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                                    oninput="updatePromoBannerPreview()">Plano Premium com benefícios exclusivos</textarea>
-                            </div>
-
-                            <div class="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label class="block text-sm font-semibold text-gray-700 mb-2">
-                                        <i class="fas fa-dollar-sign mr-1 text-orange-600"></i>Valor (R$)
-                                    </label>
-                                    <input type="number" id="promo-banner-value" 
-                                        placeholder="Ex: 10.00"
-                                        value="10.00"
-                                        step="0.01"
-                                        class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                                        oninput="updatePromoBannerPreview()">
-                                </div>
-
-                                <div>
-                                    <label class="block text-sm font-semibold text-gray-700 mb-2">
-                                        <i class="fas fa-palette mr-1 text-orange-600"></i>Cor do Banner
-                                    </label>
-                                    <select id="promo-banner-color" 
-                                        class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                                        onchange="updatePromoBannerPreview()">
-                                        <option value="orange">Laranja/Vermelho</option>
-                                        <option value="purple">Roxo/Rosa</option>
-                                        <option value="blue">Azul/Ciano</option>
-                                        <option value="green">Verde/Esmeralda</option>
-                                        <option value="red">Vermelho/Rosa</option>
-                                    </select>
-                                </div>
-                            </div>
-
-                            <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-2">
-                                    <i class="fas fa-tag mr-1 text-orange-600"></i>Promoção / Destaque (opcional)
-                                </label>
-                                <input type="text" id="promo-banner-promo" 
-                                    placeholder="Ex: PROMOÇÃO LIMITADA! ou 50% OFF"
-                                    class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                                    oninput="updatePromoBannerPreview()">
-                            </div>
-
-                            <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-2">
-                                    <i class="fas fa-text-height mr-1 text-orange-600"></i>Texto do Botão
-                                </label>
-                                <input type="text" id="promo-banner-button-text" 
-                                    placeholder="Ex: PAGAR AGORA"
-                                    value="PAGAR AGORA"
-                                    class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                                    oninput="updatePromoBannerPreview()">
-                            </div>
-
-                            <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-2">
-                                    <i class="fas fa-font mr-1 text-orange-600"></i>Tamanho das Fontes
-                                </label>
-                                <div class="grid grid-cols-3 gap-2">
-                                    <button type="button" onclick="setFontSize('small')" 
-                                        id="font-size-small"
-                                        class="px-4 py-2 border-2 border-gray-300 rounded-lg hover:border-orange-500 transition text-sm">
-                                        <i class="fas fa-compress-alt mr-1"></i>Pequeno
-                                    </button>
-                                    <button type="button" onclick="setFontSize('medium')" 
-                                        id="font-size-medium"
-                                        class="px-4 py-2 border-2 border-orange-500 bg-orange-50 rounded-lg transition text-sm font-semibold">
-                                        <i class="fas fa-text-height mr-1"></i>Médio
-                                    </button>
-                                    <button type="button" onclick="setFontSize('large')" 
-                                        id="font-size-large"
-                                        class="px-4 py-2 border-2 border-gray-300 rounded-lg hover:border-orange-500 transition text-sm">
-                                        <i class="fas fa-expand-alt mr-1"></i>Grande
-                                    </button>
-                                </div>
-                            </div>
-
+                            <input type="hidden" id="promo-banner-description" value="">
+                            <input type="hidden" id="promo-banner-color" value="orange">
+                            <input type="hidden" id="promo-banner-promo" value="">
+                            <input type="hidden" id="promo-banner-button-text" value="">
                             <input type="hidden" id="promo-banner-link" value="">
                             <input type="hidden" id="promo-banner-qrcode" value="">
                             <input type="hidden" id="promo-banner-font-size" value="medium">
                         </div>
-
-                        <!-- Coluna Direita: Preview do Banner -->
-                        <div>
-                            <label class="block text-sm font-semibold text-gray-700 mb-2">
-                                <i class="fas fa-eye mr-1 text-orange-600"></i>Preview do Banner
-                            </label>
-                            <div id="promo-banner-preview" class="w-full aspect-square bg-gradient-to-br from-orange-600 to-red-600 rounded-lg shadow-xl flex items-center justify-center text-white text-center p-6">
-                                <p class="text-sm">Preencha os campos para ver o preview</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Botões de Ação -->
-                    <div class="mt-6 flex flex-wrap gap-3 justify-center">
-                        <button onclick="savePromoBannerOnly()" 
-                            class="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 font-semibold shadow-lg transition">
-                            <i class="fas fa-save mr-2"></i>Salvar Banner
-                        </button>
-                        <button onclick="downloadPromoBanner()" 
-                            class="px-6 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-lg hover:from-blue-700 hover:to-cyan-700 font-semibold shadow-lg transition">
-                            <i class="fas fa-download mr-2"></i>Baixar Banner (PNG)
-                        </button>
-                        <button onclick="closePromoBannerEditor()"
-                            class="px-6 py-3 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-semibold">
-                            <i class="fas fa-times mr-2"></i>Fechar
-                        </button>
-                    </div>
-
-                    <!-- Instruções -->
-                    <div class="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
-                        <p class="text-sm text-blue-800">
-                            <i class="fas fa-info-circle mr-2"></i>
-                            <strong>Como usar:</strong>
-                        </p>
-                        <ul class="text-sm text-blue-800 mt-2 space-y-1 ml-4">
-                            <li>📝 Edite título, descrição, valor e detalhes da oferta</li>
-                            <li>🎨 Escolha a cor do banner que combina com sua marca</li>
-                            <li>🔲 Ajuste o tamanho das fontes (Pequeno, Médio ou Grande)</li>
-                            <li>💾 Salve o banner para acessar depois em "Banners Salvos"</li>
-                            <li>📥 Baixe o banner PNG para postar nas redes sociais</li>
-                            <li>📱 QR Code no banner leva direto para pagamento</li>
-                        </ul>
                     </div>
                 </div>
             </div>
