@@ -3999,6 +3999,15 @@ app.post('/api/subaccount-login', async (c) => {
   try {
     const { username, password } = await c.req.json()
     
+    // Verificar se DB está disponível
+    if (!c.env?.DB) {
+      console.error('❌ Banco de dados D1 não está configurado!')
+      return c.json({ 
+        error: 'Sistema de autenticação indisponível. Por favor, configure o binding D1 no Cloudflare Dashboard.',
+        details: 'DB binding not found in c.env'
+      }, 500)
+    }
+    
     // Buscar subconta por username e password
     const subaccount = await c.env.DB.prepare(`
       SELECT id, name, email, login_enabled 
@@ -4015,8 +4024,9 @@ app.post('/api/subaccount-login', async (c) => {
       UPDATE users SET last_login_at = datetime('now') WHERE id = ?
     `).bind(subaccount.id).run()
     
-    // Criar token JWT para subconta
-    const token = await createToken(`subaccount:${subaccount.id}`, c.env.JWT_SECRET)
+    // Criar token JWT para subconta (usar secret padrão se não estiver configurado)
+    const jwtSecret = c.env?.JWT_SECRET || 'default-secret-change-in-production'
+    const token = await createToken(`subaccount:${subaccount.id}`, jwtSecret)
     
     setCookie(c, 'subaccount_token', token, {
       httpOnly: true,
@@ -4035,7 +4045,11 @@ app.post('/api/subaccount-login', async (c) => {
     })
   } catch (error: any) {
     console.error('Erro no login da subconta:', error)
-    return c.json({ error: error.message }, 500)
+    console.error('Stack:', error.stack)
+    return c.json({ 
+      error: error.message,
+      stack: error.stack?.substring(0, 200) // Primeiros 200 chars do stack
+    }, 500)
   }
 })
 
