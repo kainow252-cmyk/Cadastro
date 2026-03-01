@@ -1,10 +1,24 @@
 // Configure axios to send cookies with every request
 axios.defaults.withCredentials = true;
 
+// Flag para verificar se o DOM está pronto
+let isDOMReady = false;
+
+// Garantir que o DOM está completamente carregado
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        isDOMReady = true;
+        console.log('✅ DOM completamente carregado');
+    });
+} else {
+    isDOMReady = true;
+}
+
 console.log('✅ app.js carregado - funções disponíveis:', {
     showSection: typeof showSection,
     openLinkModal: typeof openLinkModal,
-    loadAccounts: typeof loadAccounts
+    loadAccounts: typeof loadAccounts,
+    DOMReady: isDOMReady
 });
 
 // Check authentication on page load
@@ -5256,6 +5270,15 @@ function openBannerEditor(linkUrl, qrCodeBase64, value, description, chargeType,
     console.log('  accountId:', accountId);
     console.log('  walletId:', walletId);
     
+    // Aguardar DOM estar pronto se necessário
+    if (!isDOMReady) {
+        console.log('⏳ Aguardando DOM estar pronto...');
+        document.addEventListener('DOMContentLoaded', () => {
+            openBannerEditor(linkUrl, qrCodeBase64, value, description, chargeType, accountId, walletId);
+        });
+        return;
+    }
+    
     // Verificar se os elementos existem
     const linkElement = document.getElementById('promo-banner-link');
     const qrElement = document.getElementById('promo-banner-qrcode');
@@ -5265,7 +5288,9 @@ function openBannerEditor(linkUrl, qrCodeBase64, value, description, chargeType,
         console.error('❌ Elementos do modal de banner não encontrados:', {
             linkElement: !!linkElement,
             qrElement: !!qrElement,
-            modalElement: !!modalElement
+            modalElement: !!modalElement,
+            DOMReady: isDOMReady,
+            readyState: document.readyState
         });
         alert('Erro: Modal de banner não está carregado. Recarregue a página.');
         return;
@@ -6101,6 +6126,15 @@ function showSavedBanners(accountId, accountName) {
     console.log('🔍 Abrindo galeria de banners');
     console.log('📁 Account ID solicitado:', accountId);
     console.log('👤 Nome da conta:', accountName);
+    
+    // Aguardar DOM estar pronto se necessário
+    if (!isDOMReady) {
+        console.log('⏳ Aguardando DOM estar pronto...');
+        document.addEventListener('DOMContentLoaded', () => {
+            showSavedBanners(accountId, accountName);
+        });
+        return;
+    }
     
     // Debug: verificar localStorage
     const storageKey = `banners_${accountId}`;
