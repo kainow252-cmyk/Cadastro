@@ -10152,6 +10152,148 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?sta
             </div>
         </div>
 
+        <!-- Modal Gerar Banner de Propaganda -->
+        <div id="banner-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+                <div class="bg-gradient-to-r from-orange-600 to-red-600 text-white px-6 py-5 rounded-t-2xl">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-2xl font-bold flex items-center gap-2">
+                                <i class="fas fa-image"></i>
+                                Gerar Banner de Propaganda
+                            </h2>
+                            <p class="text-orange-100 mt-1 text-sm">Crie banners personalizados para redes sociais</p>
+                        </div>
+                        <button onclick="closeBannerModal()" 
+                            class="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2 transition">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="p-6 space-y-6">
+                    <!-- Formulário de Edição -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- Coluna Esquerda: Formulário -->
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    <i class="fas fa-heading mr-1"></i>Título Principal
+                                </label>
+                                <input type="text" id="banner-title" 
+                                    placeholder="Ex: Assine Agora!"
+                                    value="Assine Agora!"
+                                    class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                    oninput="updateBannerPreview()">
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    <i class="fas fa-file-alt mr-1"></i>Descrição
+                                </label>
+                                <textarea id="banner-description" rows="3"
+                                    placeholder="Ex: Plano Premium com benefícios exclusivos"
+                                    class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                    oninput="updateBannerPreview()">Plano Premium com benefícios exclusivos</textarea>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                        <i class="fas fa-dollar-sign mr-1"></i>Valor (R$)
+                                    </label>
+                                    <input type="number" id="banner-value" 
+                                        placeholder="Ex: 149.90"
+                                        value="149.90"
+                                        step="0.01"
+                                        class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                        oninput="updateBannerPreview()">
+                                </div>
+
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                        <i class="fas fa-sync-alt mr-1"></i>Tipo
+                                    </label>
+                                    <select id="banner-type" 
+                                        class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                        onchange="updateBannerPreview()">
+                                        <option value="single">Cobrança Única</option>
+                                        <option value="monthly">Assinatura Mensal</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    <i class="fas fa-palette mr-1"></i>Cor do Banner
+                                </label>
+                                <select id="banner-color" 
+                                    class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                    onchange="updateBannerPreview()">
+                                    <option value="purple">Roxo/Rosa</option>
+                                    <option value="blue">Azul</option>
+                                    <option value="green">Verde</option>
+                                    <option value="orange">Laranja</option>
+                                    <option value="red">Vermelho</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    <i class="fas fa-text-height mr-1"></i>Texto do Botão
+                                </label>
+                                <input type="text" id="banner-button-text" 
+                                    placeholder="Ex: Cadastre-se Agora"
+                                    value="Cadastre-se Agora"
+                                    class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                    oninput="updateBannerPreview()">
+                            </div>
+
+                            <input type="hidden" id="banner-link" value="">
+                            <input type="hidden" id="banner-account-id" value="">
+                        </div>
+
+                        <!-- Coluna Direita: Preview -->
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                <i class="fas fa-eye mr-1"></i>Preview do Banner
+                            </label>
+                            <div id="banner-preview" class="w-full aspect-square rounded-lg overflow-hidden shadow-lg bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-white">
+                                <p class="text-sm">Preview será gerado aqui</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Ações -->
+                    <div class="flex gap-3">
+                        <button onclick="downloadBanner()" 
+                            class="flex-1 px-6 py-3 bg-gradient-to-r from-orange-600 to-red-600 text-white rounded-lg hover:from-orange-700 hover:to-red-700 font-semibold">
+                            <i class="fas fa-download mr-2"></i>Baixar Banner (PNG)
+                        </button>
+                        <button onclick="copyBannerLink()" 
+                            class="flex-1 px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 font-semibold">
+                            <i class="fas fa-link mr-2"></i>Copiar Link da Cobrança
+                        </button>
+                    </div>
+
+                    <!-- Aviso -->
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <p class="text-sm text-blue-800">
+                            <i class="fas fa-info-circle mr-2"></i>
+                            O banner inclui automaticamente um QR Code do link de auto-cadastro. Compartilhe nas redes sociais ou imprima para divulgação física.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="bg-gray-50 px-6 py-4 rounded-b-2xl flex justify-end">
+                    <button onclick="closeBannerModal()"
+                        class="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-semibold">
+                        <i class="fas fa-times mr-2"></i>Fechar
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -10163,6 +10305,7 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?sta
         <script src="/static/payment-filters.js?v=4.2"></script>
         <script src="/static/deltapag-section.js?v=4.1"></script>
         <script src="/static/reports-detailed.js?v=1.0"></script>
+        <script src="/static/banner-generator.js?v=1.0"></script>
     </body>
     </html>
   `)

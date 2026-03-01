@@ -2205,7 +2205,7 @@ function displayAccounts(accounts) {
         // Seção de PIX (só para aprovados)
         const pixSection = hasWallet ? `
             <div class="mt-4">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <button onclick="toggleAutomaticForm('${account.id}', '${account.walletId}')" 
                         id="btn-automatic-${account.id}"
                         class="px-4 py-3 bg-gradient-to-r from-indigo-500 to-cyan-500 text-white rounded-lg hover:from-indigo-600 hover:to-cyan-600 font-semibold shadow-md transition">
@@ -2215,6 +2215,11 @@ function displayAccounts(accounts) {
                         id="btn-signup-link-${account.id}"
                         class="px-4 py-3 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-lg hover:from-orange-600 hover:to-red-600 font-semibold shadow-md transition">
                         <i class="fas fa-link mr-2"></i>Link Auto-Cadastro
+                    </button>
+                    <button onclick="openBannerModal('${account.id}', '${account.name || ''}')" 
+                        id="btn-banner-${account.id}"
+                        class="px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-700 hover:to-pink-700 font-semibold shadow-md transition">
+                        <i class="fas fa-image mr-2"></i>Gerar Banner
                     </button>
                 </div>
                 
