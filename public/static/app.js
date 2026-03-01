@@ -3635,6 +3635,10 @@ async function generateSignupLink(accountId, walletId) {
                                 class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition">
                                 <i class="fas fa-code mr-2"></i>Gerar HTML
                             </button>
+                            <button onclick="generatePromoBanner('${link.linkUrl}', '${qrCodeBase64}', ${value}, '${description}')" 
+                                class="px-4 py-2 bg-gradient-to-r from-orange-600 to-red-600 text-white rounded hover:from-orange-700 hover:to-red-700 transition">
+                                <i class="fas fa-image mr-2"></i>Gerar Banner
+                            </button>
                         </div>
                     </div>
                     
@@ -5208,6 +5212,157 @@ function clearApiFilters() {
     setTimeout(() => {
         button.innerHTML = originalText;
     }, 1500);
+}
+
+// Gerar Banner de Propaganda para redes sociais
+async function generatePromoBanner(linkUrl, qrCodeBase64, value, description) {
+    try {
+        // Criar canvas
+        const canvas = document.createElement('canvas');
+        canvas.width = 1080;
+        canvas.height = 1080;
+        const ctx = canvas.getContext('2d');
+        
+        // Gradiente de fundo (Laranja para Vermelho)
+        const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+        gradient.addColorStop(0, '#ea580c'); // Laranja
+        gradient.addColorStop(1, '#dc2626'); // Vermelho
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Círculos decorativos
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+        ctx.beginPath();
+        ctx.arc(900, 150, 300, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(150, 900, 250, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Título principal
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 80px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('ASSINE AGORA', canvas.width / 2, 150);
+        
+        // Descrição
+        ctx.font = 'bold 48px Arial';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+        const descText = description || 'Plano Premium com benefícios exclusivos';
+        
+        // Quebrar texto se muito longo
+        const maxWidth = 900;
+        const words = descText.split(' ');
+        let line = '';
+        let y = 250;
+        
+        for (let i = 0; i < words.length; i++) {
+            const testLine = line + words[i] + ' ';
+            const metrics = ctx.measureText(testLine);
+            
+            if (metrics.width > maxWidth && i > 0) {
+                ctx.fillText(line, canvas.width / 2, y);
+                line = words[i] + ' ';
+                y += 60;
+            } else {
+                line = testLine;
+            }
+        }
+        ctx.fillText(line, canvas.width / 2, y);
+        
+        // Valor
+        ctx.font = 'bold 120px Arial';
+        ctx.fillStyle = '#ffffff';
+        const valueText = `R$ ${parseFloat(value).toFixed(2).replace('.', ',')}`;
+        ctx.fillText(valueText, canvas.width / 2, y + 150);
+        
+        ctx.font = 'bold 60px Arial';
+        ctx.fillText('/mês', canvas.width / 2, y + 220);
+        
+        // QR Code
+        if (qrCodeBase64) {
+            // Fundo branco para o QR Code
+            ctx.fillStyle = '#ffffff';
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+            ctx.shadowBlur = 20;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 10;
+            
+            const qrSize = 280;
+            const qrX = (canvas.width - qrSize) / 2 - 30;
+            const qrY = y + 280;
+            const padding = 30;
+            
+            // Fundo arredondado
+            ctx.beginPath();
+            ctx.roundRect(qrX - padding, qrY - padding, qrSize + padding * 2, qrSize + padding * 2 + 80, 20);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+            
+            // Carregar e desenhar QR Code
+            const qrImage = new Image();
+            qrImage.src = qrCodeBase64;
+            await new Promise((resolve) => {
+                qrImage.onload = () => {
+                    ctx.drawImage(qrImage, qrX, qrY, qrSize, qrSize);
+                    resolve();
+                };
+            });
+            
+            // Texto abaixo do QR Code
+            ctx.fillStyle = '#000000';
+            ctx.font = 'bold 28px Arial';
+            ctx.fillText('Escaneie para assinar', canvas.width / 2, qrY + qrSize + 55);
+        }
+        
+        // Link por extenso (embaixo do QR Code)
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 20px Arial';
+        ctx.textAlign = 'center';
+        
+        // Encurtar link se muito longo
+        let displayLink = linkUrl;
+        if (linkUrl.length > 60) {
+            displayLink = linkUrl.substring(0, 60) + '...';
+        }
+        
+        ctx.fillText(displayLink, canvas.width / 2, canvas.height - 150);
+        
+        // Botão "PAGAR AGORA"
+        const btnWidth = 500;
+        const btnHeight = 100;
+        const btnX = (canvas.width - btnWidth) / 2;
+        const btnY = canvas.height - 100;
+        
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+        ctx.shadowBlur = 20;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 10;
+        
+        ctx.beginPath();
+        ctx.roundRect(btnX, btnY, btnWidth, btnHeight, 50);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        
+        ctx.fillStyle = '#ea580c';
+        ctx.font = 'bold 48px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('PAGAR AGORA →', canvas.width / 2, btnY + 65);
+        
+        // Download do banner
+        const dataUrl = canvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.download = `banner-assinatura-${Date.now()}.png`;
+        link.href = dataUrl;
+        link.click();
+        
+        alert('✅ Banner gerado com sucesso!\n\n📱 Use este banner para:\n• Posts em redes sociais\n• Stories do Instagram\n• WhatsApp Status\n• Facebook/Twitter\n• Material impresso\n\n💡 O QR Code leva direto para a página de pagamento!');
+        
+    } catch (error) {
+        console.error('Erro ao gerar banner:', error);
+        alert('❌ Erro ao gerar banner. Tente novamente.');
+    }
 }
 
 console.log('✅ Funções de APIs Externas carregadas');
