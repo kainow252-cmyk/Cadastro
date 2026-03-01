@@ -7433,12 +7433,12 @@ app.get('/subscription-signup/:linkId', async (c) => {
                 <div class="bg-gradient-to-r from-indigo-500 to-purple-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
                     <i class="fas fa-calendar-check text-white text-2xl"></i>
                 </div>
-                <h1 class="text-2xl font-bold text-gray-800 mb-2">Assinatura Mensal PIX</h1>
+                <h1 id="page-title" class="text-2xl font-bold text-gray-800 mb-2">Carregando...</h1>
                 <p class="text-gray-600">Preencha seus dados para continuar</p>
             </div>
             <div class="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-4 mb-6 border border-green-200">
                 <div class="flex justify-between items-center mb-2">
-                    <span class="text-gray-600 font-medium">Valor Mensal:</span>
+                    <span id="value-label" class="text-gray-600 font-medium">Valor:</span>
                     <span id="plan-value" class="text-2xl font-bold text-green-600">R$ 0,00</span>
                 </div>
                 <p id="plan-description" class="text-sm text-gray-600"></p>
@@ -7548,6 +7548,21 @@ app.get('/subscription-signup/:linkId', async (c) => {
                 const response = await axios.get(\`/api/pix/subscription-signup/\${linkId}\`);
                 if (response.data.ok) {
                     linkData = response.data.data;
+                    
+                    // Definir título baseado no tipo de cobrança
+                    const isMonthly = linkData.chargeType === 'monthly';
+                    document.getElementById('page-title').textContent = isMonthly 
+                        ? 'Assinatura Mensal PIX' 
+                        : 'Pagamento Único PIX';
+                    document.getElementById('value-label').textContent = isMonthly 
+                        ? 'Valor Mensal:' 
+                        : 'Valor:';
+                    
+                    // Atualizar título da página
+                    document.title = isMonthly 
+                        ? 'Assinatura Mensal PIX - Auto-Cadastro' 
+                        : 'Pagamento Único PIX - Auto-Cadastro';
+                    
                     document.getElementById('loading-state').classList.add('hidden');
                     document.getElementById('form-state').classList.remove('hidden');
                     document.getElementById('plan-value').textContent = \`R$ \${linkData.value.toFixed(2)}\`;
