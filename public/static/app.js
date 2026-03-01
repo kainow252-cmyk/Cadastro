@@ -5509,12 +5509,13 @@ async function savePromoBannerOnly() {
     const value = parseFloat(document.getElementById('promo-banner-value').value) || 10.00;
     const promo = document.getElementById('promo-banner-promo').value;
     const buttonText = document.getElementById('promo-banner-button-text').value || 'PAGAR AGORA';
-    const color = document.getElementById('promo-banner-color').value;
+    const color = document.querySelector('input[name="banner-color"]:checked')?.value || 'orange';
     const linkUrl = document.getElementById('promo-banner-link').value;
     const qrCodeBase64 = document.getElementById('promo-banner-qrcode').value;
     const chargeType = document.getElementById('promo-banner-charge-type')?.value || 'monthly';
     const fontSize = document.getElementById('promo-banner-font-size')?.value || 'medium';
     const accountId = document.getElementById('promo-banner-account-id')?.value;
+    const editId = document.getElementById('promo-banner-edit-id')?.value; // ID do banner sendo editado
     
     console.log('💾 Salvando banner...');
     console.log('🔑 AccountId capturado:', accountId);
@@ -5522,6 +5523,9 @@ async function savePromoBannerOnly() {
     console.log('📊 ChargeType capturado:', chargeType);
     console.log('📝 Título capturado:', title);
     console.log('💰 Valor capturado:', value);
+    console.log('🎨 Cor capturada:', color);
+    console.log('🔤 Tamanho da fonte:', fontSize);
+    console.log('✏️ Modo edição:', editId ? 'SIM (ID: ' + editId + ')' : 'NÃO (novo banner)');
     
     if (!accountId) {
         alert('❌ Erro: ID da conta não encontrado');
@@ -5530,7 +5534,7 @@ async function savePromoBannerOnly() {
     
     // Criar dados do banner
     const bannerData = {
-        id: Date.now().toString(),
+        id: editId || Date.now().toString(), // Usar ID existente se for edição
         accountId,
         title,
         description,
@@ -5547,8 +5551,19 @@ async function savePromoBannerOnly() {
     
     console.log('📦 Dados do banner antes de salvar:', bannerData);
     
+    // Se for edição, remover banner antigo antes de salvar o novo
+    if (editId) {
+        console.log('🔄 Atualizando banner existente...');
+        deleteBanner(accountId, editId);
+    }
+    
     // Salvar no localStorage
     saveBanner(accountId, bannerData);
+    
+    // Limpar campo de edição
+    if (document.getElementById('promo-banner-edit-id')) {
+        document.getElementById('promo-banner-edit-id').value = '';
+    }
     
     // Debug: verificar se salvou
     const savedBanners = getSavedBanners(accountId);
@@ -5557,7 +5572,10 @@ async function savePromoBannerOnly() {
     console.log('🔍 Todos os banners:', savedBanners);
     
     // Feedback visual
-    alert('✅ Banner salvo com sucesso!\n\n📁 Acesse "Banners Salvos" para visualizar e gerenciar seus banners.\n\n📊 Total de banners: ' + savedBanners.length);
+    const message = editId 
+        ? '✅ Banner atualizado com sucesso!' 
+        : '✅ Banner salvo com sucesso!';
+    alert(message + '\n\n📁 Acesse "Banners Salvos" para visualizar e gerenciar seus banners.\n\n📊 Total de banners: ' + savedBanners.length);
 }
 
 // Copiar link da propaganda
@@ -6055,14 +6073,20 @@ function showSavedBanners(accountId, accountName) {
                     </div>
                     
                     <!-- Ações -->
-                    <div class="flex gap-2">
+                    <div class="flex gap-2 mb-2">
+                        <button onclick="editSavedBanner('${accountId}', '${banner.id}')" 
+                            class="flex-1 px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition text-sm font-semibold">
+                            <i class="fas fa-edit mr-1"></i>Editar
+                        </button>
                         <button onclick="redownloadBanner('${accountId}', '${banner.id}')" 
                             class="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-semibold">
                             <i class="fas fa-download mr-1"></i>Baixar
                         </button>
+                    </div>
+                    <div class="flex gap-2">
                         <button onclick="deleteSavedBanner('${accountId}', '${banner.id}')" 
-                            class="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm">
-                            <i class="fas fa-trash"></i>
+                            class="w-full px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm">
+                            <i class="fas fa-trash mr-1"></i>Excluir
                         </button>
                     </div>
                 </div>
@@ -6111,6 +6135,70 @@ async function redownloadBanner(accountId, bannerId) {
             banner.fontSize
         );
     }
+}
+
+// Editar banner salvo
+function editSavedBanner(accountId, bannerId) {
+    console.log('✏️ Editando banner:', bannerId, 'da conta:', accountId);
+    
+    const banners = getSavedBanners(accountId);
+    const banner = banners.find(b => b.id === bannerId);
+    
+    if (!banner) {
+        alert('❌ Banner não encontrado!');
+        return;
+    }
+    
+    console.log('📦 Dados do banner a editar:', banner);
+    
+    // Fechar modal de banners salvos
+    closeSavedBannersModal();
+    
+    // Preencher o editor com os dados do banner
+    document.getElementById('promo-banner-title').value = banner.title || '';
+    document.getElementById('promo-banner-description').value = banner.description || '';
+    document.getElementById('promo-banner-value').value = banner.value || '';
+    document.getElementById('promo-banner-promo').value = banner.promo || '';
+    document.getElementById('promo-banner-button-text').value = banner.buttonText || 'PAGAR AGORA';
+    
+    // Cor
+    document.querySelectorAll('input[name="banner-color"]').forEach(radio => {
+        radio.checked = radio.value === (banner.color || 'orange');
+    });
+    
+    // Tamanho da fonte
+    setFontSize(banner.fontSize || 'medium');
+    
+    // Armazenar dados do banner nos campos hidden
+    document.getElementById('promo-banner-link').value = banner.linkUrl || '';
+    document.getElementById('promo-banner-qrcode').value = banner.qrCodeBase64 || '';
+    document.getElementById('promo-banner-charge-type').value = banner.chargeType || 'monthly';
+    
+    // Garantir que o accountId está definido
+    if (!document.getElementById('promo-banner-account-id')) {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.id = 'promo-banner-account-id';
+        document.getElementById('promo-banner-link').parentElement.appendChild(input);
+    }
+    document.getElementById('promo-banner-account-id').value = accountId;
+    
+    // Armazenar o ID do banner que está sendo editado
+    if (!document.getElementById('promo-banner-edit-id')) {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.id = 'promo-banner-edit-id';
+        document.getElementById('promo-banner-link').parentElement.appendChild(input);
+    }
+    document.getElementById('promo-banner-edit-id').value = bannerId;
+    
+    // Atualizar preview
+    updatePromoBannerPreview();
+    
+    // Abrir o editor
+    document.getElementById('promo-banner-editor-modal').classList.remove('hidden');
+    
+    console.log('✅ Editor aberto para edição');
 }
 
 // Deletar banner salvo
