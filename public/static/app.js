@@ -3636,7 +3636,7 @@ async function generateSignupLink(accountId, walletId) {
                                 class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition">
                                 <i class="fas fa-code mr-2"></i>Gerar HTML
                             </button>
-                            <button onclick="openBannerEditor('${link.linkUrl}', '${qrCodeBase64}', ${value}, '${description}', '${chargeType}')" 
+                            <button onclick="openBannerEditor('${link.linkUrl}', '${qrCodeBase64}', ${value}, '${description}', '${chargeType}', '${accountId}', '${walletId}')" 
                                 class="px-4 py-2 bg-gradient-to-r from-orange-600 to-red-600 text-white rounded hover:from-orange-700 hover:to-red-700 transition">
                                 <i class="fas fa-image mr-2"></i>Gerar Banner
                             </button>
