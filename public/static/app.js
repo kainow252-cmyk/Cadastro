@@ -5997,17 +5997,33 @@ function showSavedBanners(accountId, accountName) {
         listContainer.innerHTML = banners.map((banner, index) => `
             <div class="bg-white border-2 border-gray-200 rounded-xl overflow-hidden hover:border-purple-500 transition shadow-md">
                 <!-- Preview do Banner -->
-                <div class="aspect-square bg-gradient-to-br ${getGradientClass(banner.color)} p-6 relative">
-                    <div class="text-white text-center">
-                        ${banner.chargeType === 'monthly' 
-                            ? '<div class="bg-green-500 text-xs px-2 py-1 rounded-full inline-block mb-2">🔄 MENSAL</div>'
-                            : '<div class="bg-blue-500 text-xs px-2 py-1 rounded-full inline-block mb-2">📄 ÚNICO</div>'
-                        }
-                        ${banner.promo ? `<div class="bg-yellow-400 text-gray-900 text-xs px-2 py-1 rounded-full inline-block mb-2">${banner.promo}</div>` : ''}
-                        <h3 class="font-bold text-lg mb-2 leading-tight">${banner.title}</h3>
-                        <p class="text-sm opacity-90 mb-3 line-clamp-2">${banner.description}</p>
-                        <div class="text-3xl font-bold">R$ ${parseFloat(banner.value).toFixed(2).replace('.', ',')}</div>
-                        ${banner.chargeType === 'monthly' ? '<div class="text-sm">/mês</div>' : ''}
+                <div class="aspect-square bg-gradient-to-br ${getGradientClass(banner.color)} p-4 relative flex flex-col">
+                    <div class="text-white text-center flex-1 flex flex-col justify-between">
+                        <div>
+                            ${banner.chargeType === 'monthly' 
+                                ? '<div class="bg-green-500 text-xs px-2 py-1 rounded-full inline-block mb-2">🔄 MENSAL</div>'
+                                : '<div class="bg-blue-500 text-xs px-2 py-1 rounded-full inline-block mb-2">📄 ÚNICO</div>'
+                            }
+                            ${banner.promo ? `<div class="bg-yellow-400 text-gray-900 text-xs px-2 py-1 rounded-full inline-block mb-2">${banner.promo}</div>` : ''}
+                            <h3 class="font-bold text-base mb-1 leading-tight">${banner.title}</h3>
+                            <p class="text-xs opacity-90 mb-2 line-clamp-2">${banner.description}</p>
+                            <div class="text-2xl font-bold">R$ ${parseFloat(banner.value).toFixed(2).replace('.', ',')}</div>
+                            ${banner.chargeType === 'monthly' ? '<div class="text-xs">/mês</div>' : ''}
+                        </div>
+                        
+                        <!-- QR Code (se existir) -->
+                        ${banner.qrCodeBase64 ? `
+                            <div class="mt-2">
+                                <img src="${banner.qrCodeBase64}" alt="QR Code" class="w-24 h-24 mx-auto bg-white p-1 rounded shadow-lg">
+                            </div>
+                        ` : '<div class="text-xs opacity-75 mt-2">⚠️ QR Code não disponível</div>'}
+                        
+                        <!-- Botão -->
+                        <div class="mt-2">
+                            <div class="bg-white text-gray-800 text-xs font-bold py-1 px-3 rounded-full inline-block">
+                                ${banner.buttonText || 'PAGAR AGORA'} →
+                            </div>
+                        </div>
                     </div>
                 </div>
                 
