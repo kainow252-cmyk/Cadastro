@@ -7947,8 +7947,9 @@ app.get('/', (c) => {
                             <i class="fas fa-link text-xl"></i>
                             <span class="text-sm">Link de Auto-Cadastro</span>
                         </button>
+                        <!-- Botão Banners Salvos oculto -->
                         <button onclick="showSection('banners-section')" 
-                            class="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-lg hover:from-pink-600 hover:to-rose-600 font-semibold shadow-md transition">
+                            class="hidden flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-lg hover:from-pink-600 hover:to-rose-600 font-semibold shadow-md transition">
                             <i class="fas fa-images text-xl"></i>
                             <span class="text-sm">Banners Salvos</span>
                         </button>
