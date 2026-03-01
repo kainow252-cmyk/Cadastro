@@ -5241,38 +5241,16 @@ async function openQuickBannerEditor(accountId, walletId, accountName) {
             // Gerar QR Code
             const qrCodeBase64 = await generateQRCodeFromText(link.linkUrl);
             
-            // Abrir editor PRIMEIRO (para criar os elementos do modal)
-            openBannerEditor(link.linkUrl, qrCodeBase64, 10.00, 'Mensalidade', 'monthly');
+            // Abrir editor passando accountId e walletId
+            openBannerEditor(link.linkUrl, qrCodeBase64, 10.00, 'Mensalidade', 'monthly', accountId, walletId);
             
-            // Aguardar DOM estar pronto e DEPOIS criar/preencher campos hidden
+            // Preencher nome da conta no título (após modal estar pronto)
             setTimeout(() => {
-                if (!document.getElementById('promo-banner-account-id')) {
-                    const accountIdInput = document.createElement('input');
-                    accountIdInput.type = 'hidden';
-                    accountIdInput.id = 'promo-banner-account-id';
-                    document.getElementById('promo-banner-link').parentElement.appendChild(accountIdInput);
+                if (accountName) {
+                    document.getElementById('promo-banner-title').value = `ASSINE ${accountName.toUpperCase()}`;
+                    updatePromoBannerPreview();
                 }
-                if (!document.getElementById('promo-banner-wallet-id')) {
-                    const walletIdInput = document.createElement('input');
-                    walletIdInput.type = 'hidden';
-                    walletIdInput.id = 'promo-banner-wallet-id';
-                    document.getElementById('promo-banner-link').parentElement.appendChild(walletIdInput);
-                }
-                
-                console.log('🎯 Definindo accountId no modal:', accountId);
-                console.log('📏 Tamanho do accountId:', accountId?.length, 'caracteres');
-                
-                document.getElementById('promo-banner-account-id').value = accountId;
-                document.getElementById('promo-banner-wallet-id').value = walletId;
-                
-                console.log('✅ AccountId definido:', document.getElementById('promo-banner-account-id').value);
-            }, 100);
-            
-            // Preencher nome da conta no título
-            if (accountName) {
-                document.getElementById('promo-banner-title').value = `ASSINE ${accountName.toUpperCase()}`;
-                updatePromoBannerPreview();
-            }
+            }, 150);
         } else {
             alert('❌ Erro ao gerar link: ' + data.error);
         }
@@ -5283,16 +5261,37 @@ async function openQuickBannerEditor(accountId, walletId, accountName) {
 }
 
 // Abrir modal de edição de banner
-function openBannerEditor(linkUrl, qrCodeBase64, value, description, chargeType) {
+function openBannerEditor(linkUrl, qrCodeBase64, value, description, chargeType, accountId = null, walletId = null) {
     // Armazenar dados
     document.getElementById('promo-banner-link').value = linkUrl;
     document.getElementById('promo-banner-qrcode').value = qrCodeBase64;
     
-    // NÃO extrair accountId da URL pois isso trunca o UUID
-    // O accountId correto já foi definido pela função que chamou openBannerEditor
-    // (linha 5257 em openBannerGeneratorModal)
+    // Se accountId foi passado, criar/preencher campos hidden
+    if (accountId) {
+        if (!document.getElementById('promo-banner-account-id')) {
+            const accountIdInput = document.createElement('input');
+            accountIdInput.type = 'hidden';
+            accountIdInput.id = 'promo-banner-account-id';
+            document.getElementById('promo-banner-link').parentElement.appendChild(accountIdInput);
+        }
+        if (walletId && !document.getElementById('promo-banner-wallet-id')) {
+            const walletIdInput = document.createElement('input');
+            walletIdInput.type = 'hidden';
+            walletIdInput.id = 'promo-banner-wallet-id';
+            document.getElementById('promo-banner-link').parentElement.appendChild(walletIdInput);
+        }
+        
+        document.getElementById('promo-banner-account-id').value = accountId;
+        if (walletId) {
+            document.getElementById('promo-banner-wallet-id').value = walletId;
+        }
+        
+        console.log('🎯 AccountId definido no editor:', accountId);
+        console.log('📏 Tamanho do accountId:', accountId?.length, 'caracteres');
+    }
+    
     console.log('🎨 Editor aberto para link:', linkUrl);
-    console.log('🔑 AccountId já definido:', document.getElementById('promo-banner-account-id')?.value);
+    console.log('🔑 AccountId atual:', document.getElementById('promo-banner-account-id')?.value);
     
     // Preencher campos com valores padrão
     document.getElementById('promo-banner-value').value = value;
