@@ -90,7 +90,10 @@ app.use('/api/*', async (c, next) => {
   const path = c.req.path
   const publicRoutes = [
     '/api/login', 
-    '/api/check-auth', 
+    '/api/check-auth',
+    '/api/subaccount-login',
+    '/api/subaccount-check-auth',
+    '/api/subaccount-logout',
     '/api/public/signup',
     '/api/proxy/payments',
     '/api/debug/env'
