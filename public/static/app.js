@@ -3558,7 +3558,7 @@ async function generateSignupLink(accountId, walletId) {
     
     // Capturar tipo de cobrança selecionado
     const chargeTypeInputs = document.getElementsByName(`charge-type-${accountId}`);
-    let chargeType = 'single'; // Padrão
+    let chargeType = 'monthly'; // Padrão: Assinatura Mensal
     console.log('🔍 Buscando radio buttons com name:', `charge-type-${accountId}`);
     console.log('📻 Radio buttons encontrados:', chargeTypeInputs.length);
     
