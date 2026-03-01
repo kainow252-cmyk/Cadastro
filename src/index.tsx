@@ -7867,8 +7867,8 @@ app.get('/', (c) => {
                         <span>Voltar ao Dashboard</span>
                     </button>
                 </div>
-                <!-- Formulário de Nova Subconta -->
-                <div class="bg-white rounded-lg shadow mb-6">
+                <!-- Formulário de Nova Subconta (OCULTO - use "Gerar Link de Cadastro" ao invés) -->
+                <div class="bg-white rounded-lg shadow mb-6 hidden" style="display: none;">
                     <div class="p-6 border-b border-gray-200">
                         <h2 class="text-xl font-bold text-gray-800">
                             <i class="fas fa-user-plus mr-2 text-green-600"></i>
