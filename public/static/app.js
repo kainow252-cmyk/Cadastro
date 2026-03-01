@@ -6232,14 +6232,18 @@ function viewBannerDetails(accountId, bannerId) {
                         <i class="fas fa-cog text-purple-600"></i>
                         Gerenciar Banner
                     </h3>
-                    <div class="grid grid-cols-2 gap-3">
+                    <div class="grid grid-cols-3 gap-3">
+                        <button onclick="redownloadBanner('${accountId}', '${banner.id}')" 
+                            class="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold text-sm">
+                            <i class="fas fa-download mr-1"></i>Baixar
+                        </button>
                         <button onclick="document.getElementById('banner-detail-modal').remove(); editSavedBanner('${accountId}', '${banner.id}')" 
-                            class="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition font-semibold">
-                            <i class="fas fa-edit mr-2"></i>Editar
+                            class="px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition font-semibold text-sm">
+                            <i class="fas fa-edit mr-1"></i>Editar
                         </button>
                         <button onclick="if(confirm('❌ Deseja realmente excluir este banner?')) { deleteBanner('${accountId}', '${banner.id}'); document.getElementById('banner-detail-modal').remove(); showSavedBanners('${accountId}', ''); }" 
-                            class="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-semibold">
-                            <i class="fas fa-trash mr-2"></i>Excluir
+                            class="px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-semibold text-sm">
+                            <i class="fas fa-trash mr-1"></i>Excluir
                         </button>
                     </div>
                 </div>
