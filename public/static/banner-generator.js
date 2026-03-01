@@ -70,14 +70,14 @@ function generateBannerLink() {
     // Link do banner (página de oferta) que tem botão para cadastro
     const bannerLink = `${baseUrl}/banner/${bannerDataEncoded}`;
     
-    // Link de cadastro direto (usado no QR Code)
-    const cadastroLink = `${baseUrl}/cadastro/${linkId}`;
+    // Link de assinatura mensal (usado no QR Code e como link principal)
+    const subscriptionLink = `${baseUrl}/subscription-signup/${linkId}`;
     
-    currentBannerLink = bannerLink;
-    document.getElementById('banner-link').value = bannerLink;
+    currentBannerLink = subscriptionLink;
+    document.getElementById('banner-link').value = subscriptionLink;
     
-    // Retornar link de cadastro para o QR Code
-    return cadastroLink;
+    // Retornar link de assinatura para o QR Code
+    return subscriptionLink;
 }
 
 // Fechar modal de banner
@@ -354,9 +354,9 @@ async function copyBannerLink() {
         return;
     }
     
-    // Copiar link do banner para área de transferência
+    // Copiar link de pagamento para área de transferência
     navigator.clipboard.writeText(bannerLink).then(() => {
-        alert('✅ Link do Banner copiado!\n\n' + bannerLink + '\n\n📱 Compartilhe este link:\n- Cole nas redes sociais\n- Envie por WhatsApp\n- Compartilhe por email\n\n💡 Este link mostra a página de oferta com botão "Cadastre-se Agora"');
+        alert('✅ Link de Pagamento copiado!\n\n' + bannerLink + '\n\n📱 Compartilhe este link:\n- Cole nas redes sociais\n- Envie por WhatsApp\n- Compartilhe por email\n\n💡 Cliente preenche dados e gera PIX para pagamento automático');
     }).catch(() => {
         // Fallback para navegadores antigos
         const input = document.createElement('input');
@@ -365,7 +365,7 @@ async function copyBannerLink() {
         input.select();
         document.execCommand('copy');
         document.body.removeChild(input);
-        alert('✅ Link copiado!\n\nCompartilhe este link em suas redes sociais ou envie para clientes.\n\n' + link);
+        alert('✅ Link de Pagamento copiado!\n\n' + bannerLink);
     });
 }
 
