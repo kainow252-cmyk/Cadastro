@@ -6064,8 +6064,11 @@ async function generateAllAutoSignupLinks() {
         });
         console.log('📊 Status das contas:', statusCount);
     
-    // Filtrar contas aprovadas/ativas (Asaas usa 'ACTIVE' como status)
+    // Filtrar contas aprovadas/ativas
+    // Se status não existe (SEM_STATUS), considera como ativa (API Asaas às vezes não retorna status)
     const approvedAccounts = accounts.filter(acc => 
+        !acc.status ||                    // Sem status = assume ativa
+        acc.status === 'SEM_STATUS' ||    // Campo vazio = assume ativa
         acc.status === 'Approved' || 
         acc.status === 'ACTIVE' || 
         acc.status === 'Active'
@@ -6078,7 +6081,7 @@ async function generateAllAutoSignupLinks() {
             .map(([status, count]) => `• ${status}: ${count}`)
             .join('\n');
         
-        alert(`⚠️ Nenhuma subconta aprovada/ativa encontrada!\n\n📊 Status das contas:\n${statusList}\n\n💡 Contas precisam ter status 'ACTIVE' ou 'Approved'.`);
+        alert(`⚠️ Nenhuma subconta aprovada/ativa encontrada!\n\n📊 Status das contas:\n${statusList}\n\n💡 Apenas contas com status bloqueante (REJECTED, SUSPENDED) são ignoradas.`);
         return;
     }
     
