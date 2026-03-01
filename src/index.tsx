@@ -6427,11 +6427,46 @@ app.post('/api/proxy/payments', async (c) => {
 
 // Página do Banner (para compartilhar nas redes sociais)
 app.get('/banner/:bannerId', (c) => {
-  const bannerId = c.req.param('bannerId')
+  const bannerIdEncoded = c.req.param('bannerId')
   
-  // Extrair dados do bannerId (formato: accountId-timestamp-random-title-value-type)
-  // ou simplesmente usar o linkId de cadastro
-  const cadastroLink = `${new URL(c.req.url).origin}/cadastro/${bannerId}`
+  // Decodificar dados do banner
+  let bannerData
+  try {
+    const decoded = decodeURIComponent(atob(bannerIdEncoded))
+    bannerData = JSON.parse(decoded)
+  } catch (error) {
+    // Fallback para dados padrão se decodificação falhar
+    bannerData = {
+      title: 'Oferta Especial',
+      description: 'Plano Premium com benefícios exclusivos',
+      value: '149.90',
+      type: 'monthly',
+      color: 'purple',
+      buttonText: 'Cadastre-se Agora',
+      accountId: 'default',
+      timestamp: Date.now(),
+      random: 'xxx'
+    }
+  }
+  
+  const linkId = `${bannerData.accountId}-${bannerData.timestamp}-${bannerData.random}`
+  const cadastroLink = `${new URL(c.req.url).origin}/cadastro/${linkId}`
+  
+  // Gradientes de cores
+  const gradients: any = {
+    purple: 'linear-gradient(135deg, #9333ea 0%, #ec4899 100%)',
+    blue: 'linear-gradient(135deg, #2563eb 0%, #06b6d4 100%)',
+    green: 'linear-gradient(135deg, #16a34a 0%, #10b981 100%)',
+    orange: 'linear-gradient(135deg, #ea580c 0%, #dc2626 100%)',
+    red: 'linear-gradient(135deg, #dc2626 0%, #f43f5e 100%)'
+  }
+  
+  const bgGradient = gradients[bannerData.color] || gradients.purple
+  const typeText = bannerData.type === 'single' ? 'Pagamento Único' : 'Assinatura Mensal'
+  const priceFormatted = parseFloat(bannerData.value).toFixed(2).replace('.', ',')
+  const priceDisplay = bannerData.type === 'monthly' 
+    ? `R$ ${priceFormatted} <span style="font-size: 1.5rem;">/mês</span>`
+    : `R$ ${priceFormatted}`
   
   return c.html(`
     <!DOCTYPE html>
@@ -6439,103 +6474,150 @@ app.get('/banner/:bannerId', (c) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Oferta Especial - Cadastre-se Agora!</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
-        <meta property="og:title" content="Oferta Especial - Assine Agora!" />
-        <meta property="og:description" content="Plano Premium com benefícios exclusivos. Clique para se cadastrar!" />
+        <title>${bannerData.title} - Cadastre-se Agora!</title>
+        <meta property="og:title" content="${bannerData.title}" />
+        <meta property="og:description" content="${bannerData.description}" />
         <meta property="og:type" content="website" />
         <style>
-            body {
+            * {
                 margin: 0;
                 padding: 0;
+                box-sizing: border-box;
+            }
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
                 min-height: 100vh;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                background: #f5f5f5;
+                padding: 1rem;
             }
-            .banner-container {
+            .banner-display {
                 max-width: 600px;
-                width: 90%;
-                background: white;
+                width: 100%;
+                aspect-ratio: 1 / 1;
+                background: ${bgGradient};
                 border-radius: 20px;
-                padding: 2rem;
+                padding: 3rem 2rem;
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+                color: white;
+                position: relative;
+                overflow: hidden;
                 box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            }
+            /* Círculos decorativos */
+            .banner-display::before {
+                content: '';
+                position: absolute;
+                top: -100px;
+                right: -100px;
+                width: 300px;
+                height: 300px;
+                background: rgba(255,255,255,0.1);
+                border-radius: 50%;
+            }
+            .banner-display::after {
+                content: '';
+                position: absolute;
+                bottom: -100px;
+                left: -100px;
+                width: 250px;
+                height: 250px;
+                background: rgba(255,255,255,0.1);
+                border-radius: 50%;
+            }
+            .banner-content {
+                position: relative;
+                z-index: 2;
+            }
+            .type-badge {
+                font-size: 0.9rem;
+                font-weight: 600;
+                opacity: 0.95;
+                margin-bottom: 1rem;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+            }
+            .banner-title {
+                font-size: 2.5rem;
+                font-weight: 800;
+                line-height: 1.2;
+                margin-bottom: 1rem;
+            }
+            .banner-description {
+                font-size: 1.1rem;
+                opacity: 0.95;
+                margin-bottom: 2rem;
+            }
+            .banner-price {
+                font-size: 3.5rem;
+                font-weight: 800;
+                line-height: 1;
+                margin-bottom: 0.5rem;
+            }
+            .banner-footer {
+                position: relative;
+                z-index: 2;
+                display: flex;
+                align-items: flex-end;
+                justify-content: center;
             }
             .cta-button {
                 display: inline-block;
-                width: 100%;
-                padding: 1.5rem 2rem;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                text-align: center;
+                background: white;
+                color: #9333ea;
+                padding: 1.25rem 3rem;
                 border-radius: 50px;
-                font-size: 1.5rem;
-                font-weight: bold;
+                font-size: 1.25rem;
+                font-weight: 700;
                 text-decoration: none;
+                box-shadow: 0 10px 40px rgba(0,0,0,0.3);
                 transition: all 0.3s ease;
-                margin-top: 2rem;
-                box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+                text-align: center;
+                width: 100%;
+                max-width: 400px;
             }
             .cta-button:hover {
                 transform: translateY(-5px);
-                box-shadow: 0 15px 40px rgba(102, 126, 234, 0.6);
+                box-shadow: 0 15px 50px rgba(0,0,0,0.4);
             }
-            .banner-info {
-                text-align: center;
-                margin-bottom: 2rem;
-            }
-            .banner-info h1 {
-                font-size: 2rem;
-                color: #2d3748;
-                margin-bottom: 1rem;
-            }
-            .banner-info p {
-                color: #718096;
-                font-size: 1.1rem;
-            }
-            .price {
-                font-size: 3rem;
-                font-weight: bold;
-                color: #667eea;
-                margin: 1rem 0;
+            @media (max-width: 640px) {
+                .banner-display {
+                    padding: 2rem 1.5rem;
+                }
+                .banner-title {
+                    font-size: 1.75rem;
+                }
+                .banner-description {
+                    font-size: 0.95rem;
+                }
+                .banner-price {
+                    font-size: 2.5rem;
+                }
+                .cta-button {
+                    padding: 1rem 2rem;
+                    font-size: 1rem;
+                }
             }
         </style>
     </head>
     <body>
-        <div class="banner-container">
-            <div class="banner-info">
-                <div class="mb-4">
-                    <i class="fas fa-star text-yellow-400 text-5xl"></i>
-                </div>
-                <h1>🚀 Oferta Especial!</h1>
-                <p>Plano Premium com benefícios exclusivos</p>
-                <div class="price">R$ 149,90</div>
-                <p class="text-gray-500"><span class="font-semibold">Assinatura Mensal</span></p>
+        <div class="banner-display">
+            <div class="banner-content">
+                <div class="type-badge">${typeText}</div>
+                <h1 class="banner-title">${bannerData.title}</h1>
+                <p class="banner-description">${bannerData.description}</p>
+                <div class="banner-price">${priceDisplay}</div>
             </div>
             
-            <div class="bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl p-6 mb-6">
-                <h3 class="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                    <i class="fas fa-check-circle text-green-500"></i>
-                    Benefícios Inclusos:
-                </h3>
-                <ul class="space-y-2 text-gray-700">
-                    <li><i class="fas fa-check text-green-500 mr-2"></i> Acesso completo à plataforma</li>
-                    <li><i class="fas fa-check text-green-500 mr-2"></i> Suporte prioritário 24/7</li>
-                    <li><i class="fas fa-check text-green-500 mr-2"></i> Atualizações gratuitas</li>
-                    <li><i class="fas fa-check text-green-500 mr-2"></i> Recursos premium exclusivos</li>
-                </ul>
+            <div class="banner-footer">
+                <a href="${cadastroLink}" class="cta-button">
+                    ${bannerData.buttonText} →
+                </a>
             </div>
-            
-            <a href="${cadastroLink}" class="cta-button">
-                <i class="fas fa-rocket mr-3"></i>Cadastre-se Agora →
-            </a>
-            
-            <p class="text-center text-sm text-gray-500 mt-6">
-                <i class="fas fa-shield-alt mr-1"></i>
-                Pagamento 100% seguro via PIX
-            </p>
         </div>
     </body>
     </html>

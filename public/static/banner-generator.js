@@ -24,13 +24,36 @@ function openBannerModal(accountId, accountName) {
 // Gerar link do banner (página de oferta) que direciona para cadastro
 function generateBannerLink() {
     const accountId = currentBannerAccountId || document.getElementById('banner-account-id').value;
+    const title = document.getElementById('banner-title').value || 'Assine Agora!';
+    const description = document.getElementById('banner-description').value || 'Plano Premium';
+    const value = document.getElementById('banner-value').value || '149.90';
+    const type = document.getElementById('banner-type').value;
+    const color = document.getElementById('banner-color').value;
+    const buttonText = document.getElementById('banner-button-text').value || 'Cadastre-se Agora';
     
     // Gerar linkId único para rastreamento
-    const linkId = `${accountId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substr(2, 9);
+    
+    // Codificar dados do banner em base64 para passar na URL
+    const bannerData = {
+        title,
+        description,
+        value,
+        type,
+        color,
+        buttonText,
+        accountId,
+        timestamp,
+        random
+    };
+    
+    const bannerDataEncoded = btoa(encodeURIComponent(JSON.stringify(bannerData)));
+    const linkId = `${accountId}-${timestamp}-${random}`;
     const baseUrl = window.location.origin;
     
     // Link do banner (página de oferta) que tem botão para cadastro
-    const bannerLink = `${baseUrl}/banner/${linkId}`;
+    const bannerLink = `${baseUrl}/banner/${bannerDataEncoded}`;
     
     // Link de cadastro direto (usado no QR Code)
     const cadastroLink = `${baseUrl}/cadastro/${linkId}`;
