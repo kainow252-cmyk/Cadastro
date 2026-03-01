@@ -5307,6 +5307,8 @@ function openBannerEditor(linkUrl, qrCodeBase64, value, description, chargeType,
     
     console.log('🎨 Editor aberto para link:', linkUrl);
     console.log('🔑 AccountId atual:', document.getElementById('promo-banner-account-id')?.value);
+    console.log('💳 ChargeType recebido:', chargeType);
+    console.log('📊 Tipo do chargeType:', typeof chargeType);
     
     // Preencher campos com valores padrão
     document.getElementById('promo-banner-value').value = value;
@@ -5314,6 +5316,7 @@ function openBannerEditor(linkUrl, qrCodeBase64, value, description, chargeType,
     
     // Definir título baseado no tipo de cobrança
     const defaultTitle = chargeType === 'monthly' ? 'ASSINE AGORA' : 'COMPRE AGORA';
+    console.log('📝 Título definido:', defaultTitle);
     document.getElementById('promo-banner-title').value = defaultTitle;
     
     // Armazenar tipo de cobrança em hidden field
