@@ -1,0 +1,398 @@
+/* ========================================
+   SISTEMA RESPONSIVO COMPLETO
+   Mobile First - Web, Tablet, Mobile
+   ======================================== */
+
+/* Reset e Base */
+* {
+    box-sizing: border-box;
+}
+
+body {
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* ========================================
+   MOBILE (até 640px)
+   ======================================== */
+@media (max-width: 640px) {
+    /* Navbar */
+    nav .flex {
+        flex-direction: column;
+        gap: 1rem;
+        padding: 1rem 0;
+    }
+    
+    nav .flex .items-center {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    /* Container principal */
+    .max-w-7xl {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+    
+    /* Ações Rápidas - Botões em coluna */
+    .flex.flex-wrap.gap-3 button {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    /* Header Dashboard */
+    .bg-gradient-to-r.from-blue-600 .flex {
+        flex-direction: column;
+        text-align: center;
+        gap: 1rem;
+    }
+    
+    /* Cards de Estatísticas - 1 coluna */
+    .grid.grid-cols-1.md\\:grid-cols-2.lg\\:grid-cols-4 {
+        grid-template-columns: 1fr !important;
+    }
+    
+    /* Tabelas responsivas */
+    table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    /* Cards de subcontas */
+    .space-y-4 > div {
+        margin-bottom: 1rem;
+    }
+    
+    /* Formulários - inputs full width */
+    input, select, textarea, button {
+        width: 100%;
+        font-size: 16px; /* Evita zoom no iOS */
+    }
+    
+    /* Grid de 2 colunas vira 1 */
+    .grid.grid-cols-2 {
+        grid-template-columns: 1fr !important;
+    }
+    
+    /* Grid de 3 colunas vira 1 */
+    .grid.grid-cols-3 {
+        grid-template-columns: 1fr !important;
+    }
+    
+    /* Modais - ocupam tela inteira */
+    .fixed.inset-0 > div {
+        max-width: 100% !important;
+        max-height: 100vh !important;
+        margin: 0 !important;
+        border-radius: 0 !important;
+    }
+    
+    /* Botões de ação - stack vertical */
+    .flex.gap-3 button {
+        width: 100%;
+    }
+    
+    /* Esconder textos longos */
+    .hidden.sm\\:block {
+        display: none !important;
+    }
+    
+    /* Padding reduzido */
+    .p-8 {
+        padding: 1rem !important;
+    }
+    
+    .p-6 {
+        padding: 1rem !important;
+    }
+    
+    /* Texto menor em mobile */
+    .text-3xl {
+        font-size: 1.5rem !important;
+    }
+    
+    .text-2xl {
+        font-size: 1.25rem !important;
+    }
+    
+    /* Charts responsivos */
+    canvas {
+        max-width: 100% !important;
+        height: auto !important;
+    }
+}
+
+/* ========================================
+   TABLET (641px - 1024px)
+   ======================================== */
+@media (min-width: 641px) and (max-width: 1024px) {
+    /* Container ajustado */
+    .max-w-7xl {
+        padding-left: 2rem;
+        padding-right: 2rem;
+    }
+    
+    /* Cards de Estatísticas - 2 colunas */
+    .grid.grid-cols-1.md\\:grid-cols-2.lg\\:grid-cols-4 {
+        grid-template-columns: repeat(2, 1fr) !important;
+    }
+    
+    /* Ações Rápidas - 3 por linha */
+    .flex.flex-wrap.gap-3 {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+    }
+    
+    /* Grid de 3 colunas vira 2 */
+    .grid.grid-cols-3 {
+        grid-template-columns: repeat(2, 1fr) !important;
+    }
+    
+    /* Modais - largura reduzida */
+    .fixed.inset-0 > div {
+        max-width: 90% !important;
+    }
+    
+    /* Padding médio */
+    .p-8 {
+        padding: 1.5rem !important;
+    }
+}
+
+/* ========================================
+   DESKTOP (acima de 1024px)
+   ======================================== */
+@media (min-width: 1025px) {
+    /* Mantém layout original */
+}
+
+/* ========================================
+   COMPONENTES ESPECÍFICOS
+   ======================================== */
+
+/* Navbar responsiva */
+@media (max-width: 640px) {
+    nav {
+        padding: 0.5rem 1rem;
+    }
+    
+    nav .text-xl {
+        font-size: 1rem;
+    }
+    
+    nav button {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.875rem;
+    }
+}
+
+/* Cards de Subconta */
+@media (max-width: 640px) {
+    .bg-white.rounded-lg.shadow-md.p-6.border-l-4 {
+        padding: 1rem !important;
+    }
+    
+    /* Botões de ação das subcontas */
+    .grid.grid-cols-1.md\\:grid-cols-3.gap-3 {
+        grid-template-columns: 1fr !important;
+    }
+    
+    /* Informações da subconta */
+    .grid.grid-cols-1.md\\:grid-cols-2.gap-4 {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+/* Formulários de PIX */
+@media (max-width: 640px) {
+    .grid.grid-cols-1.md\\:grid-cols-3.gap-3 {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+/* Modal de Banner */
+@media (max-width: 640px) {
+    #banner-modal .grid.grid-cols-1.md\\:grid-cols-2 {
+        grid-template-columns: 1fr !important;
+    }
+    
+    #banner-preview {
+        height: 300px !important;
+    }
+}
+
+/* Relatórios */
+@media (max-width: 640px) {
+    .overflow-x-auto {
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    /* Filtros em coluna */
+    .grid.grid-cols-1.md\\:grid-cols-12 {
+        grid-template-columns: 1fr !important;
+    }
+    
+    .md\\:col-span-6,
+    .md\\:col-span-3 {
+        grid-column: span 1 !important;
+    }
+}
+
+/* APIs Externas */
+@media (max-width: 640px) {
+    .grid.grid-cols-1.md\\:grid-cols-2.lg\\:grid-cols-2 {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+/* ========================================
+   UTILITÁRIOS RESPONSIVOS
+   ======================================== */
+
+/* Esconder em mobile */
+.hide-mobile {
+    display: block;
+}
+
+@media (max-width: 640px) {
+    .hide-mobile {
+        display: none !important;
+    }
+}
+
+/* Mostrar apenas em mobile */
+.show-mobile {
+    display: none;
+}
+
+@media (max-width: 640px) {
+    .show-mobile {
+        display: block !important;
+    }
+}
+
+/* Texto responsivo */
+.text-responsive-xl {
+    font-size: 1.5rem;
+}
+
+@media (min-width: 641px) {
+    .text-responsive-xl {
+        font-size: 2rem;
+    }
+}
+
+@media (min-width: 1025px) {
+    .text-responsive-xl {
+        font-size: 2.5rem;
+    }
+}
+
+/* ========================================
+   MELHORIAS DE UX
+   ======================================== */
+
+/* Botões com área de toque maior em mobile */
+@media (max-width: 640px) {
+    button, a {
+        min-height: 44px; /* Apple recomenda 44px */
+        padding: 0.75rem 1rem;
+    }
+}
+
+/* Scroll suave */
+html {
+    scroll-behavior: smooth;
+}
+
+/* Evitar quebra de layout */
+img, video, canvas {
+    max-width: 100%;
+    height: auto;
+}
+
+/* Loading states */
+.loading {
+    pointer-events: none;
+    opacity: 0.6;
+}
+
+/* ========================================
+   ANIMAÇÕES RESPONSIVAS
+   ======================================== */
+
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* ========================================
+   ORIENTAÇÃO (Landscape/Portrait)
+   ======================================== */
+
+@media (max-width: 640px) and (orientation: landscape) {
+    /* Ajustes para landscape em mobile */
+    .p-8 {
+        padding: 0.5rem !important;
+    }
+    
+    .py-8 {
+        padding-top: 0.5rem !important;
+        padding-bottom: 0.5rem !important;
+    }
+}
+
+/* ========================================
+   IMPRESSÃO
+   ======================================== */
+
+@media print {
+    nav, .no-print {
+        display: none !important;
+    }
+    
+    body {
+        background: white !important;
+    }
+    
+    .bg-gradient-to-r {
+        background: #f3f4f6 !important;
+        color: black !important;
+    }
+}
+
+/* ========================================
+   DARK MODE (Opcional)
+   ======================================== */
+
+@media (prefers-color-scheme: dark) {
+    /* Adicione estilos dark mode aqui se necessário */
+}
+
+/* ========================================
+   ACESSIBILIDADE
+   ======================================== */
+
+/* Foco visível para navegação por teclado */
+button:focus,
+a:focus,
+input:focus,
+select:focus,
+textarea:focus {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+}
+
+/* Alto contraste */
+@media (prefers-contrast: high) {
+    button {
+        border: 2px solid currentColor;
+    }
+}

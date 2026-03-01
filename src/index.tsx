@@ -7663,29 +7663,37 @@ app.get('/', (c) => {
     <html lang="pt-BR">
     <head>
         <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-status-bar-style" content="default">
         <title>Gerenciador Asaas - Contas e Subcontas</title>
         <link rel="icon" type="image/svg+xml" href="/favicon.svg">
         <link rel="alternate icon" href="/favicon.ico">
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <link href="/static/responsive.css?v=1.0" rel="stylesheet">
     </head>
     <body class="bg-gray-50">
-        <!-- Navbar -->
-        <nav class="bg-white shadow-lg">
+        <!-- Navbar Responsiva -->
+        <nav class="bg-white shadow-lg sticky top-0 z-50">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div class="flex justify-between h-16">
+                <div class="flex justify-between items-center h-16">
+                    <!-- Logo -->
                     <div class="flex items-center">
-                        <i class="fas fa-building text-blue-600 text-2xl mr-3"></i>
-                        <span class="text-xl font-bold text-gray-800">Gerenciador Asaas</span>
+                        <i class="fas fa-building text-blue-600 text-xl sm:text-2xl mr-2 sm:mr-3"></i>
+                        <span class="text-base sm:text-xl font-bold text-gray-800 hidden sm:inline">Gerenciador Asaas</span>
+                        <span class="text-base sm:text-xl font-bold text-gray-800 sm:hidden">Asaas</span>
                     </div>
-                    <div class="flex items-center space-x-4">
-                        <button onclick="showSection('accounts')" class="nav-btn text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-md font-semibold">
-                            <i class="fas fa-users mr-2"></i>Subcontas
+                    <!-- Actions -->
+                    <div class="flex items-center gap-2 sm:gap-4">
+                        <button onclick="showSection('accounts')" class="nav-btn text-white bg-blue-600 hover:bg-blue-700 px-3 sm:px-4 py-2 rounded-md font-semibold text-sm sm:text-base">
+                            <i class="fas fa-users mr-0 sm:mr-2"></i>
+                            <span class="hidden sm:inline">Subcontas</span>
                         </button>
-                        <div class="border-l border-gray-300 h-8 mx-2"></div>
-                        <button onclick="logout()" class="text-red-600 hover:text-red-700 px-3 py-2 rounded-md hover:bg-red-50 transition">
-                            <i class="fas fa-sign-out-alt mr-2"></i>Sair
+                        <button onclick="logout()" class="text-red-600 hover:text-red-700 px-2 sm:px-3 py-2 rounded-md hover:bg-red-50 transition text-sm sm:text-base">
+                            <i class="fas fa-sign-out-alt mr-0 sm:mr-2"></i>
+                            <span class="hidden sm:inline">Sair</span>
                         </button>
                     </div>
                 </div>
@@ -7739,19 +7747,19 @@ app.get('/', (c) => {
 
                 <!-- Dashboard Overview -->
                 <div class="space-y-6">
-                    <!-- Header -->
-                    <div class="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg shadow-xl p-8 text-white">
-                        <div class="flex items-center justify-between">
+                    <!-- Header Responsivo -->
+                    <div class="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg shadow-xl p-4 sm:p-6 lg:p-8 text-white">
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                             <div>
-                                <h2 class="text-3xl font-bold mb-2">
-                                    <i class="fas fa-chart-line mr-3"></i>
+                                <h2 class="text-xl sm:text-2xl lg:text-3xl font-bold mb-2">
+                                    <i class="fas fa-chart-line mr-2 sm:mr-3"></i>
                                     Visão Geral
                                 </h2>
-                                <p class="text-blue-100">Dashboard de Gerenciamento de Subcontas Asaas</p>
+                                <p class="text-blue-100 text-sm sm:text-base">Dashboard de Gerenciamento de Subcontas Asaas</p>
                             </div>
-                            <div class="text-right">
-                                <p class="text-sm text-blue-100">Última atualização</p>
-                                <p class="text-lg font-semibold" id="last-update-time">--:--</p>
+                            <div class="text-left sm:text-right">
+                                <p class="text-xs sm:text-sm text-blue-100">Última atualização</p>
+                                <p class="text-base sm:text-lg font-semibold" id="last-update-time">--:--</p>
                             </div>
                         </div>
                     </div>
