@@ -5921,12 +5921,21 @@ function showSavedBanners(accountId, accountName) {
     
     // Debug: listar todas as chaves de banners no localStorage
     console.log('🔍 Todas as chaves de banners no localStorage:');
+    let allKeys = [];
     for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (key && key.startsWith('banners_')) {
             const count = JSON.parse(localStorage.getItem(key) || '[]').length;
             console.log(`  - ${key}: ${count} banner(s)`);
+            allKeys.push(`${key}: ${count} banner(s)`);
         }
+    }
+    
+    // Se não encontrou banners, mostrar debug visual
+    if (banners.length === 0 && allKeys.length > 0) {
+        console.warn('⚠️ PROBLEMA: Existem banners salvos mas não para este accountId!');
+        console.warn('📋 Chaves encontradas:', allKeys);
+        console.warn('🔑 Chave buscada:', storageKey);
     }
     
     // Atualizar título
@@ -5937,8 +5946,46 @@ function showSavedBanners(accountId, accountName) {
     const emptyState = document.getElementById('saved-banners-empty');
     
     if (banners.length === 0) {
+        // Verificar se existem banners em outras contas
+        let debugInfo = '';
+        let totalBanners = 0;
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('banners_')) {
+                const bannersData = JSON.parse(localStorage.getItem(key) || '[]');
+                totalBanners += bannersData.length;
+                if (bannersData.length > 0) {
+                    const accId = key.replace('banners_', '').substring(0, 8) + '...';
+                    debugInfo += `<div class="text-xs text-gray-400 mt-1">• ${accId}: ${bannersData.length} banner(s)</div>`;
+                }
+            }
+        }
+        
         listContainer.innerHTML = '';
         listContainer.classList.add('hidden');
+        
+        // Atualizar mensagem do estado vazio com debug
+        if (totalBanners > 0) {
+            emptyState.innerHTML = `
+                <i class="fas fa-info-circle text-yellow-500 text-6xl mb-4"></i>
+                <p class="text-gray-700 text-lg font-semibold mb-2">Nenhum banner salvo para esta conta</p>
+                <p class="text-gray-500 text-sm mb-4">Mas existem ${totalBanners} banner(s) em outras contas:</p>
+                ${debugInfo}
+                <div class="mt-6 p-4 bg-blue-50 rounded-lg text-left">
+                    <p class="text-sm text-blue-800 mb-2"><strong>🔍 Debug Info:</strong></p>
+                    <p class="text-xs text-blue-600 font-mono">Account ID atual: ${accountId}</p>
+                    <p class="text-xs text-blue-600 font-mono">Chave localStorage: banners_${accountId}</p>
+                    <p class="text-xs text-blue-600 mt-2">💡 Os banners podem ter sido salvos com outro ID</p>
+                </div>
+            `;
+        } else {
+            emptyState.innerHTML = `
+                <i class="fas fa-images text-gray-300 text-6xl mb-4"></i>
+                <p class="text-gray-500 text-lg font-semibold mb-2">Nenhum banner salvo ainda</p>
+                <p class="text-gray-400 text-sm">Gere um banner através de "Link Auto-Cadastro" → "Gerar Banner"</p>
+            `;
+        }
+        
         emptyState.classList.remove('hidden');
     } else {
         emptyState.classList.add('hidden');
