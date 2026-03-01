@@ -2413,7 +2413,6 @@ function displayAccounts(accounts) {
                                     <input type="radio" 
                                         name="charge-type-${account.id}" 
                                         value="single" 
-                                        checked
                                         class="mr-2 text-orange-600 focus:ring-orange-500">
                                     <div class="flex-1">
                                         <div class="font-semibold text-gray-800">
@@ -2428,6 +2427,7 @@ function displayAccounts(accounts) {
                                     <input type="radio" 
                                         name="charge-type-${account.id}" 
                                         value="monthly" 
+                                        checked
                                         class="mr-2 text-orange-600 focus:ring-orange-500">
                                     <div class="flex-1">
                                         <div class="font-semibold text-gray-800">
