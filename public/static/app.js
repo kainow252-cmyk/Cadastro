@@ -6199,6 +6199,24 @@ function viewBannerDetails(accountId, bannerId) {
                             </div>
                         ` : '<div class="text-sm opacity-75 mt-4">⚠️ QR Code não disponível</div>'}
                         
+                        <!-- Link do QR Code para copiar -->
+                        <div class="mt-4 bg-white bg-opacity-20 backdrop-blur-sm rounded-xl p-3 max-w-md mx-auto">
+                            <div class="flex items-center gap-2 mb-2">
+                                <i class="fas fa-link text-white text-sm"></i>
+                                <span class="text-white text-xs font-semibold">Link de Pagamento:</span>
+                            </div>
+                            <div class="flex gap-2">
+                                <input type="text" readonly value="${banner.linkUrl}" 
+                                    class="flex-1 bg-white bg-opacity-90 text-gray-800 text-xs px-3 py-2 rounded-lg font-mono truncate"
+                                    onclick="this.select()">
+                                <button onclick="navigator.clipboard.writeText('${banner.linkUrl}').then(() => alert('✅ Link copiado!')).catch(() => alert('❌ Erro ao copiar'))" 
+                                    class="bg-white text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-100 transition flex items-center gap-2 font-semibold text-xs">
+                                    <i class="fas fa-copy"></i>
+                                    Copiar
+                                </button>
+                            </div>
+                        </div>
+                        
                         <!-- Botão -->
                         <div class="mt-4">
                             <div class="bg-white text-gray-800 text-lg font-bold py-3 px-8 rounded-full inline-block shadow-lg">
