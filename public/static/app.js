@@ -6226,47 +6226,6 @@ function viewBannerDetails(accountId, bannerId) {
                     </div>
                 </div>
                 
-                <!-- Seção: Compartilhar -->
-                <div class="mb-4">
-                    <h3 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                        <i class="fas fa-share-alt text-green-600"></i>
-                        Compartilhar Link de Pagamento
-                    </h3>
-                    <div class="bg-green-50 border border-green-200 rounded-lg p-3 mb-3">
-                        <p class="text-xs text-green-800 mb-2">
-                            <i class="fas fa-mobile-alt mr-1"></i>
-                            <strong>Para WhatsApp, Telegram, Direct:</strong>
-                        </p>
-                        <p class="text-xs text-green-700">
-                            Envie o link direto - cliente clica e abre na hora! ✨
-                        </p>
-                    </div>
-                    <div class="grid grid-cols-2 gap-2 mb-3">
-                        <button onclick="shareToWhatsApp('${banner.linkUrl}', '${banner.title}', ${banner.value})" 
-                            class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition text-sm font-semibold">
-                            <i class="fab fa-whatsapp mr-2"></i>WhatsApp
-                        </button>
-                        <button onclick="copyBannerLink('${banner.linkUrl}')" 
-                            class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm font-semibold">
-                            <i class="fas fa-copy mr-2"></i>Copiar Link
-                        </button>
-                    </div>
-                    
-                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
-                        <p class="text-xs text-blue-800 mb-2">
-                            <i class="fas fa-camera mr-1"></i>
-                            <strong>Para Instagram, Facebook, Stories:</strong>
-                        </p>
-                        <p class="text-xs text-blue-700">
-                            Baixe a imagem com QR Code - outros escaneiam para pagar! 📸
-                        </p>
-                    </div>
-                    <button onclick="redownloadBanner('${accountId}', '${banner.id}')" 
-                        class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-semibold">
-                        <i class="fas fa-download mr-2"></i>Baixar Banner (PNG)
-                    </button>
-                </div>
-                
                 <!-- Seção: Gerenciar -->
                 <div class="pt-4 border-t border-gray-200">
                     <h3 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
