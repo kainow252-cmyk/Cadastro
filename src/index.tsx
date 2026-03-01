@@ -10525,6 +10525,149 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?sta
             </div>
         </div>
 
+        <!-- Modal Editor de Banner de Propaganda -->
+        <div id="promo-banner-editor-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto">
+                <div class="bg-gradient-to-r from-orange-600 to-red-600 text-white px-6 py-5 rounded-t-2xl">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-2xl font-bold flex items-center gap-2">
+                                <i class="fas fa-edit"></i>
+                                Personalizar Banner de Propaganda
+                            </h2>
+                            <p class="text-orange-100 mt-1 text-sm">Edite o conteúdo antes de gerar</p>
+                        </div>
+                        <button onclick="closePromoBannerEditor()" 
+                            class="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2 transition">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="p-6">
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <!-- Coluna Esquerda: Formulário de Edição -->
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    <i class="fas fa-heading mr-1 text-orange-600"></i>Título Principal
+                                </label>
+                                <input type="text" id="promo-banner-title" 
+                                    placeholder="Ex: ASSINE AGORA"
+                                    value="ASSINE AGORA"
+                                    class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                    oninput="updatePromoBannerPreview()">
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    <i class="fas fa-file-alt mr-1 text-orange-600"></i>Descrição / Detalhes
+                                </label>
+                                <textarea id="promo-banner-description" rows="3"
+                                    placeholder="Ex: Plano Premium com benefícios exclusivos"
+                                    class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                    oninput="updatePromoBannerPreview()">Plano Premium com benefícios exclusivos</textarea>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                        <i class="fas fa-dollar-sign mr-1 text-orange-600"></i>Valor (R$)
+                                    </label>
+                                    <input type="number" id="promo-banner-value" 
+                                        placeholder="Ex: 10.00"
+                                        value="10.00"
+                                        step="0.01"
+                                        class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                        oninput="updatePromoBannerPreview()">
+                                </div>
+
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                        <i class="fas fa-palette mr-1 text-orange-600"></i>Cor do Banner
+                                    </label>
+                                    <select id="promo-banner-color" 
+                                        class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                        onchange="updatePromoBannerPreview()">
+                                        <option value="orange">Laranja/Vermelho</option>
+                                        <option value="purple">Roxo/Rosa</option>
+                                        <option value="blue">Azul/Ciano</option>
+                                        <option value="green">Verde/Esmeralda</option>
+                                        <option value="red">Vermelho/Rosa</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    <i class="fas fa-tag mr-1 text-orange-600"></i>Promoção / Destaque (opcional)
+                                </label>
+                                <input type="text" id="promo-banner-promo" 
+                                    placeholder="Ex: PROMOÇÃO LIMITADA! ou 50% OFF"
+                                    class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                    oninput="updatePromoBannerPreview()">
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    <i class="fas fa-text-height mr-1 text-orange-600"></i>Texto do Botão
+                                </label>
+                                <input type="text" id="promo-banner-button-text" 
+                                    placeholder="Ex: PAGAR AGORA"
+                                    value="PAGAR AGORA"
+                                    class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                    oninput="updatePromoBannerPreview()">
+                            </div>
+
+                            <input type="hidden" id="promo-banner-link" value="">
+                            <input type="hidden" id="promo-banner-qrcode" value="">
+                        </div>
+
+                        <!-- Coluna Direita: Preview do Banner -->
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                <i class="fas fa-eye mr-1 text-orange-600"></i>Preview do Banner
+                            </label>
+                            <div id="promo-banner-preview" class="w-full aspect-square bg-gradient-to-br from-orange-600 to-red-600 rounded-lg shadow-xl flex items-center justify-center text-white text-center p-6">
+                                <p class="text-sm">Preencha os campos para ver o preview</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Botões de Ação -->
+                    <div class="mt-6 flex flex-wrap gap-3 justify-center">
+                        <button onclick="downloadPromoBanner()" 
+                            class="px-6 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-lg hover:from-blue-700 hover:to-cyan-700 font-semibold shadow-lg transition">
+                            <i class="fas fa-download mr-2"></i>Baixar Banner (PNG)
+                        </button>
+                        <button onclick="copyPromoBannerLink()" 
+                            class="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-700 hover:to-pink-700 font-semibold shadow-lg transition">
+                            <i class="fas fa-link mr-2"></i>Copiar Link da Propaganda
+                        </button>
+                        <button onclick="closePromoBannerEditor()"
+                            class="px-6 py-3 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-semibold">
+                            <i class="fas fa-times mr-2"></i>Fechar
+                        </button>
+                    </div>
+
+                    <!-- Instruções -->
+                    <div class="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <p class="text-sm text-blue-800">
+                            <i class="fas fa-info-circle mr-2"></i>
+                            <strong>Como usar:</strong>
+                        </p>
+                        <ul class="text-sm text-blue-800 mt-2 space-y-1 ml-4">
+                            <li>📝 Edite título, descrição, valor e detalhes da oferta</li>
+                            <li>🎨 Escolha a cor do banner que combina com sua marca</li>
+                            <li>📥 Baixe o banner PNG para postar nas redes sociais</li>
+                            <li>🔗 Ou copie o link para compartilhar diretamente</li>
+                            <li>📱 QR Code no banner leva direto para pagamento</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>

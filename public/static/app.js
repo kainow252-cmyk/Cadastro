@@ -3635,7 +3635,7 @@ async function generateSignupLink(accountId, walletId) {
                                 class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition">
                                 <i class="fas fa-code mr-2"></i>Gerar HTML
                             </button>
-                            <button onclick="generatePromoBanner('${link.linkUrl}', '${qrCodeBase64}', ${value}, '${description}')" 
+                            <button onclick="openBannerEditor('${link.linkUrl}', '${qrCodeBase64}', ${value}, '${description}')" 
                                 class="px-4 py-2 bg-gradient-to-r from-orange-600 to-red-600 text-white rounded hover:from-orange-700 hover:to-red-700 transition">
                                 <i class="fas fa-image mr-2"></i>Gerar Banner
                             </button>
@@ -5214,8 +5214,122 @@ function clearApiFilters() {
     }, 1500);
 }
 
-// Gerar Banner de Propaganda para redes sociais
-async function generatePromoBanner(linkUrl, qrCodeBase64, value, description) {
+// Abrir modal de edição de banner
+function openBannerEditor(linkUrl, qrCodeBase64, value, description) {
+    // Armazenar dados
+    document.getElementById('promo-banner-link').value = linkUrl;
+    document.getElementById('promo-banner-qrcode').value = qrCodeBase64;
+    
+    // Preencher campos com valores padrão
+    document.getElementById('promo-banner-value').value = value;
+    document.getElementById('promo-banner-description').value = description || 'Plano Premium com benefícios exclusivos';
+    
+    // Mostrar modal
+    document.getElementById('promo-banner-editor-modal').classList.remove('hidden');
+    
+    // Atualizar preview
+    updatePromoBannerPreview();
+}
+
+// Fechar modal de edição
+function closePromoBannerEditor() {
+    document.getElementById('promo-banner-editor-modal').classList.add('hidden');
+}
+
+// Atualizar preview do banner em tempo real
+function updatePromoBannerPreview() {
+    const title = document.getElementById('promo-banner-title').value || 'ASSINE AGORA';
+    const description = document.getElementById('promo-banner-description').value || 'Plano Premium';
+    const value = parseFloat(document.getElementById('promo-banner-value').value) || 10.00;
+    const promo = document.getElementById('promo-banner-promo').value;
+    const buttonText = document.getElementById('promo-banner-button-text').value || 'PAGAR AGORA';
+    const color = document.getElementById('promo-banner-color').value;
+    const qrCodeBase64 = document.getElementById('promo-banner-qrcode').value;
+    
+    // Cores do gradiente
+    const gradients = {
+        orange: 'from-orange-600 to-red-600',
+        purple: 'from-purple-600 to-pink-600',
+        blue: 'from-blue-600 to-cyan-600',
+        green: 'from-green-600 to-emerald-600',
+        red: 'from-red-600 to-rose-600'
+    };
+    
+    const gradient = gradients[color] || gradients.orange;
+    
+    // Preview HTML (simplificado)
+    const previewHTML = `
+        <div class="w-full h-full bg-gradient-to-br ${gradient} p-8 flex flex-col justify-between text-white relative overflow-hidden">
+            <!-- Decoração de fundo -->
+            <div class="absolute top-0 right-0 w-48 h-48 bg-white opacity-10 rounded-full -mr-24 -mt-24"></div>
+            <div class="absolute bottom-0 left-0 w-36 h-36 bg-white opacity-10 rounded-full -ml-18 -mb-18"></div>
+            
+            <!-- Conteúdo -->
+            <div class="relative z-10 text-center">
+                ${promo ? `<div class="bg-yellow-400 text-gray-900 px-4 py-2 rounded-full inline-block mb-4 font-bold text-sm">${promo}</div>` : ''}
+                <h1 class="text-4xl font-bold mb-4">${title}</h1>
+                <p class="text-lg opacity-90 mb-6">${description}</p>
+                <div class="text-6xl font-bold mb-2">R$ ${value.toFixed(2).replace('.', ',')}</div>
+                <div class="text-2xl">/mês</div>
+            </div>
+            
+            <!-- QR Code e Botão -->
+            <div class="relative z-10 flex flex-col items-center gap-4">
+                ${qrCodeBase64 ? `
+                    <div class="bg-white p-4 rounded-xl shadow-lg">
+                        <img src="${qrCodeBase64}" alt="QR Code" class="w-32 h-32">
+                        <p class="text-black text-xs mt-2 text-center font-semibold">Escaneie para assinar</p>
+                    </div>
+                ` : ''}
+                <div class="bg-white text-gray-900 px-8 py-4 rounded-full font-bold text-lg shadow-lg">
+                    ${buttonText} →
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('promo-banner-preview').innerHTML = previewHTML;
+}
+
+// Baixar banner como PNG
+async function downloadPromoBanner() {
+    const title = document.getElementById('promo-banner-title').value || 'ASSINE AGORA';
+    const description = document.getElementById('promo-banner-description').value || 'Plano Premium';
+    const value = parseFloat(document.getElementById('promo-banner-value').value) || 10.00;
+    const promo = document.getElementById('promo-banner-promo').value;
+    const buttonText = document.getElementById('promo-banner-button-text').value || 'PAGAR AGORA';
+    const color = document.getElementById('promo-banner-color').value;
+    const linkUrl = document.getElementById('promo-banner-link').value;
+    const qrCodeBase64 = document.getElementById('promo-banner-qrcode').value;
+    
+    await generatePromoBannerPNG(linkUrl, qrCodeBase64, value, description, title, promo, buttonText, color);
+}
+
+// Copiar link da propaganda
+function copyPromoBannerLink() {
+    const linkUrl = document.getElementById('promo-banner-link').value;
+    
+    if (!linkUrl) {
+        alert('❌ Erro: Link não encontrado');
+        return;
+    }
+    
+    navigator.clipboard.writeText(linkUrl).then(() => {
+        alert('✅ Link da Propaganda copiado!\n\n' + linkUrl + '\n\n📱 Compartilhe este link:\n• Cole nas redes sociais\n• Envie por WhatsApp\n• Compartilhe por email\n\n💡 Cliente acessa o link e paga via PIX');
+    }).catch(() => {
+        // Fallback
+        const input = document.createElement('input');
+        input.value = linkUrl;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        document.body.removeChild(input);
+        alert('✅ Link copiado!\n\n' + linkUrl);
+    });
+}
+
+// Gerar Banner de Propaganda para redes sociais (PNG)
+async function generatePromoBannerPNG(linkUrl, qrCodeBase64, value, description, title, promo, buttonText, color) {
     try {
         // Criar canvas
         const canvas = document.createElement('canvas');
@@ -5223,10 +5337,21 @@ async function generatePromoBanner(linkUrl, qrCodeBase64, value, description) {
         canvas.height = 1080;
         const ctx = canvas.getContext('2d');
         
-        // Gradiente de fundo (Laranja para Vermelho)
+        // Cores do gradiente baseado na seleção
+        const colorGradients = {
+            orange: { start: '#ea580c', end: '#dc2626' },
+            purple: { start: '#9333ea', end: '#ec4899' },
+            blue: { start: '#2563eb', end: '#06b6d4' },
+            green: { start: '#16a34a', end: '#10b981' },
+            red: { start: '#dc2626', end: '#f43f5e' }
+        };
+        
+        const selectedGradient = colorGradients[color] || colorGradients.orange;
+        
+        // Gradiente de fundo
         const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-        gradient.addColorStop(0, '#ea580c'); // Laranja
-        gradient.addColorStop(1, '#dc2626'); // Vermelho
+        gradient.addColorStop(0, selectedGradient.start);
+        gradient.addColorStop(1, selectedGradient.end);
         ctx.fillStyle = gradient;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         
@@ -5239,11 +5364,23 @@ async function generatePromoBanner(linkUrl, qrCodeBase64, value, description) {
         ctx.arc(150, 900, 250, 0, Math.PI * 2);
         ctx.fill();
         
+        let currentY = 100;
+        
+        // Texto de promoção (se houver)
+        if (promo) {
+            ctx.fillStyle = '#ffdd00';
+            ctx.font = 'bold 36px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(promo, canvas.width / 2, currentY);
+            currentY += 80;
+        }
+        
         // Título principal
         ctx.fillStyle = '#ffffff';
         ctx.font = 'bold 80px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('ASSINE AGORA', canvas.width / 2, 150);
+        ctx.fillText(title || 'ASSINE AGORA', canvas.width / 2, currentY);
+        currentY += 100;
         
         // Descrição
         ctx.font = 'bold 48px Arial';
@@ -5254,30 +5391,31 @@ async function generatePromoBanner(linkUrl, qrCodeBase64, value, description) {
         const maxWidth = 900;
         const words = descText.split(' ');
         let line = '';
-        let y = 250;
         
         for (let i = 0; i < words.length; i++) {
             const testLine = line + words[i] + ' ';
             const metrics = ctx.measureText(testLine);
             
             if (metrics.width > maxWidth && i > 0) {
-                ctx.fillText(line, canvas.width / 2, y);
+                ctx.fillText(line, canvas.width / 2, currentY);
                 line = words[i] + ' ';
-                y += 60;
+                currentY += 60;
             } else {
                 line = testLine;
             }
         }
-        ctx.fillText(line, canvas.width / 2, y);
+        ctx.fillText(line, canvas.width / 2, currentY);
+        currentY += 120;
         
         // Valor
         ctx.font = 'bold 120px Arial';
         ctx.fillStyle = '#ffffff';
         const valueText = `R$ ${parseFloat(value).toFixed(2).replace('.', ',')}`;
-        ctx.fillText(valueText, canvas.width / 2, y + 150);
+        ctx.fillText(valueText, canvas.width / 2, currentY);
         
         ctx.font = 'bold 60px Arial';
-        ctx.fillText('/mês', canvas.width / 2, y + 220);
+        ctx.fillText('/mês', canvas.width / 2, currentY + 70);
+        currentY += 150;
         
         // QR Code
         if (qrCodeBase64) {
@@ -5290,7 +5428,7 @@ async function generatePromoBanner(linkUrl, qrCodeBase64, value, description) {
             
             const qrSize = 280;
             const qrX = (canvas.width - qrSize) / 2 - 30;
-            const qrY = y + 280;
+            const qrY = currentY;
             const padding = 30;
             
             // Fundo arredondado
@@ -5345,10 +5483,10 @@ async function generatePromoBanner(linkUrl, qrCodeBase64, value, description) {
         ctx.fill();
         ctx.shadowBlur = 0;
         
-        ctx.fillStyle = '#ea580c';
+        ctx.fillStyle = selectedGradient.start;
         ctx.font = 'bold 48px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText('PAGAR AGORA →', canvas.width / 2, btnY + 65);
+        ctx.fillText((buttonText || 'PAGAR AGORA') + ' →', canvas.width / 2, btnY + 65);
         
         // Download do banner
         const dataUrl = canvas.toDataURL('image/png');
