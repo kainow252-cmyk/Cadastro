@@ -8409,7 +8409,7 @@ app.get('/', (c) => {
         
         <!-- Load scripts early with defer to ensure functions are available -->
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js" defer></script>
-        <script src="/static/app.js?v=5.5" defer></script>
+        <script src="/static/app.js?v=5.6" defer></script>
         
         <!-- Tipografia e Layout Profissional -->
         <style>

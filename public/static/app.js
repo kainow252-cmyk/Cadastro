@@ -5261,7 +5261,7 @@ async function openQuickBannerEditor(accountId, walletId, accountName) {
 }
 
 // Abrir modal de edição de banner
-function openBannerEditor(linkUrl, qrCodeBase64, value, description, chargeType, accountId = null, walletId = null) {
+function openBannerEditor(linkUrl, qrCodeBase64, value, description, chargeType, accountId = null, walletId = null, retryCount = 0) {
     console.log('🎨 openBannerEditor chamado com:');
     console.log('  linkUrl:', linkUrl);
     console.log('  value:', value);
@@ -5269,12 +5269,13 @@ function openBannerEditor(linkUrl, qrCodeBase64, value, description, chargeType,
     console.log('  chargeType:', chargeType, '← IMPORTANTE!');
     console.log('  accountId:', accountId);
     console.log('  walletId:', walletId);
+    console.log('  retryCount:', retryCount);
     
     // Aguardar DOM estar pronto se necessário
     if (!isDOMReady) {
         console.log('⏳ Aguardando DOM estar pronto...');
         document.addEventListener('DOMContentLoaded', () => {
-            openBannerEditor(linkUrl, qrCodeBase64, value, description, chargeType, accountId, walletId);
+            openBannerEditor(linkUrl, qrCodeBase64, value, description, chargeType, accountId, walletId, retryCount);
         });
         return;
     }
@@ -5295,22 +5296,31 @@ function openBannerEditor(linkUrl, qrCodeBase64, value, description, chargeType,
     
     if (!linkElement || !qrElement || !modalElement) {
         // Tentar aguardar mais um pouco
-        if (document.readyState !== 'complete') {
-            console.log('⏳ Documento ainda carregando, aguardando evento load...');
+        if (document.readyState !== 'complete' && retryCount < 3) {
+            console.log('⏳ Documento ainda carregando, aguardando evento load... (tentativa ' + (retryCount + 1) + ')');
             window.addEventListener('load', () => {
-                openBannerEditor(linkUrl, qrCodeBase64, value, description, chargeType, accountId, walletId);
+                openBannerEditor(linkUrl, qrCodeBase64, value, description, chargeType, accountId, walletId, retryCount + 1);
             }, { once: true });
             return;
         }
         
-        console.error('❌ Elementos do modal de banner não encontrados mesmo após load:', {
+        // Retry com setTimeout se ainda não funcionou
+        if (retryCount < 5) {
+            console.log('🔄 Elementos não encontrados, tentando novamente em 100ms... (tentativa ' + (retryCount + 1) + ')');
+            setTimeout(() => {
+                openBannerEditor(linkUrl, qrCodeBase64, value, description, chargeType, accountId, walletId, retryCount + 1);
+            }, 100);
+            return;
+        }
+        
+        console.error('❌ Elementos do modal de banner não encontrados após ' + retryCount + ' tentativas:', {
             linkElement: !!linkElement,
             qrElement: !!qrElement,
             modalElement: !!modalElement,
             DOMReady: isDOMReady,
             readyState: document.readyState
         });
-        alert('Erro: Modal de banner não foi carregado. Por favor, recarregue a página (Ctrl+F5).');
+        alert('Erro: Modal de banner não foi carregado após várias tentativas. Por favor, recarregue a página (Ctrl+F5).');
         return;
     }
     
@@ -6140,16 +6150,17 @@ function deleteBanner(accountId, bannerId) {
 }
 
 // Mostrar modal de banners salvos
-function showSavedBanners(accountId, accountName) {
+function showSavedBanners(accountId, accountName, retryCount = 0) {
     console.log('🔍 Abrindo galeria de banners');
     console.log('📁 Account ID solicitado:', accountId);
     console.log('👤 Nome da conta:', accountName);
+    console.log('  retryCount:', retryCount);
     
     // Aguardar DOM estar pronto se necessário
     if (!isDOMReady) {
         console.log('⏳ Aguardando DOM estar pronto...');
         document.addEventListener('DOMContentLoaded', () => {
-            showSavedBanners(accountId, accountName);
+            showSavedBanners(accountId, accountName, retryCount);
         });
         return;
     }
@@ -6210,16 +6221,25 @@ function showSavedBanners(accountId, accountName) {
     
     if (!listContainer || !emptyState || !modalElement) {
         // Tentar aguardar mais um pouco
-        if (document.readyState !== 'complete') {
-            console.log('⏳ Documento ainda carregando, aguardando evento load...');
+        if (document.readyState !== 'complete' && retryCount < 3) {
+            console.log('⏳ Documento ainda carregando, aguardando evento load... (tentativa ' + (retryCount + 1) + ')');
             window.addEventListener('load', () => {
-                showSavedBanners(accountId, accountName);
+                showSavedBanners(accountId, accountName, retryCount + 1);
             }, { once: true });
             return;
         }
         
-        console.error('❌ Elementos do modal de banners não encontrados mesmo após load');
-        alert('Erro: Modal de banners salvos não foi carregado. Por favor, recarregue a página (Ctrl+F5).');
+        // Retry com setTimeout se ainda não funcionou
+        if (retryCount < 5) {
+            console.log('🔄 Elementos não encontrados, tentando novamente em 100ms... (tentativa ' + (retryCount + 1) + ')');
+            setTimeout(() => {
+                showSavedBanners(accountId, accountName, retryCount + 1);
+            }, 100);
+            return;
+        }
+        
+        console.error('❌ Elementos do modal de banners não encontrados após ' + retryCount + ' tentativas');
+        alert('Erro: Modal de banners salvos não foi carregado após várias tentativas. Por favor, recarregue a página (Ctrl+F5).');
         return;
     }
     
