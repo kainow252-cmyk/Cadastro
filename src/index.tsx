@@ -7525,7 +7525,7 @@ app.get('/subscription-signup/:linkId', async (c) => {
                     <p class="text-xs text-gray-600 mb-2">Pix Copia e Cola:</p>
                     <div class="flex gap-2">
                         <input type="text" id="pix-payload" readonly class="flex-1 text-xs bg-white border border-gray-300 rounded px-3 py-2 font-mono">
-                        <button onclick="copyPixPayload()" class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700">
+                        <button onclick="copyGeneralPixPayload()" class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700">
                             <i class="fas fa-copy"></i>
                         </button>
                     </div>
@@ -7669,7 +7669,7 @@ app.get('/subscription-signup/:linkId', async (c) => {
             }
         });
         
-        function copyPixPayload() {
+        function copyGeneralPixPayload() {
             const payload = document.getElementById('pix-payload');
             payload.select();
             document.execCommand('copy');
@@ -7935,7 +7935,7 @@ app.get('/pix-automatic-signup/:linkId', async (c) => {
                     <p class="text-xs text-gray-600 mb-2">Pix Copia e Cola:</p>
                     <div class="flex gap-2">
                         <input type="text" id="pix-payload" readonly class="flex-1 text-xs bg-white border border-gray-300 rounded px-3 py-2 font-mono">
-                        <button onclick="copyPixPayload()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                        <button onclick="copyGeneralPixPayload()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
                             <i class="fas fa-copy"></i>
                         </button>
                     </div>
@@ -8084,7 +8084,7 @@ app.get('/pix-automatic-signup/:linkId', async (c) => {
             }
         });
         
-        function copyPixPayload() {
+        function copyGeneralPixPayload() {
             const payload = document.getElementById('pix-payload');
             payload.select();
             document.execCommand('copy');
@@ -9210,7 +9210,7 @@ app.get('/', (c) => {
                                 <div class="flex gap-2">
                                     <input type="text" id="pix-payload" readonly
                                         class="flex-1 px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm">
-                                    <button onclick="copyPixPayload()"
+                                    <button onclick="copyGeneralPixPayload()"
                                         class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
                                         <i class="fas fa-copy"></i>
                                     </button>
@@ -9484,7 +9484,7 @@ app.get('/', (c) => {
                                 <input type="text" readonly value="https://corretoracorporate.pages.dev/api/reports/all-accounts/received?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly"
                                     class="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded text-sm font-mono"
                                     id="link-received">
-                                <button onclick="copyToClipboard('link-received')"
+                                <button onclick="copyElementToClipboard('link-received')"
                                     class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition">
                                     <i class="fas fa-copy"></i>
                                 </button>
@@ -9519,7 +9519,7 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/received?sta
                                 <input type="text" readonly value="https://corretoracorporate.pages.dev/api/reports/all-accounts/pending?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly"
                                     class="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded text-sm font-mono"
                                     id="link-pending">
-                                <button onclick="copyToClipboard('link-pending')"
+                                <button onclick="copyElementToClipboard('link-pending')"
                                     class="px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700 transition">
                                     <i class="fas fa-copy"></i>
                                 </button>
@@ -9554,7 +9554,7 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/pending?star
                                 <input type="text" readonly value="https://corretoracorporate.pages.dev/api/reports/all-accounts/overdue?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly"
                                     class="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded text-sm font-mono"
                                     id="link-overdue">
-                                <button onclick="copyToClipboard('link-overdue')"
+                                <button onclick="copyElementToClipboard('link-overdue')"
                                     class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition">
                                     <i class="fas fa-copy"></i>
                                 </button>
@@ -9589,7 +9589,7 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/overdue?star
                                 <input type="text" readonly value="https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly"
                                     class="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded text-sm font-mono"
                                     id="link-refunded">
-                                <button onclick="copyToClipboard('link-refunded')"
+                                <button onclick="copyElementToClipboard('link-refunded')"
                                     class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition">
                                     <i class="fas fa-copy"></i>
                                 </button>
@@ -10155,7 +10155,7 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?sta
                                     id="generated-link" 
                                     readonly
                                     class="flex-1 px-4 py-3 bg-white border border-gray-300 rounded-lg text-sm font-mono">
-                                <button onclick="copyLink()" 
+                                <button onclick="copyGeneratedLink()" 
                                     id="copy-link-btn"
                                     class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold">
                                     <i class="fas fa-copy"></i>

@@ -54,7 +54,7 @@ function showSection(section) {
             loadDeltapagSubscriptions();
         }
     } else if (section === 'banners' || section === 'banners-section') {
-        loadSavedBanners();
+        loadAllBannersFromLocalStorage();
     } else if (section === 'pix') {
         loadSubaccountsForPix();
         loadRecentPayments();
@@ -580,7 +580,7 @@ async function loadPixQrCode(paymentId) {
 }
 
 // Copiar payload PIX
-function copyPixPayload() {
+function copyGeneralPixPayload() {
     const payload = document.getElementById('pix-payload').value;
     navigator.clipboard.writeText(payload).then(() => {
         alert('Código PIX copiado para a área de transferência!');
@@ -2576,7 +2576,7 @@ function closeLinkModal() {
 }
 
 // Copiar link
-function copyLink() {
+function copyGeneratedLink() {
     const input = document.getElementById('generated-link');
     const btn = document.getElementById('copy-link-btn');
     
@@ -2628,7 +2628,7 @@ function shareTelegram() {
 }
 
 // Baixar QR Code
-function downloadQRCode() {
+function downloadQRCodeFromContainer() {
     const qrContainer = document.getElementById('qr-code-container');
     const img = qrContainer.querySelector('img');
     
@@ -3437,7 +3437,7 @@ async function loadPaymentLinks() {
                 </div>
                 
                 <div class="flex gap-2">
-                    <button onclick="copyToClipboard('${link.url}')" 
+                    <button onclick="copyLinkToClipboard('${link.url}')" 
                         class="flex-1 bg-cyan-500 text-white px-4 py-2 rounded-lg hover:bg-cyan-600 font-semibold text-sm">
                         <i class="fas fa-copy mr-2"></i>Copiar Link
                     </button>
@@ -3474,7 +3474,7 @@ async function deletePaymentLink(linkId) {
 }
 
 // Copiar para clipboard
-function copyToClipboard(text) {
+function copyTextToClipboard(text) {
     navigator.clipboard.writeText(text).then(() => {
         alert('Link copiado para a área de transferência!');
     }).catch(err => {
@@ -3669,7 +3669,7 @@ async function generateSignupLink(accountId, walletId) {
                         <div class="flex gap-2">
                             <input type="text" value="${link.linkUrl}" readonly 
                                 class="flex-1 text-xs bg-white border border-gray-300 rounded px-3 py-2 font-mono">
-                            <button onclick="copyToClipboard('${link.linkUrl}')" 
+                            <button onclick="copyLinkToClipboard('${link.linkUrl}')" 
                                 class="px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700 transition">
                                 <i class="fas fa-copy"></i>
                             </button>
@@ -3721,14 +3721,14 @@ async function generateQRCodeFromText(text) {
     }
 }
 
-function downloadQRCode(base64Data, filename) {
+function downloadQRCodeGeneric(base64Data, filename) {
     const link = document.createElement('a');
     link.href = base64Data;
     link.download = filename;
     link.click();
 }
 
-function copyToClipboard(text) {
+function copyLinkToClipboard(text) {
     navigator.clipboard.writeText(text).then(() => {
         alert('✅ Link copiado para a área de transferência!');
     }).catch(() => {
@@ -4071,7 +4071,7 @@ function showHTMLPreview(html) {
 // Copiar código HTML
 function copyHTMLCode() {
     if (window.generatedHTML) {
-        copyToClipboard(window.generatedHTML);
+        copyLinkToClipboard(window.generatedHTML);
     }
 }
 
@@ -4941,40 +4941,13 @@ async function createEvidenceTransactions() {
 
 // =====================================
 // DELTAPAG - CRIAR EVIDÊNCIAS
-// =====================================
-async function createEvidenceTransactions() {
-    if (!confirm('🧪 Criar 5 clientes de EVIDÊNCIA no DeltaPag Sandbox?\n\nIsto irá:\n• Criar 5 clientes com CPF válidos\n• Tentar criar assinaturas recorrentes\n• Salvar no banco de dados D1\n\nDeseja continuar?')) {
-        return;
-    }
-    
-    try {
-        console.log('🔄 Criando evidências DeltaPag...');
-        
-        const response = await axios.post('/api/admin/create-evidence-customers');
-        
-        if (response.data.ok) {
-            const count = response.data.count || response.data.customers?.length || 0;
-            
-            console.log('✅ SUCESSO! Total de evidências criadas:', count);
-            console.log('📋 Detalhes:', response.data);
-            
-            alert(`✅ ${count} evidências criadas com sucesso!\n\nVerificar no painel DeltaPag:\nhttps://painel-sandbox.deltapag.io/marketplaces/clients`);
-            
-            await loadDeltapagSubscriptions();
-        } else {
-            console.error('❌ Erro:', response.data);
-            alert('❌ Erro ao criar evidências:\n\n' + (response.data.error || 'Erro desconhecido'));
-        }
-    } catch (error) {
-        console.error('❌ Erro ao criar evidências:', error);
-        alert('❌ Erro ao criar transações de evidência:\n\n' + (error.response?.data?.error || error.message));
-    }
-}
+// ===================================== 
+// Função já definida anteriormente (linha 4878)
 
 // ===== FUNÇÕES PARA APIS EXTERNAS =====
 
 // Copiar link para área de transferência
-function copyToClipboard(elementId) {
+function copyElementToClipboard(elementId) {
     const input = document.getElementById(elementId);
     input.select();
     input.setSelectionRange(0, 99999); // Para mobile
@@ -6611,8 +6584,8 @@ function deleteSavedBanner(accountId, bannerId) {
     }
 }
 
-// Carregar TODOS os banners de TODAS as contas
-function loadSavedBanners() {
+// Carregar TODOS os banners de TODAS as contas do localStorage
+function loadAllBannersFromLocalStorage() {
     console.log('🔍 Carregando todos os banners...');
     
     const bannersContainer = document.getElementById('banners-list');
@@ -6729,7 +6702,7 @@ function clearOrphanBanners() {
     
     // Recarregar a página de banners se estiver aberta
     if (document.getElementById('banners-section').classList.contains('active')) {
-        loadSavedBanners();
+        loadAllBannersFromLocalStorage();
     }
 }
 
