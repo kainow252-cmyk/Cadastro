@@ -5794,12 +5794,6 @@ async function addQRCodeToCustomBanner(bannerBase64, qrCodeBase64, linkUrl) {
                 ctx.textAlign = 'center';
                 ctx.fillText('Escaneie para pagar', canvas.width / 2, qrY + qrSize + padding + 30);
                 
-                // Adicionar link copiável abaixo
-                ctx.font = '16px monospace';
-                ctx.fillStyle = '#6b7280';
-                const shortLink = linkUrl.substring(0, 35) + '...';
-                ctx.fillText(shortLink, canvas.width / 2, qrY + qrSize + padding + 55);
-                
                 // Converter para base64
                 const finalBase64 = canvas.toDataURL('image/png');
                 resolve(finalBase64);
