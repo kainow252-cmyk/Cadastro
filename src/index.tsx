@@ -7941,6 +7941,11 @@ app.get('/', (c) => {
                             <i class="fas fa-credit-card text-xl"></i>
                             <span class="text-sm">Cartão</span>
                         </button>
+                        <button onclick="generateAllAutoSignupLinks()" 
+                            class="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-lg hover:from-orange-600 hover:to-red-700 font-semibold shadow-md transition">
+                            <i class="fas fa-link text-xl"></i>
+                            <span class="text-sm">Link de Auto-Cadastro</span>
+                        </button>
                         <button onclick="showSection('banners-section')" 
                             class="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-lg hover:from-pink-600 hover:to-rose-600 font-semibold shadow-md transition">
                             <i class="fas fa-images text-xl"></i>

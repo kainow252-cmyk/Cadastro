@@ -5528,10 +5528,14 @@ async function savePromoBannerOnly() {
     // Salvar no localStorage
     saveBanner(accountId, bannerData);
     
-    // Feedback visual
-    alert('✅ Banner salvo com sucesso!\n\n📁 Acesse "Banners Salvos" para visualizar e gerenciar seus banners.');
-    
+    // Debug: verificar se salvou
+    const savedBanners = getSavedBanners(accountId);
     console.log('✅ Banner salvo:', bannerData);
+    console.log('📦 Total de banners salvos:', savedBanners.length);
+    console.log('🔍 Todos os banners:', savedBanners);
+    
+    // Feedback visual
+    alert('✅ Banner salvo com sucesso!\n\n📁 Acesse "Banners Salvos" para visualizar e gerenciar seus banners.\n\n📊 Total de banners: ' + savedBanners.length);
 }
 
 // Copiar link da propaganda
@@ -5903,6 +5907,12 @@ function deleteBanner(accountId, bannerId) {
 function showSavedBanners(accountId, accountName) {
     const banners = getSavedBanners(accountId);
     
+    // Debug
+    console.log('🔍 Abrindo galeria de banners');
+    console.log('📁 Account ID:', accountId);
+    console.log('📊 Banners encontrados:', banners.length);
+    console.log('📦 Dados dos banners:', banners);
+    
     // Atualizar título
     document.getElementById('saved-banners-account-name').textContent = 
         accountName ? `Banners de ${accountName}` : 'Todos os banners gerados para esta conta';
@@ -6007,6 +6017,125 @@ function deleteSavedBanner(accountId, bannerId) {
     if (confirm('❌ Deseja realmente excluir este banner?')) {
         deleteBanner(accountId, bannerId);
         showSavedBanners(accountId, ''); // Recarregar lista
+    }
+}
+
+// Gerar Links de Auto-Cadastro para TODAS as subcontas
+async function generateAllAutoSignupLinks() {
+    if (!confirm('🔗 Gerar Links de Auto-Cadastro para TODAS as subcontas?\n\n✅ Isso irá:\n• Criar links de assinatura mensal para todas as contas\n• Gerar banners automáticos\n• Salvar tudo em "Banners Salvos"\n\n⏱️ Pode levar alguns minutos...')) {
+        return;
+    }
+    
+    // Obter todas as subcontas
+    const accounts = window.accounts || [];
+    
+    if (accounts.length === 0) {
+        alert('⚠️ Nenhuma subconta encontrada!\n\nCarregue as subcontas primeiro clicando em "Subcontas".');
+        return;
+    }
+    
+    // Filtrar apenas contas aprovadas
+    const approvedAccounts = accounts.filter(acc => acc.status === 'Approved');
+    
+    if (approvedAccounts.length === 0) {
+        alert('⚠️ Nenhuma subconta aprovada encontrada!');
+        return;
+    }
+    
+    // Mostrar loading
+    const loadingMsg = `⏳ Gerando links para ${approvedAccounts.length} subcontas...\n\nIsso pode levar alguns minutos. Por favor, aguarde...`;
+    console.log(loadingMsg);
+    
+    let successCount = 0;
+    let errorCount = 0;
+    const errors = [];
+    
+    // Processar cada conta
+    for (let i = 0; i < approvedAccounts.length; i++) {
+        const account = approvedAccounts[i];
+        console.log(`\n📝 [${i + 1}/${approvedAccounts.length}] Processando: ${account.name || account.email}`);
+        
+        try {
+            // 1. Gerar link de assinatura mensal
+            const linkResponse = await axios.post('/api/pix/subscription-link', {
+                walletId: account.walletId,
+                accountId: account.id,
+                value: 10.00, // Valor padrão: R$ 10,00
+                description: 'Mensalidade',
+                chargeType: 'monthly'
+            });
+            
+            if (!linkResponse.data.success) {
+                throw new Error(linkResponse.data.error || 'Erro ao gerar link');
+            }
+            
+            const linkUrl = linkResponse.data.link;
+            console.log('✅ Link gerado:', linkUrl);
+            
+            // 2. Gerar QR Code
+            const qrCodeBase64 = await QRCode.toDataURL(linkUrl, {
+                width: 300,
+                margin: 2,
+                color: {
+                    dark: '#000000',
+                    light: '#FFFFFF'
+                }
+            });
+            console.log('✅ QR Code gerado');
+            
+            // 3. Criar banner automático
+            const bannerData = {
+                id: Date.now().toString() + '-' + Math.random().toString(36).substr(2, 9),
+                accountId: account.id,
+                title: 'ASSINE AGORA',
+                description: `Mensalidade - ${account.name || account.email}`,
+                value: 10.00,
+                promo: '',
+                buttonText: 'PAGAR AGORA',
+                color: 'orange',
+                linkUrl: linkUrl,
+                qrCodeBase64: qrCodeBase64,
+                chargeType: 'monthly',
+                fontSize: 'medium',
+                createdAt: new Date().toISOString()
+            };
+            
+            // 4. Salvar banner
+            saveBanner(account.id, bannerData);
+            console.log('✅ Banner salvo automaticamente');
+            
+            successCount++;
+            
+            // Delay entre requests para não sobrecarregar
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+        } catch (error) {
+            console.error(`❌ Erro ao processar ${account.name}:`, error);
+            errorCount++;
+            errors.push(`${account.name || account.email}: ${error.message}`);
+        }
+    }
+    
+    // Relatório final
+    const report = `
+✅ Links de Auto-Cadastro Gerados!
+
+📊 Resumo:
+• Total de contas: ${approvedAccounts.length}
+• ✅ Sucesso: ${successCount}
+• ❌ Erros: ${errorCount}
+
+${errorCount > 0 ? '\n⚠️ Erros:\n' + errors.map((e, i) => `${i + 1}. ${e}`).join('\n') : ''}
+
+💡 Acesse "Banners Salvos" para visualizar os banners gerados!
+`;
+    
+    alert(report);
+    console.log(report);
+    
+    // Recarregar subcontas para mostrar os novos links
+    if (typeof loadAccounts === 'function') {
+        loadAccounts();
     }
 }
 
