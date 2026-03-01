@@ -7941,6 +7941,11 @@ app.get('/', (c) => {
                             <i class="fas fa-credit-card text-xl"></i>
                             <span class="text-sm">Cartão</span>
                         </button>
+                        <button onclick="showSection('banners-section')" 
+                            class="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-lg hover:from-pink-600 hover:to-rose-600 font-semibold shadow-md transition">
+                            <i class="fas fa-images text-xl"></i>
+                            <span class="text-sm">Banners Salvos</span>
+                        </button>
                     </div>
                 </div>
 
@@ -10525,6 +10530,24 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?sta
             </div>
         </div>
 
+        <!-- Seção Banners Salvos -->
+        <div id="banners-section" class="section hidden">
+            <div class="bg-white rounded-lg shadow-md p-8">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6 flex items-center">
+                    <i class="fas fa-images mr-3 text-pink-600"></i>
+                    Banners Salvos
+                </h2>
+                
+                <div id="banners-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <!-- Banners serão carregados aqui -->
+                    <div class="text-center py-12 col-span-full">
+                        <i class="fas fa-spinner fa-spin text-4xl text-gray-400 mb-4"></i>
+                        <p class="text-gray-500">Carregando banners...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Modal Editor de Banner de Propaganda -->
         <div id="promo-banner-editor-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto">
@@ -10688,6 +10711,49 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?sta
             </div>
         </div>
 
+        <!-- Modal Banners Salvos -->
+        <div id="saved-banners-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-y-auto">
+                <div class="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-5 rounded-t-2xl">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-2xl font-bold flex items-center gap-2">
+                                <i class="fas fa-images"></i>
+                                Banners Salvos
+                            </h2>
+                            <p class="text-purple-100 mt-1 text-sm" id="saved-banners-account-name">Todos os banners gerados para esta conta</p>
+                        </div>
+                        <button onclick="closeSavedBannersModal()" 
+                            class="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2 transition">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="p-6">
+                    <!-- Lista de Banners -->
+                    <div id="saved-banners-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <!-- Banners serão inseridos aqui via JavaScript -->
+                    </div>
+
+                    <!-- Estado vazio -->
+                    <div id="saved-banners-empty" class="hidden text-center py-12">
+                        <i class="fas fa-images text-gray-300 text-6xl mb-4"></i>
+                        <p class="text-gray-500 text-lg font-semibold mb-2">Nenhum banner salvo ainda</p>
+                        <p class="text-gray-400 text-sm">Gere um banner através de "Link Auto-Cadastro" → "Gerar Banner"</p>
+                    </div>
+
+                    <!-- Botão Fechar -->
+                    <div class="mt-6 text-center">
+                        <button onclick="closeSavedBannersModal()"
+                            class="px-6 py-3 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-semibold">
+                            <i class="fas fa-times mr-2"></i>Fechar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -10703,6 +10769,57 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?sta
     </body>
     </html>
   `)
+})
+
+// ======================
+// BANNERS SALVOS
+// ======================
+
+// Salvar banner
+app.post('/api/banners/save', async (c) => {
+  try {
+    const body = await c.req.json()
+    const { accountId, walletId, title, description, value, promo, buttonText, color, linkUrl, chargeType, fontSize, bannerImage } = body
+    
+    // Criar objeto do banner
+    const banner = {
+      id: `banner-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      accountId,
+      walletId,
+      title,
+      description,
+      value,
+      promo,
+      buttonText,
+      color,
+      linkUrl,
+      chargeType,
+      fontSize,
+      bannerImage,
+      createdAt: new Date().toISOString()
+    }
+    
+    // Salvar em KV (se disponível) ou retornar sucesso
+    // Por enquanto apenas log, depois pode implementar KV storage
+    console.log('Banner salvo:', banner.id)
+    
+    return c.json({ ok: true, banner })
+  } catch (error) {
+    console.error('Erro ao salvar banner:', error)
+    return c.json({ ok: false, error: error.message }, 500)
+  }
+})
+
+// Listar banners
+app.get('/api/banners/list', async (c) => {
+  try {
+    // Por enquanto retornar array vazio
+    // Depois implementar com KV storage
+    return c.json({ ok: true, banners: [] })
+  } catch (error) {
+    console.error('Erro ao listar banners:', error)
+    return c.json({ ok: false, error: error.message }, 500)
+  }
 })
 
 // ======================

@@ -53,6 +53,8 @@ function showSection(section) {
         if (typeof loadDeltapagSubscriptions === 'function') {
             loadDeltapagSubscriptions();
         }
+    } else if (section === 'banners') {
+        loadSavedBanners();
     } else if (section === 'pix') {
         loadSubaccountsForPix();
         loadRecentPayments();
@@ -2216,11 +2218,10 @@ function displayAccounts(accounts) {
                         class="px-4 py-3 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-lg hover:from-orange-600 hover:to-red-600 font-semibold shadow-md transition">
                         <i class="fas fa-link mr-2"></i>Link Auto-Cadastro
                     </button>
-                    <button onclick="openBannerModal('${account.id}', '${account.name || ''}')" 
-                        id="btn-banner-${account.id}"
-                        class="px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-700 hover:to-pink-700 font-semibold shadow-md transition"
-                        style="display: none !important;">
-                        <i class="fas fa-image mr-2"></i>Gerar Banner
+                    <button onclick="showSavedBanners('${account.id}', '${account.name || ''}')" 
+                        id="btn-banners-${account.id}"
+                        class="px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-700 hover:to-pink-700 font-semibold shadow-md transition">
+                        <i class="fas fa-images mr-2"></i>Banners Salvos
                     </button>
                 </div>
                 
@@ -5214,6 +5215,65 @@ function clearApiFilters() {
     }, 1500);
 }
 
+// Abrir editor de banner direto da conta
+async function openQuickBannerEditor(accountId, walletId, accountName) {
+    try {
+        // Gerar link de auto-cadastro automaticamente
+        const response = await fetch('/api/pix/subscription-link', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                walletId,
+                accountId,
+                value: 10.00, // Valor padrão
+                description: 'Mensalidade',
+                chargeType: 'monthly' // Padrão assinatura mensal
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.ok) {
+            const link = data.data;
+            
+            // Gerar QR Code
+            const qrCodeBase64 = await generateQRCodeFromText(link.linkUrl);
+            
+            // Armazenar accountId e walletId para salvar depois
+            if (!document.getElementById('promo-banner-account-id')) {
+                const accountIdInput = document.createElement('input');
+                accountIdInput.type = 'hidden';
+                accountIdInput.id = 'promo-banner-account-id';
+                document.getElementById('promo-banner-link').parentElement.appendChild(accountIdInput);
+            }
+            if (!document.getElementById('promo-banner-wallet-id')) {
+                const walletIdInput = document.createElement('input');
+                walletIdInput.type = 'hidden';
+                walletIdInput.id = 'promo-banner-wallet-id';
+                document.getElementById('promo-banner-link').parentElement.appendChild(walletIdInput);
+            }
+            document.getElementById('promo-banner-account-id').value = accountId;
+            document.getElementById('promo-banner-wallet-id').value = walletId;
+            
+            // Abrir editor
+            openBannerEditor(link.linkUrl, qrCodeBase64, 10.00, 'Mensalidade', 'monthly');
+            
+            // Preencher nome da conta no título
+            if (accountName) {
+                document.getElementById('promo-banner-title').value = `ASSINE ${accountName.toUpperCase()}`;
+                updatePromoBannerPreview();
+            }
+        } else {
+            alert('❌ Erro ao gerar link: ' + data.error);
+        }
+    } catch (error) {
+        console.error('Erro:', error);
+        alert('❌ Erro ao abrir editor de banner');
+    }
+}
+
 // Abrir modal de edição de banner
 function openBannerEditor(linkUrl, qrCodeBase64, value, description, chargeType) {
     // Armazenar dados
@@ -5385,8 +5445,41 @@ async function downloadPromoBanner() {
     const qrCodeBase64 = document.getElementById('promo-banner-qrcode').value;
     const chargeType = document.getElementById('promo-banner-charge-type')?.value || 'monthly';
     const fontSize = document.getElementById('promo-banner-font-size')?.value || 'medium';
+    const accountId = document.getElementById('promo-banner-account-id')?.value;
+    const walletId = document.getElementById('promo-banner-wallet-id')?.value;
     
-    await generatePromoBannerPNG(linkUrl, qrCodeBase64, value, description, title, promo, buttonText, color, chargeType, fontSize);
+    // Gerar PNG
+    const bannerDataUrl = await generatePromoBannerPNG(linkUrl, qrCodeBase64, value, description, title, promo, buttonText, color, chargeType, fontSize);
+    
+    // Salvar banner no sistema se tiver accountId
+    if (accountId && walletId && bannerDataUrl) {
+        try {
+            await fetch('/api/banners/save', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    accountId,
+                    walletId,
+                    title,
+                    description,
+                    value,
+                    promo,
+                    buttonText,
+                    color,
+                    linkUrl,
+                    chargeType,
+                    fontSize,
+                    bannerImage: bannerDataUrl
+                })
+            });
+            
+            console.log('✅ Banner salvo com sucesso!');
+        } catch (error) {
+            console.error('❌ Erro ao salvar banner:', error);
+        }
+    }
 }
 
 // Copiar link da propaganda
@@ -5630,11 +5723,238 @@ async function generatePromoBannerPNG(linkUrl, qrCodeBase64, value, description,
         link.href = dataUrl;
         link.click();
         
-        alert('✅ Banner gerado com sucesso!\n\n📱 Use este banner para:\n• Posts em redes sociais\n• Stories do Instagram\n• WhatsApp Status\n• Facebook/Twitter\n• Material impresso\n\n💡 O QR Code leva direto para a página de pagamento!');
+        alert('✅ Banner gerado e salvo com sucesso!\n\n📱 Use este banner para:\n• Posts em redes sociais\n• Stories do Instagram\n• WhatsApp Status\n• Facebook/Twitter\n• Material impresso\n\n💡 O QR Code leva direto para a página de pagamento!');
+        
+        // Retornar dataUrl para salvar no banco
+        return dataUrl;
         
     } catch (error) {
         console.error('Erro ao gerar banner:', error);
         alert('❌ Erro ao gerar banner. Tente novamente.');
+        return null;
+    }
+}
+
+// Carregar banners salvos
+async function loadSavedBanners() {
+    try {
+        const response = await axios.get('/api/banners/list');
+        
+        if (response.data.ok) {
+            const banners = response.data.banners;
+            const container = document.getElementById('banners-list');
+            
+            if (banners.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12 col-span-full">
+                        <i class="fas fa-images text-6xl text-gray-300 mb-4"></i>
+                        <h3 class="text-xl font-semibold text-gray-600 mb-2">Nenhum banner salvo</h3>
+                        <p class="text-gray-500 mb-4">Crie seu primeiro banner usando o botão "Gerar Banner" nas subcontas!</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = banners.map(banner => `
+                <div class="bg-white border-2 border-gray-200 rounded-lg overflow-hidden hover:shadow-lg transition">
+                    <!-- Imagem do Banner -->
+                    <div class="aspect-square bg-gray-100">
+                        <img src="${banner.bannerImage}" alt="${banner.title}" class="w-full h-full object-cover">
+                    </div>
+                    
+                    <!-- Informações -->
+                    <div class="p-4">
+                        <h3 class="font-bold text-gray-800 mb-2 truncate">${banner.title}</h3>
+                        <p class="text-sm text-gray-600 mb-2 line-clamp-2">${banner.description}</p>
+                        <div class="flex items-center justify-between mb-3">
+                            <span class="text-lg font-bold text-green-600">R$ ${parseFloat(banner.value).toFixed(2)}</span>
+                            <span class="text-xs px-2 py-1 rounded-full ${banner.chargeType === 'monthly' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}">
+                                ${banner.chargeType === 'monthly' ? '📅 Mensal' : '💰 Único'}
+                            </span>
+                        </div>
+                        
+                        <!-- Botões -->
+                        <div class="flex gap-2">
+                            <button onclick="downloadBannerAgain('${banner.bannerImage}', '${banner.id}')" 
+                                class="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-semibold transition">
+                                <i class="fas fa-download mr-1"></i>Baixar
+                            </button>
+                            <button onclick="copyBannerUrl('${banner.linkUrl}')" 
+                                class="flex-1 px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-semibold transition">
+                                <i class="fas fa-link mr-1"></i>Link
+                            </button>
+                        </div>
+                        
+                        <p class="text-xs text-gray-400 mt-2 text-center">
+                            Criado em ${new Date(banner.createdAt).toLocaleDateString('pt-BR')}
+                        </p>
+                    </div>
+                </div>
+            `).join('');
+        }
+    } catch (error) {
+        console.error('Erro ao carregar banners:', error);
+        document.getElementById('banners-list').innerHTML = `
+            <div class="text-center py-12 col-span-full">
+                <i class="fas fa-exclamation-triangle text-6xl text-red-300 mb-4"></i>
+                <h3 class="text-xl font-semibold text-gray-600 mb-2">Erro ao carregar banners</h3>
+                <p class="text-gray-500">Tente novamente mais tarde</p>
+            </div>
+        `;
+    }
+}
+
+// Baixar banner novamente
+function downloadBannerAgain(bannerImage, bannerId) {
+    const link = document.createElement('a');
+    link.download = `banner-${bannerId}.png`;
+    link.href = bannerImage;
+    link.click();
+    
+    alert('✅ Banner baixado com sucesso!');
+}
+
+// Copiar URL do banner
+function copyBannerUrl(linkUrl) {
+    navigator.clipboard.writeText(linkUrl).then(() => {
+        alert('✅ Link copiado!\n\n' + linkUrl + '\n\nCompartilhe este link nas redes sociais!');
+    }).catch(() => {
+        const input = document.createElement('input');
+        input.value = linkUrl;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        document.body.removeChild(input);
+        alert('✅ Link copiado!\n\n' + linkUrl);
+    });
+}
+
+// Sistema de Banners Salvos (LocalStorage)
+function getSavedBanners(accountId) {
+    const banners = localStorage.getItem(`banners_${accountId}`);
+    return banners ? JSON.parse(banners) : [];
+}
+
+function saveBanner(accountId, bannerData) {
+    const banners = getSavedBanners(accountId);
+    banners.unshift(bannerData); // Adicionar no início
+    localStorage.setItem(`banners_${accountId}`, JSON.stringify(banners));
+}
+
+function deleteBanner(accountId, bannerId) {
+    const banners = getSavedBanners(accountId);
+    const filtered = banners.filter(b => b.id !== bannerId);
+    localStorage.setItem(`banners_${accountId}`, JSON.stringify(filtered));
+}
+
+// Mostrar modal de banners salvos
+function showSavedBanners(accountId, accountName) {
+    const banners = getSavedBanners(accountId);
+    
+    // Atualizar título
+    document.getElementById('saved-banners-account-name').textContent = 
+        accountName ? `Banners de ${accountName}` : 'Todos os banners gerados para esta conta';
+    
+    const listContainer = document.getElementById('saved-banners-list');
+    const emptyState = document.getElementById('saved-banners-empty');
+    
+    if (banners.length === 0) {
+        listContainer.innerHTML = '';
+        listContainer.classList.add('hidden');
+        emptyState.classList.remove('hidden');
+    } else {
+        emptyState.classList.add('hidden');
+        listContainer.classList.remove('hidden');
+        
+        // Renderizar banners
+        listContainer.innerHTML = banners.map((banner, index) => `
+            <div class="bg-white border-2 border-gray-200 rounded-xl overflow-hidden hover:border-purple-500 transition shadow-md">
+                <!-- Preview do Banner -->
+                <div class="aspect-square bg-gradient-to-br ${getGradientClass(banner.color)} p-6 relative">
+                    <div class="text-white text-center">
+                        ${banner.chargeType === 'monthly' 
+                            ? '<div class="bg-green-500 text-xs px-2 py-1 rounded-full inline-block mb-2">🔄 MENSAL</div>'
+                            : '<div class="bg-blue-500 text-xs px-2 py-1 rounded-full inline-block mb-2">📄 ÚNICO</div>'
+                        }
+                        ${banner.promo ? `<div class="bg-yellow-400 text-gray-900 text-xs px-2 py-1 rounded-full inline-block mb-2">${banner.promo}</div>` : ''}
+                        <h3 class="font-bold text-lg mb-2 leading-tight">${banner.title}</h3>
+                        <p class="text-sm opacity-90 mb-3 line-clamp-2">${banner.description}</p>
+                        <div class="text-3xl font-bold">R$ ${parseFloat(banner.value).toFixed(2).replace('.', ',')}</div>
+                        ${banner.chargeType === 'monthly' ? '<div class="text-sm">/mês</div>' : ''}
+                    </div>
+                </div>
+                
+                <!-- Informações -->
+                <div class="p-4">
+                    <div class="text-xs text-gray-500 mb-3">
+                        <i class="fas fa-clock mr-1"></i>
+                        ${new Date(banner.createdAt).toLocaleString('pt-BR')}
+                    </div>
+                    
+                    <!-- Ações -->
+                    <div class="flex gap-2">
+                        <button onclick="redownloadBanner('${accountId}', '${banner.id}')" 
+                            class="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-semibold">
+                            <i class="fas fa-download mr-1"></i>Baixar
+                        </button>
+                        <button onclick="deleteSavedBanner('${accountId}', '${banner.id}')" 
+                            class="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+    }
+    
+    // Mostrar modal
+    document.getElementById('saved-banners-modal').classList.remove('hidden');
+}
+
+// Fechar modal de banners salvos
+function closeSavedBannersModal() {
+    document.getElementById('saved-banners-modal').classList.add('hidden');
+}
+
+// Obter classe do gradiente baseado na cor
+function getGradientClass(color) {
+    const gradients = {
+        orange: 'from-orange-600 to-red-600',
+        purple: 'from-purple-600 to-pink-600',
+        blue: 'from-blue-600 to-cyan-600',
+        green: 'from-green-600 to-emerald-600',
+        red: 'from-red-600 to-rose-600'
+    };
+    return gradients[color] || gradients.orange;
+}
+
+// Re-baixar banner salvo
+async function redownloadBanner(accountId, bannerId) {
+    const banners = getSavedBanners(accountId);
+    const banner = banners.find(b => b.id === bannerId);
+    
+    if (banner) {
+        // Regenerar o banner PNG com os dados salvos
+        await generatePromoBannerPNG(
+            banner.linkUrl,
+            banner.qrCodeBase64,
+            banner.value,
+            banner.description,
+            banner.title,
+            banner.promo,
+            banner.buttonText,
+            banner.color,
+            banner.chargeType,
+            banner.fontSize
+        );
+    }
+}
+
+// Deletar banner salvo
+function deleteSavedBanner(accountId, bannerId) {
+    if (confirm('❌ Deseja realmente excluir este banner?')) {
+        deleteBanner(accountId, bannerId);
+        showSavedBanners(accountId, ''); // Recarregar lista
     }
 }
 
