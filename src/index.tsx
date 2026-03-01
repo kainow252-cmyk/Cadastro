@@ -8407,6 +8407,10 @@ app.get('/', (c) => {
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
         <link href="/static/responsive.css?v=1.0" rel="stylesheet">
         
+        <!-- Load scripts early with defer to ensure functions are available -->
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js" defer></script>
+        <script src="/static/app.js?v=5.2" defer></script>
+        
         <!-- Tipografia e Layout Profissional -->
         <style>
             /* Configuração Global - Fonte Inter */
@@ -11366,13 +11370,12 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?sta
             </div>
         </div>
 
-        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <!-- Additional libraries loaded at page end -->
         <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
-        <script src="/static/app.js?v=5.1"></script>
         <script src="/static/payment-links.js?v=4.2"></script>
         <script src="/static/payment-filters.js?v=4.2"></script>
         <script src="/static/deltapag-section.js?v=4.1"></script>
