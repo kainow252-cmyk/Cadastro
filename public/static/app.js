@@ -6022,9 +6022,13 @@ function deleteSavedBanner(accountId, bannerId) {
 
 // Gerar Links de Auto-Cadastro para TODAS as subcontas
 async function generateAllAutoSignupLinks() {
-    if (!confirm('🔗 Gerar Links de Auto-Cadastro para TODAS as subcontas?\n\n✅ Isso irá:\n• Carregar todas as subcontas\n• Criar links de assinatura mensal\n• Gerar banners automáticos\n• Salvar tudo em "Banners Salvos"\n\n⏱️ Pode levar alguns minutos...')) {
+    // Primeira confirmação
+    if (!confirm('🔗 Gerar Links de Auto-Cadastro para TODAS as subcontas?\n\n✅ Isso irá:\n• Carregar todas as subcontas\n• Criar links de assinatura mensal (R$ 10,00/mês)\n\n⏱️ Pode levar alguns minutos...')) {
         return;
     }
+    
+    // Segunda pergunta: gerar banners?
+    const generateBanners = confirm('🎨 Deseja gerar banners automáticos também?\n\n✅ SIM = Links + Banners salvos\n❌ NÃO = Apenas links de pagamento\n\n💡 Banners facilitam o compartilhamento nas redes sociais!');
     
     // Mostrar loading inicial
     console.log('⏳ Carregando subcontas...');
@@ -6108,37 +6112,42 @@ async function generateAllAutoSignupLinks() {
             const linkUrl = linkResponse.data.link;
             console.log('✅ Link gerado:', linkUrl);
             
-            // 2. Gerar QR Code
-            const qrCodeBase64 = await QRCode.toDataURL(linkUrl, {
-                width: 300,
-                margin: 2,
-                color: {
-                    dark: '#000000',
-                    light: '#FFFFFF'
-                }
-            });
-            console.log('✅ QR Code gerado');
-            
-            // 3. Criar banner automático
-            const bannerData = {
-                id: Date.now().toString() + '-' + Math.random().toString(36).substr(2, 9),
-                accountId: account.id,
-                title: 'ASSINE AGORA',
-                description: `Mensalidade - ${account.name || account.email}`,
-                value: 10.00,
-                promo: '',
-                buttonText: 'PAGAR AGORA',
-                color: 'orange',
-                linkUrl: linkUrl,
-                qrCodeBase64: qrCodeBase64,
-                chargeType: 'monthly',
-                fontSize: 'medium',
-                createdAt: new Date().toISOString()
-            };
-            
-            // 4. Salvar banner
-            saveBanner(account.id, bannerData);
-            console.log('✅ Banner salvo automaticamente');
+            // 2. Gerar banner (apenas se solicitado)
+            if (generateBanners) {
+                // 2.1. Gerar QR Code
+                const qrCodeBase64 = await QRCode.toDataURL(linkUrl, {
+                    width: 300,
+                    margin: 2,
+                    color: {
+                        dark: '#000000',
+                        light: '#FFFFFF'
+                    }
+                });
+                console.log('✅ QR Code gerado');
+                
+                // 2.2. Criar banner automático
+                const bannerData = {
+                    id: Date.now().toString() + '-' + Math.random().toString(36).substr(2, 9),
+                    accountId: account.id,
+                    title: 'ASSINE AGORA',
+                    description: `Mensalidade - ${account.name || account.email}`,
+                    value: 10.00,
+                    promo: '',
+                    buttonText: 'PAGAR AGORA',
+                    color: 'orange',
+                    linkUrl: linkUrl,
+                    qrCodeBase64: qrCodeBase64,
+                    chargeType: 'monthly',
+                    fontSize: 'medium',
+                    createdAt: new Date().toISOString()
+                };
+                
+                // 2.3. Salvar banner
+                saveBanner(account.id, bannerData);
+                console.log('✅ Banner salvo automaticamente');
+            } else {
+                console.log('⏭️ Banner ignorado (usuário optou por apenas links)');
+            }
             
             successCount++;
             
@@ -6160,10 +6169,11 @@ async function generateAllAutoSignupLinks() {
 • Total de contas: ${approvedAccounts.length}
 • ✅ Sucesso: ${successCount}
 • ❌ Erros: ${errorCount}
+${generateBanners ? '• 🎨 Banners gerados e salvos' : '• 🔗 Apenas links gerados (sem banners)'}
 
 ${errorCount > 0 ? '\n⚠️ Erros:\n' + errors.map((e, i) => `${i + 1}. ${e}`).join('\n') : ''}
 
-💡 Acesse "Banners Salvos" para visualizar os banners gerados!
+${generateBanners ? '💡 Acesse "Banners Salvos" para visualizar os banners gerados!' : '💡 Os links estão ativos e prontos para uso!'}
 `;
         
         alert(report);
