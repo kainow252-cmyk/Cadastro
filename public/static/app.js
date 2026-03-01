@@ -5489,6 +5489,51 @@ async function downloadPromoBanner() {
     }
 }
 
+// Salvar banner sem baixar
+async function savePromoBannerOnly() {
+    const title = document.getElementById('promo-banner-title').value || 'ASSINE AGORA';
+    const description = document.getElementById('promo-banner-description').value || 'Plano Premium';
+    const value = parseFloat(document.getElementById('promo-banner-value').value) || 10.00;
+    const promo = document.getElementById('promo-banner-promo').value;
+    const buttonText = document.getElementById('promo-banner-button-text').value || 'PAGAR AGORA';
+    const color = document.getElementById('promo-banner-color').value;
+    const linkUrl = document.getElementById('promo-banner-link').value;
+    const qrCodeBase64 = document.getElementById('promo-banner-qrcode').value;
+    const chargeType = document.getElementById('promo-banner-charge-type')?.value || 'monthly';
+    const fontSize = document.getElementById('promo-banner-font-size')?.value || 'medium';
+    const accountId = document.getElementById('promo-banner-account-id')?.value;
+    
+    if (!accountId) {
+        alert('❌ Erro: ID da conta não encontrado');
+        return;
+    }
+    
+    // Criar dados do banner
+    const bannerData = {
+        id: Date.now().toString(),
+        accountId,
+        title,
+        description,
+        value,
+        promo,
+        buttonText,
+        color,
+        linkUrl,
+        qrCodeBase64,
+        chargeType,
+        fontSize,
+        createdAt: new Date().toISOString()
+    };
+    
+    // Salvar no localStorage
+    saveBanner(accountId, bannerData);
+    
+    // Feedback visual
+    alert('✅ Banner salvo com sucesso!\n\n📁 Acesse "Banners Salvos" para visualizar e gerenciar seus banners.');
+    
+    console.log('✅ Banner salvo:', bannerData);
+}
+
 // Copiar link da propaganda
 function copyPromoBannerLink() {
     const linkUrl = document.getElementById('promo-banner-link').value;

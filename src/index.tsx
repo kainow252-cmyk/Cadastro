@@ -10683,6 +10683,10 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?sta
 
                     <!-- Botões de Ação -->
                     <div class="mt-6 flex flex-wrap gap-3 justify-center">
+                        <button onclick="savePromoBannerOnly()" 
+                            class="px-6 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 font-semibold shadow-lg transition">
+                            <i class="fas fa-save mr-2"></i>Salvar Banner
+                        </button>
                         <button onclick="downloadPromoBanner()" 
                             class="px-6 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-lg hover:from-blue-700 hover:to-cyan-700 font-semibold shadow-lg transition">
                             <i class="fas fa-download mr-2"></i>Baixar Banner (PNG)
@@ -10703,6 +10707,7 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?sta
                             <li>📝 Edite título, descrição, valor e detalhes da oferta</li>
                             <li>🎨 Escolha a cor do banner que combina com sua marca</li>
                             <li>🔲 Ajuste o tamanho das fontes (Pequeno, Médio ou Grande)</li>
+                            <li>💾 Salve o banner para acessar depois em "Banners Salvos"</li>
                             <li>📥 Baixe o banner PNG para postar nas redes sociais</li>
                             <li>📱 QR Code no banner leva direto para pagamento</li>
                         </ul>
