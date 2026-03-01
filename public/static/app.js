@@ -53,7 +53,7 @@ function showSection(section) {
         if (typeof loadDeltapagSubscriptions === 'function') {
             loadDeltapagSubscriptions();
         }
-    } else if (section === 'banners') {
+    } else if (section === 'banners' || section === 'banners-section') {
         loadSavedBanners();
     } else if (section === 'pix') {
         loadSubaccountsForPix();
