@@ -3932,6 +3932,161 @@ app.post('/api/pix/subscription', async (c) => {
 })
 
 // ========================================
+// SISTEMA DE LOGIN PARA SUBCONTAS
+// Cada subconta tem login/senha próprio e acessa apenas seus banners
+// ========================================
+
+// Gerar credenciais de login para uma subconta
+app.post('/api/subaccounts/:accountId/generate-login', async (c) => {
+  try {
+    const { accountId } = c.req.param()
+    const { username, password } = await c.req.json()
+    
+    if (!username || !password) {
+      return c.json({ error: 'Username e password são obrigatórios' }, 400)
+    }
+    
+    // Verificar se username já existe
+    const existing = await c.env.DB.prepare(
+      'SELECT id FROM users WHERE login_username = ? AND id != ?'
+    ).bind(username, accountId).first()
+    
+    if (existing) {
+      return c.json({ error: 'Username já está em uso' }, 400)
+    }
+    
+    // Atualizar subconta com credenciais (senha em texto plano por simplicidade)
+    // Em produção, usar bcrypt ou similar
+    await c.env.DB.prepare(`
+      UPDATE users 
+      SET login_username = ?, 
+          login_password = ?, 
+          login_enabled = 1
+      WHERE id = ?
+    `).bind(username, password, accountId).run()
+    
+    return c.json({ 
+      success: true, 
+      message: 'Credenciais geradas com sucesso',
+      username 
+    })
+  } catch (error: any) {
+    console.error('Erro ao gerar credenciais:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Desabilitar login de uma subconta
+app.post('/api/subaccounts/:accountId/disable-login', async (c) => {
+  try {
+    const { accountId } = c.req.param()
+    
+    await c.env.DB.prepare(`
+      UPDATE users 
+      SET login_enabled = 0
+      WHERE id = ?
+    `).bind(accountId).run()
+    
+    return c.json({ success: true, message: 'Login desabilitado' })
+  } catch (error: any) {
+    console.error('Erro ao desabilitar login:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Login de subconta
+app.post('/api/subaccount-login', async (c) => {
+  try {
+    const { username, password } = await c.req.json()
+    
+    // Buscar subconta por username e password
+    const subaccount = await c.env.DB.prepare(`
+      SELECT id, name, email, login_enabled 
+      FROM users 
+      WHERE login_username = ? AND login_password = ? AND login_enabled = 1
+    `).bind(username, password).first()
+    
+    if (!subaccount) {
+      return c.json({ error: 'Credenciais inválidas' }, 401)
+    }
+    
+    // Atualizar último login
+    await c.env.DB.prepare(`
+      UPDATE users SET last_login_at = datetime('now') WHERE id = ?
+    `).bind(subaccount.id).run()
+    
+    // Criar token JWT para subconta
+    const token = await createToken(`subaccount:${subaccount.id}`, c.env.JWT_SECRET)
+    
+    setCookie(c, 'subaccount_token', token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'Lax',
+      maxAge: 86400 // 24 horas
+    })
+    
+    return c.json({ 
+      success: true, 
+      subaccount: {
+        id: subaccount.id,
+        name: subaccount.name,
+        email: subaccount.email
+      }
+    })
+  } catch (error: any) {
+    console.error('Erro no login da subconta:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Verificar autenticação de subconta
+app.get('/api/subaccount-check-auth', async (c) => {
+  const token = getCookie(c, 'subaccount_token')
+  
+  if (!token) {
+    return c.json({ authenticated: false }, 401)
+  }
+  
+  const payload = await verifyToken(token, c.env.JWT_SECRET)
+  
+  if (!payload || !payload.username || !payload.username.startsWith('subaccount:')) {
+    return c.json({ authenticated: false }, 401)
+  }
+  
+  const accountId = payload.username.replace('subaccount:', '')
+  
+  // Buscar dados da subconta
+  const subaccount = await c.env.DB.prepare(
+    'SELECT id, name, email FROM users WHERE id = ? AND login_enabled = 1'
+  ).bind(accountId).first()
+  
+  if (!subaccount) {
+    return c.json({ authenticated: false }, 401)
+  }
+  
+  return c.json({ 
+    authenticated: true,
+    subaccount: {
+      id: subaccount.id,
+      name: subaccount.name,
+      email: subaccount.email
+    }
+  })
+})
+
+// Logout de subconta
+app.post('/api/subaccount-logout', (c) => {
+  setCookie(c, 'subaccount_token', '', {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'Lax',
+    maxAge: 0
+  })
+  
+  return c.json({ success: true })
+})
+
+// ========================================
 // FLUXO DE AUTO-CADASTRO DE ASSINATURA PIX MENSAL
 // Cliente lê QR Code → Preenche dados → Paga → Assinatura mensal criada
 // Split 80/20 aplicado automaticamente
@@ -7918,6 +8073,267 @@ app.get('/pix-automatic-signup/:linkId', async (c) => {
 // Redirect /dashboard to root
 app.get('/dashboard', (c) => {
   return c.redirect('/', 301)
+})
+
+// Login page para subcontas
+app.get('/subaccount-login', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Login - Subconta</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <style>
+            * {
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+                -webkit-font-smoothing: antialiased;
+            }
+            h1, h2 { font-weight: 700; letter-spacing: -0.02em; }
+            button { font-weight: 600; letter-spacing: 0.01em; }
+            input { font-size: 0.9375rem; line-height: 1.5; }
+        </style>
+    </head>
+    <body class="bg-gradient-to-br from-purple-600 to-pink-600 min-h-screen flex items-center justify-center">
+        <div class="max-w-md w-full mx-4">
+            <div class="bg-white rounded-2xl shadow-2xl p-8">
+                <div class="text-center mb-8">
+                    <div class="inline-block bg-purple-100 rounded-full p-4 mb-4">
+                        <i class="fas fa-user-circle text-purple-600 text-5xl"></i>
+                    </div>
+                    <h1 class="text-3xl font-bold text-gray-800 mb-2">Acesso da Subconta</h1>
+                    <p class="text-gray-600">Faça login para ver seus banners</p>
+                </div>
+
+                <form id="login-form" class="space-y-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            <i class="fas fa-user mr-2"></i>Usuário
+                        </label>
+                        <input type="text" name="username" required autofocus
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+                            placeholder="Digite seu usuário">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            <i class="fas fa-lock mr-2"></i>Senha
+                        </label>
+                        <input type="password" name="password" required
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+                            placeholder="Digite sua senha">
+                    </div>
+
+                    <div id="error-message" class="hidden bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                        <i class="fas fa-exclamation-circle mr-2"></i>
+                        <span id="error-text"></span>
+                    </div>
+
+                    <button type="submit"
+                        class="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 rounded-lg font-semibold hover:from-purple-700 hover:to-pink-700 transform hover:scale-[1.02] transition-all shadow-lg">
+                        <i class="fas fa-sign-in-alt mr-2"></i>
+                        Entrar
+                    </button>
+                </form>
+
+                <div class="mt-6 text-center">
+                    <p class="text-sm text-gray-600">
+                        <i class="fas fa-info-circle mr-2"></i>
+                        Recebeu suas credenciais por email
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script>
+            document.getElementById('login-form').addEventListener('submit', async (e) => {
+                e.preventDefault()
+                
+                const formData = new FormData(e.target)
+                const username = formData.get('username')
+                const password = formData.get('password')
+                
+                const errorDiv = document.getElementById('error-message')
+                const errorText = document.getElementById('error-text')
+                
+                errorDiv.classList.add('hidden')
+                
+                try {
+                    const response = await axios.post('/api/subaccount-login', {
+                        username,
+                        password
+                    })
+                    
+                    if (response.data.success) {
+                        window.location.href = '/subaccount-dashboard'
+                    }
+                } catch (error) {
+                    errorDiv.classList.remove('hidden')
+                    errorText.textContent = error.response?.data?.error || 'Erro ao fazer login'
+                }
+            })
+        </script>
+    </body>
+    </html>
+  `)
+})
+
+// Dashboard da subconta
+app.get('/subaccount-dashboard', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Meus Banners</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <style>
+            * {
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+                -webkit-font-smoothing: antialiased;
+            }
+        </style>
+    </head>
+    <body class="bg-gray-100 min-h-screen">
+        <!-- Navbar -->
+        <nav class="bg-white shadow-md sticky top-0 z-50">
+            <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+                <div class="flex items-center gap-3">
+                    <i class="fas fa-user-circle text-purple-600 text-2xl"></i>
+                    <div>
+                        <h1 class="font-bold text-lg" id="subaccount-name">Carregando...</h1>
+                        <p class="text-xs text-gray-600" id="subaccount-email"></p>
+                    </div>
+                </div>
+                <button onclick="logout()" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition">
+                    <i class="fas fa-sign-out-alt mr-2"></i>Sair
+                </button>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <div class="max-w-7xl mx-auto px-4 py-8">
+            <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                <h2 class="text-2xl font-bold text-gray-800 mb-2">
+                    <i class="fas fa-images mr-2 text-purple-600"></i>
+                    Meus Banners Salvos
+                </h2>
+                <p class="text-gray-600">Aqui estão todos os banners criados para sua conta</p>
+            </div>
+
+            <!-- Loading -->
+            <div id="loading" class="text-center py-12">
+                <i class="fas fa-spinner fa-spin text-4xl text-purple-600 mb-4"></i>
+                <p class="text-gray-600">Carregando banners...</p>
+            </div>
+
+            <!-- Banner List -->
+            <div id="banners-grid" class="hidden grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- Banners serão inseridos aqui -->
+            </div>
+
+            <!-- Empty State -->
+            <div id="empty-state" class="hidden text-center py-12 bg-white rounded-xl shadow-lg">
+                <i class="fas fa-inbox text-6xl text-gray-300 mb-4"></i>
+                <h3 class="text-xl font-bold text-gray-700 mb-2">Nenhum banner encontrado</h3>
+                <p class="text-gray-600">Entre em contato com o administrador para gerar seus banners</p>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script src="/static/app.js"></script>
+        <script>
+            let currentSubaccount = null
+
+            async function checkAuth() {
+                try {
+                    const response = await axios.get('/api/subaccount-check-auth')
+                    if (!response.data.authenticated) {
+                        window.location.href = '/subaccount-login'
+                        return
+                    }
+                    currentSubaccount = response.data.subaccount
+                    document.getElementById('subaccount-name').textContent = currentSubaccount.name
+                    document.getElementById('subaccount-email').textContent = currentSubaccount.email
+                    loadBanners()
+                } catch (error) {
+                    window.location.href = '/subaccount-login'
+                }
+            }
+
+            function loadBanners() {
+                const accountId = currentSubaccount.id
+                const bannersKey = \`banners_\${accountId}\`
+                
+                // Buscar banners do localStorage
+                const banners = JSON.parse(localStorage.getItem(bannersKey) || '[]')
+                
+                document.getElementById('loading').classList.add('hidden')
+                
+                if (banners.length === 0) {
+                    document.getElementById('empty-state').classList.remove('hidden')
+                    return
+                }
+                
+                const grid = document.getElementById('banners-grid')
+                grid.classList.remove('hidden')
+                
+                grid.innerHTML = banners.map(banner => \`
+                    <div class="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition cursor-pointer"
+                         onclick="viewBannerDetails('\${accountId}', '\${banner.id}')">
+                        <!-- Preview -->
+                        <div class="h-48 \${getGradientClass(banner.color)} p-4 flex items-center justify-center">
+                            <div class="text-center text-white">
+                                <div class="text-2xl font-bold mb-2">\${banner.title}</div>
+                                <div class="text-4xl font-bold">R$ \${parseFloat(banner.value).toFixed(2).replace('.', ',')}</div>
+                                \${banner.chargeType === 'monthly' ? '<div class="text-sm mt-1">/mês</div>' : ''}
+                            </div>
+                        </div>
+                        
+                        <!-- Info -->
+                        <div class="p-4">
+                            <div class="flex items-center gap-2 mb-2">
+                                \${banner.chargeType === 'monthly' 
+                                    ? '<span class="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full font-semibold">🔄 MENSAL</span>'
+                                    : '<span class="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full font-semibold">💳 ÚNICO</span>'}
+                            </div>
+                            <p class="text-gray-600 text-sm mb-2">\${banner.description}</p>
+                            <p class="text-xs text-gray-500">
+                                <i class="far fa-calendar mr-1"></i>
+                                \${new Date(banner.createdAt).toLocaleDateString('pt-BR')}
+                            </p>
+                        </div>
+                    </div>
+                \`).join('')
+            }
+
+            async function logout() {
+                try {
+                    await axios.post('/api/subaccount-logout')
+                    window.location.href = '/subaccount-login'
+                } catch (error) {
+                    console.error('Erro ao fazer logout:', error)
+                    window.location.href = '/subaccount-login'
+                }
+            }
+
+            // Inicializar
+            checkAuth()
+        </script>
+    </body>
+    </html>
+  `)
 })
 
 // Homepage

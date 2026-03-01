@@ -2223,6 +2223,11 @@ function displayAccounts(accounts) {
                         class="px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-700 hover:to-pink-700 font-semibold shadow-md transition">
                         <i class="fas fa-images mr-2"></i>Banners Salvos
                     </button>
+                    <button onclick="showLoginManager('${account.id}', '${account.name || ''}')" 
+                        id="btn-login-${account.id}"
+                        class="px-4 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 font-semibold shadow-md transition">
+                        <i class="fas fa-key mr-2"></i>Gerar Login
+                    </button>
                 </div>
                 
                 <!-- Iframe embutido (inicialmente escondido) -->
@@ -6764,3 +6769,158 @@ ${generateBanners ? '💡 Acesse "Banners Salvos" para visualizar os banners ger
 }
 
 console.log('✅ Funções de APIs Externas carregadas');
+
+// ========================================
+// SISTEMA DE LOGIN PARA SUBCONTAS
+// ========================================
+
+function showLoginManager(accountId, accountName) {
+    const modal = document.createElement('div');
+    modal.id = 'login-manager-modal';
+    modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
+    modal.onclick = (e) => {
+        if (e.target === modal) modal.remove();
+    };
+    
+    modal.innerHTML = `
+        <div class="bg-white rounded-2xl max-w-lg w-full" onclick="event.stopPropagation()">
+            <!-- Header -->
+            <div class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-6 rounded-t-2xl">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h2 class="text-2xl font-bold mb-1">
+                            <i class="fas fa-key mr-2"></i>
+                            Gerar Login para Subconta
+                        </h2>
+                        <p class="text-indigo-100">${accountName}</p>
+                    </div>
+                    <button onclick="document.getElementById('login-manager-modal').remove()" 
+                        class="text-white hover:text-gray-200 text-2xl">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Body -->
+            <div class="p-6">
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                    <p class="text-sm text-blue-800">
+                        <i class="fas fa-info-circle mr-2"></i>
+                        <strong>Importante:</strong> A subconta poderá fazer login em 
+                        <strong>/subaccount-login</strong> e verá apenas seus próprios banners salvos.
+                    </p>
+                </div>
+                
+                <form id="generate-login-form" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            <i class="fas fa-user mr-2"></i>Usuário
+                        </label>
+                        <input type="text" name="username" required
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                            placeholder="Ex: franklin.madson">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            <i class="fas fa-lock mr-2"></i>Senha
+                        </label>
+                        <input type="text" name="password" required
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                            placeholder="Digite uma senha">
+                        <p class="text-xs text-gray-500 mt-1">
+                            <i class="fas fa-lightbulb mr-1"></i>
+                            Dica: Use uma senha fácil de lembrar
+                        </p>
+                    </div>
+                    
+                    <div id="login-error" class="hidden bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                        <i class="fas fa-exclamation-circle mr-2"></i>
+                        <span id="login-error-text"></span>
+                    </div>
+                    
+                    <div id="login-success" class="hidden bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
+                        <i class="fas fa-check-circle mr-2"></i>
+                        <span id="login-success-text"></span>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-3">
+                        <button type="button" onclick="document.getElementById('login-manager-modal').remove()"
+                            class="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition font-semibold">
+                            <i class="fas fa-times mr-2"></i>Cancelar
+                        </button>
+                        <button type="submit"
+                            class="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 transition font-semibold">
+                            <i class="fas fa-check mr-2"></i>Gerar
+                        </button>
+                    </div>
+                </form>
+                
+                <div class="mt-6 pt-6 border-t border-gray-200">
+                    <h3 class="font-semibold text-gray-700 mb-3">
+                        <i class="fas fa-link mr-2 text-indigo-600"></i>
+                        Link de Acesso
+                    </h3>
+                    <div class="bg-gray-50 rounded-lg p-3 mb-2">
+                        <code class="text-sm text-gray-800">${window.location.origin}/subaccount-login</code>
+                    </div>
+                    <button onclick="copyLoginUrl()" 
+                        class="w-full px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 transition text-sm font-semibold">
+                        <i class="fas fa-copy mr-2"></i>Copiar Link de Acesso
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Handler do formulário
+    document.getElementById('generate-login-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const formData = new FormData(e.target);
+        const username = formData.get('username');
+        const password = formData.get('password');
+        
+        const errorDiv = document.getElementById('login-error');
+        const errorText = document.getElementById('login-error-text');
+        const successDiv = document.getElementById('login-success');
+        const successText = document.getElementById('login-success-text');
+        
+        errorDiv.classList.add('hidden');
+        successDiv.classList.add('hidden');
+        
+        try {
+            const response = await axios.post(\`/api/subaccounts/\${accountId}/generate-login\`, {
+                username,
+                password
+            });
+            
+            if (response.data.success) {
+                successDiv.classList.remove('hidden');
+                successText.textContent = \`Credenciais geradas com sucesso! Usuário: \${username}\`;
+                
+                // Limpar formulário
+                e.target.reset();
+                
+                // Copiar link de acesso automaticamente
+                copyLoginUrl();
+            }
+        } catch (error) {
+            errorDiv.classList.remove('hidden');
+            errorText.textContent = error.response?.data?.error || 'Erro ao gerar credenciais';
+        }
+    });
+}
+
+function copyLoginUrl() {
+    const url = \`\${window.location.origin}/subaccount-login\`;
+    navigator.clipboard.writeText(url).then(() => {
+        alert('✅ Link de acesso copiado!\\n\\n' + url + '\\n\\nEnvie este link para a subconta fazer login.');
+    }).catch(() => {
+        alert('❌ Erro ao copiar link');
+    });
+}
+
+console.log('✅ Sistema de Login para Subcontas carregado');
