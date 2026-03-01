@@ -5905,13 +5905,29 @@ function deleteBanner(accountId, bannerId) {
 
 // Mostrar modal de banners salvos
 function showSavedBanners(accountId, accountName) {
-    const banners = getSavedBanners(accountId);
-    
-    // Debug
     console.log('🔍 Abrindo galeria de banners');
-    console.log('📁 Account ID:', accountId);
+    console.log('📁 Account ID solicitado:', accountId);
+    console.log('👤 Nome da conta:', accountName);
+    
+    // Debug: verificar localStorage
+    const storageKey = `banners_${accountId}`;
+    console.log('🔑 Chave localStorage:', storageKey);
+    const rawData = localStorage.getItem(storageKey);
+    console.log('💾 Dados brutos do localStorage:', rawData);
+    
+    const banners = getSavedBanners(accountId);
     console.log('📊 Banners encontrados:', banners.length);
     console.log('📦 Dados dos banners:', banners);
+    
+    // Debug: listar todas as chaves de banners no localStorage
+    console.log('🔍 Todas as chaves de banners no localStorage:');
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('banners_')) {
+            const count = JSON.parse(localStorage.getItem(key) || '[]').length;
+            console.log(`  - ${key}: ${count} banner(s)`);
+        }
+    }
     
     // Atualizar título
     document.getElementById('saved-banners-account-name').textContent = 
