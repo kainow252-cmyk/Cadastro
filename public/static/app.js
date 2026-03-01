@@ -6207,26 +6207,63 @@ function viewBannerDetails(accountId, bannerId) {
                     </div>
                 </div>
                 
-                <!-- Botões de Ação -->
-                <div class="grid grid-cols-2 gap-3 mb-3">
+                <!-- Seção: Compartilhar -->
+                <div class="mb-4">
+                    <h3 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                        <i class="fas fa-share-alt text-green-600"></i>
+                        Compartilhar Link de Pagamento
+                    </h3>
+                    <div class="bg-green-50 border border-green-200 rounded-lg p-3 mb-3">
+                        <p class="text-xs text-green-800 mb-2">
+                            <i class="fas fa-mobile-alt mr-1"></i>
+                            <strong>Para WhatsApp, Telegram, Direct:</strong>
+                        </p>
+                        <p class="text-xs text-green-700">
+                            Envie o link direto - cliente clica e abre na hora! ✨
+                        </p>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 mb-3">
+                        <button onclick="shareToWhatsApp('${banner.linkUrl}', '${banner.title}', ${banner.value})" 
+                            class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition text-sm font-semibold">
+                            <i class="fab fa-whatsapp mr-2"></i>WhatsApp
+                        </button>
+                        <button onclick="copyBannerLink('${banner.linkUrl}')" 
+                            class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm font-semibold">
+                            <i class="fas fa-copy mr-2"></i>Copiar Link
+                        </button>
+                    </div>
+                    
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
+                        <p class="text-xs text-blue-800 mb-2">
+                            <i class="fas fa-camera mr-1"></i>
+                            <strong>Para Instagram, Facebook, Stories:</strong>
+                        </p>
+                        <p class="text-xs text-blue-700">
+                            Baixe a imagem com QR Code - outros escaneiam para pagar! 📸
+                        </p>
+                    </div>
                     <button onclick="redownloadBanner('${accountId}', '${banner.id}')" 
-                        class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold">
-                        <i class="fas fa-download mr-2"></i>Baixar PNG
-                    </button>
-                    <button onclick="copyBannerLink('${banner.linkUrl}')" 
-                        class="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold">
-                        <i class="fas fa-share-alt mr-2"></i>Compartilhar
+                        class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-semibold">
+                        <i class="fas fa-download mr-2"></i>Baixar Banner (PNG)
                     </button>
                 </div>
-                <div class="grid grid-cols-2 gap-3">
-                    <button onclick="document.getElementById('banner-detail-modal').remove(); editSavedBanner('${accountId}', '${banner.id}')" 
-                        class="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition font-semibold">
-                        <i class="fas fa-edit mr-2"></i>Editar
-                    </button>
-                    <button onclick="if(confirm('❌ Deseja realmente excluir este banner?')) { deleteBanner('${accountId}', '${banner.id}'); document.getElementById('banner-detail-modal').remove(); showSavedBanners('${accountId}', ''); }" 
-                        class="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-semibold">
-                        <i class="fas fa-trash mr-2"></i>Excluir
-                    </button>
+                
+                <!-- Seção: Gerenciar -->
+                <div class="pt-4 border-t border-gray-200">
+                    <h3 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                        <i class="fas fa-cog text-purple-600"></i>
+                        Gerenciar Banner
+                    </h3>
+                    <div class="grid grid-cols-2 gap-3">
+                        <button onclick="document.getElementById('banner-detail-modal').remove(); editSavedBanner('${accountId}', '${banner.id}')" 
+                            class="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition font-semibold">
+                            <i class="fas fa-edit mr-2"></i>Editar
+                        </button>
+                        <button onclick="if(confirm('❌ Deseja realmente excluir este banner?')) { deleteBanner('${accountId}', '${banner.id}'); document.getElementById('banner-detail-modal').remove(); showSavedBanners('${accountId}', ''); }" 
+                            class="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-semibold">
+                            <i class="fas fa-trash mr-2"></i>Excluir
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -6235,10 +6272,70 @@ function viewBannerDetails(accountId, bannerId) {
     document.body.appendChild(modal);
 }
 
+// Compartilhar no WhatsApp
+function shareToWhatsApp(linkUrl, title, value) {
+    const message = `🎉 *${title}*\n\n💰 Valor: R$ ${parseFloat(value).toFixed(2).replace('.', ',')}\n\n🔗 Clique aqui para pagar:\n${linkUrl}\n\n✅ Pagamento rápido e seguro via PIX`;
+    
+    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+    
+    // Tentar abrir WhatsApp
+    window.open(whatsappUrl, '_blank');
+    
+    // Copiar link também (backup)
+    navigator.clipboard.writeText(linkUrl).catch(() => {});
+}
+
 // Copiar link do banner
 function copyBannerLink(linkUrl) {
     navigator.clipboard.writeText(linkUrl).then(() => {
-        alert('✅ Link copiado!\n\n' + linkUrl + '\n\n📱 Compartilhe este link:\n• Cole nas redes sociais\n• Envie por WhatsApp\n• Envie por email\n\n💡 Cliente acessa e paga via PIX');
+        // Modal de confirmação melhorado
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
+        modal.onclick = () => modal.remove();
+        
+        modal.innerHTML = `
+            <div class="bg-white rounded-2xl p-6 max-w-md w-full" onclick="event.stopPropagation()">
+                <div class="text-center mb-4">
+                    <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <i class="fas fa-check text-green-600 text-3xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">✅ Link Copiado!</h3>
+                    <p class="text-sm text-gray-600 mb-4">Cole em qualquer lugar e compartilhe</p>
+                </div>
+                
+                <div class="bg-gray-50 rounded-lg p-3 mb-4 font-mono text-xs break-all text-center">
+                    ${linkUrl}
+                </div>
+                
+                <div class="space-y-2 mb-4">
+                    <div class="flex items-start gap-2 text-sm text-gray-700">
+                        <i class="fas fa-mobile-alt text-green-600 mt-1"></i>
+                        <div>
+                            <strong>WhatsApp/Telegram:</strong> Cole e envie - cliente clica e abre direto!
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-2 text-sm text-gray-700">
+                        <i class="fas fa-comment text-blue-600 mt-1"></i>
+                        <div>
+                            <strong>Instagram/Facebook:</strong> Cole no Direct ou comentário
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-2 text-sm text-gray-700">
+                        <i class="fas fa-envelope text-purple-600 mt-1"></i>
+                        <div>
+                            <strong>Email/SMS:</strong> Cliente clica no link e paga na hora
+                        </div>
+                    </div>
+                </div>
+                
+                <button onclick="this.parentElement.parentElement.remove()" 
+                    class="w-full px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold">
+                    <i class="fas fa-check mr-2"></i>Entendi
+                </button>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
     }).catch(() => {
         // Fallback
         const input = document.createElement('input');
