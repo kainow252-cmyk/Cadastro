@@ -6020,6 +6020,94 @@ function deleteSavedBanner(accountId, bannerId) {
     }
 }
 
+// Carregar TODOS os banners de TODAS as contas
+function loadSavedBanners() {
+    console.log('🔍 Carregando todos os banners...');
+    
+    const bannersContainer = document.getElementById('banners-list');
+    if (!bannersContainer) {
+        console.error('❌ Container banners-list não encontrado');
+        return;
+    }
+    
+    // Obter todas as chaves do localStorage que são banners
+    const allBanners = [];
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('banners_')) {
+            try {
+                const accountId = key.replace('banners_', '');
+                const bannersData = JSON.parse(localStorage.getItem(key) || '[]');
+                bannersData.forEach(banner => {
+                    allBanners.push({
+                        ...banner,
+                        accountId: accountId
+                    });
+                });
+            } catch (error) {
+                console.error(`Erro ao carregar banners da chave ${key}:`, error);
+            }
+        }
+    }
+    
+    console.log(`📦 Total de banners encontrados: ${allBanners.length}`);
+    console.log('📋 Banners:', allBanners);
+    
+    // Ordenar por data de criação (mais recente primeiro)
+    allBanners.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    
+    // Renderizar banners
+    if (allBanners.length === 0) {
+        bannersContainer.innerHTML = `
+            <div class="text-center py-12 col-span-full">
+                <i class="fas fa-images text-gray-300 text-6xl mb-4"></i>
+                <p class="text-gray-500 text-lg font-semibold mb-2">Nenhum banner salvo ainda</p>
+                <p class="text-gray-400 text-sm">Gere banners através de "Link Auto-Cadastro" nas subcontas</p>
+            </div>
+        `;
+        return;
+    }
+    
+    bannersContainer.innerHTML = allBanners.map(banner => `
+        <div class="bg-white border-2 border-gray-200 rounded-xl overflow-hidden hover:border-pink-500 transition shadow-md">
+            <!-- Preview do Banner -->
+            <div class="aspect-square bg-gradient-to-br ${getGradientClass(banner.color)} p-6 relative">
+                <div class="text-white text-center">
+                    ${banner.chargeType === 'monthly' 
+                        ? '<div class="bg-green-500 text-xs px-2 py-1 rounded-full inline-block mb-2">🔄 MENSAL</div>'
+                        : '<div class="bg-blue-500 text-xs px-2 py-1 rounded-full inline-block mb-2">📄 ÚNICO</div>'
+                    }
+                    ${banner.promo ? `<div class="bg-yellow-400 text-gray-900 text-xs px-2 py-1 rounded-full inline-block mb-2">${banner.promo}</div>` : ''}
+                    <h3 class="font-bold text-lg mb-2 leading-tight">${banner.title}</h3>
+                    <p class="text-sm opacity-90 mb-3 line-clamp-2">${banner.description}</p>
+                    <div class="text-3xl font-bold">R$ ${parseFloat(banner.value).toFixed(2).replace('.', ',')}</div>
+                    ${banner.chargeType === 'monthly' ? '<div class="text-sm">/mês</div>' : ''}
+                </div>
+            </div>
+            
+            <!-- Informações -->
+            <div class="p-4">
+                <div class="text-xs text-gray-500 mb-3">
+                    <i class="fas fa-clock mr-1"></i>
+                    ${new Date(banner.createdAt).toLocaleString('pt-BR')}
+                </div>
+                
+                <!-- Ações -->
+                <div class="flex gap-2">
+                    <button onclick="redownloadBanner('${banner.accountId}', '${banner.id}')" 
+                        class="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-semibold">
+                        <i class="fas fa-download mr-1"></i>Baixar
+                    </button>
+                    <button onclick="deleteSavedBanner('${banner.accountId}', '${banner.id}')" 
+                        class="px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
 // Gerar Links de Auto-Cadastro para TODAS as subcontas
 async function generateAllAutoSignupLinks() {
     // Primeira confirmação
