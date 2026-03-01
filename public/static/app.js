@@ -5249,6 +5249,29 @@ function closePromoBannerEditor() {
     document.getElementById('promo-banner-editor-modal').classList.add('hidden');
 }
 
+// Definir tamanho da fonte
+function setFontSize(size) {
+    // Remover seleção de todos os botões
+    document.getElementById('font-size-small').classList.remove('border-orange-500', 'bg-orange-50', 'font-semibold');
+    document.getElementById('font-size-medium').classList.remove('border-orange-500', 'bg-orange-50', 'font-semibold');
+    document.getElementById('font-size-large').classList.remove('border-orange-500', 'bg-orange-50', 'font-semibold');
+    
+    document.getElementById('font-size-small').classList.add('border-gray-300');
+    document.getElementById('font-size-medium').classList.add('border-gray-300');
+    document.getElementById('font-size-large').classList.add('border-gray-300');
+    
+    // Adicionar seleção ao botão clicado
+    const selectedBtn = document.getElementById(`font-size-${size}`);
+    selectedBtn.classList.remove('border-gray-300');
+    selectedBtn.classList.add('border-orange-500', 'bg-orange-50', 'font-semibold');
+    
+    // Armazenar tamanho selecionado
+    document.getElementById('promo-banner-font-size').value = size;
+    
+    // Atualizar preview
+    updatePromoBannerPreview();
+}
+
 // Atualizar preview do banner em tempo real
 function updatePromoBannerPreview() {
     const title = document.getElementById('promo-banner-title').value || 'ASSINE AGORA';
@@ -5259,6 +5282,7 @@ function updatePromoBannerPreview() {
     const color = document.getElementById('promo-banner-color').value;
     const qrCodeBase64 = document.getElementById('promo-banner-qrcode').value;
     const chargeType = document.getElementById('promo-banner-charge-type')?.value || 'monthly';
+    const fontSize = document.getElementById('promo-banner-font-size')?.value || 'medium';
     
     // Cores do gradiente
     const gradients = {
@@ -5271,16 +5295,52 @@ function updatePromoBannerPreview() {
     
     const gradient = gradients[color] || gradients.orange;
     
+    // Definir tamanhos de fonte baseado na seleção
+    const fontSizes = {
+        small: {
+            badge: 'text-xs',
+            promo: 'text-sm',
+            title: 'text-2xl',
+            description: 'text-sm',
+            price: 'text-4xl',
+            priceSuffix: 'text-lg',
+            qrLabel: 'text-xs',
+            button: 'text-sm'
+        },
+        medium: {
+            badge: 'text-xs',
+            promo: 'text-base',
+            title: 'text-4xl',
+            description: 'text-lg',
+            price: 'text-6xl',
+            priceSuffix: 'text-2xl',
+            qrLabel: 'text-xs',
+            button: 'text-lg'
+        },
+        large: {
+            badge: 'text-sm',
+            promo: 'text-lg',
+            title: 'text-5xl',
+            description: 'text-xl',
+            price: 'text-7xl',
+            priceSuffix: 'text-3xl',
+            qrLabel: 'text-sm',
+            button: 'text-xl'
+        }
+    };
+    
+    const currentFontSize = fontSizes[fontSize] || fontSizes.medium;
+    
     // Definir badge do tipo de cobrança
     const chargeTypeBadge = chargeType === 'monthly' 
-        ? '<div class="bg-green-500 text-white px-3 py-1 rounded-full inline-block text-xs font-bold mb-2"><i class="fas fa-sync-alt mr-1"></i>ASSINATURA MENSAL</div>'
-        : '<div class="bg-blue-500 text-white px-3 py-1 rounded-full inline-block text-xs font-bold mb-2"><i class="fas fa-receipt mr-1"></i>PAGAMENTO ÚNICO</div>';
+        ? `<div class="bg-green-500 text-white px-3 py-1 rounded-full inline-block ${currentFontSize.badge} font-bold mb-2"><i class="fas fa-sync-alt mr-1"></i>ASSINATURA MENSAL</div>`
+        : `<div class="bg-blue-500 text-white px-3 py-1 rounded-full inline-block ${currentFontSize.badge} font-bold mb-2"><i class="fas fa-receipt mr-1"></i>PAGAMENTO ÚNICO</div>`;
     
     const priceDisplay = chargeType === 'monthly' ? '/mês' : '';
     
     // Preview HTML (simplificado)
     const previewHTML = `
-        <div class="w-full h-full bg-gradient-to-br ${gradient} p-8 flex flex-col justify-between text-white relative overflow-hidden">
+        <div class="w-full h-full bg-gradient-to-br ${gradient} p-6 flex flex-col justify-between text-white relative overflow-hidden">
             <!-- Decoração de fundo -->
             <div class="absolute top-0 right-0 w-48 h-48 bg-white opacity-10 rounded-full -mr-24 -mt-24"></div>
             <div class="absolute bottom-0 left-0 w-36 h-36 bg-white opacity-10 rounded-full -ml-18 -mb-18"></div>
@@ -5288,22 +5348,22 @@ function updatePromoBannerPreview() {
             <!-- Conteúdo -->
             <div class="relative z-10 text-center">
                 ${chargeTypeBadge}
-                ${promo ? `<div class="bg-yellow-400 text-gray-900 px-4 py-2 rounded-full inline-block mb-4 font-bold text-sm">${promo}</div>` : ''}
-                <h1 class="text-4xl font-bold mb-4">${title}</h1>
-                <p class="text-lg opacity-90 mb-6">${description}</p>
-                <div class="text-6xl font-bold mb-2">R$ ${value.toFixed(2).replace('.', ',')}</div>
-                <div class="text-2xl">${priceDisplay}</div>
+                ${promo ? `<div class="bg-yellow-400 text-gray-900 px-3 py-1 rounded-full inline-block mb-3 font-bold ${currentFontSize.promo}">${promo}</div>` : ''}
+                <h1 class="${currentFontSize.title} font-bold mb-3 leading-tight">${title}</h1>
+                <p class="${currentFontSize.description} opacity-90 mb-4 leading-snug px-2">${description}</p>
+                <div class="${currentFontSize.price} font-bold mb-1">R$ ${value.toFixed(2).replace('.', ',')}</div>
+                <div class="${currentFontSize.priceSuffix}">${priceDisplay}</div>
             </div>
             
             <!-- QR Code e Botão -->
-            <div class="relative z-10 flex flex-col items-center gap-4">
+            <div class="relative z-10 flex flex-col items-center gap-3">
                 ${qrCodeBase64 ? `
-                    <div class="bg-white p-4 rounded-xl shadow-lg">
-                        <img src="${qrCodeBase64}" alt="QR Code" class="w-32 h-32">
-                        <p class="text-black text-xs mt-2 text-center font-semibold">Escaneie para assinar</p>
+                    <div class="bg-white p-3 rounded-xl shadow-lg">
+                        <img src="${qrCodeBase64}" alt="QR Code" class="${fontSize === 'small' ? 'w-24 h-24' : fontSize === 'large' ? 'w-40 h-40' : 'w-32 h-32'}">
+                        <p class="text-black ${currentFontSize.qrLabel} mt-2 text-center font-semibold">Escaneie para ${chargeType === 'monthly' ? 'assinar' : 'comprar'}</p>
                     </div>
                 ` : ''}
-                <div class="bg-white text-gray-900 px-8 py-4 rounded-full font-bold text-lg shadow-lg">
+                <div class="bg-white text-gray-900 px-6 py-3 rounded-full font-bold ${currentFontSize.button} shadow-lg">
                     ${buttonText} →
                 </div>
             </div>
@@ -5324,8 +5384,9 @@ async function downloadPromoBanner() {
     const linkUrl = document.getElementById('promo-banner-link').value;
     const qrCodeBase64 = document.getElementById('promo-banner-qrcode').value;
     const chargeType = document.getElementById('promo-banner-charge-type')?.value || 'monthly';
+    const fontSize = document.getElementById('promo-banner-font-size')?.value || 'medium';
     
-    await generatePromoBannerPNG(linkUrl, qrCodeBase64, value, description, title, promo, buttonText, color, chargeType);
+    await generatePromoBannerPNG(linkUrl, qrCodeBase64, value, description, title, promo, buttonText, color, chargeType, fontSize);
 }
 
 // Copiar link da propaganda
@@ -5352,7 +5413,7 @@ function copyPromoBannerLink() {
 }
 
 // Gerar Banner de Propaganda para redes sociais (PNG)
-async function generatePromoBannerPNG(linkUrl, qrCodeBase64, value, description, title, promo, buttonText, color, chargeType) {
+async function generatePromoBannerPNG(linkUrl, qrCodeBase64, value, description, title, promo, buttonText, color, chargeType, fontSize) {
     try {
         // Criar canvas
         const canvas = document.createElement('canvas');
@@ -5371,6 +5432,45 @@ async function generatePromoBannerPNG(linkUrl, qrCodeBase64, value, description,
         
         const selectedGradient = colorGradients[color] || colorGradients.orange;
         
+        // Tamanhos de fonte para Canvas baseado na seleção
+        const canvasFontSizes = {
+            small: {
+                badge: 24,
+                promo: 32,
+                title: 60,
+                description: 38,
+                price: 96,
+                priceSuffix: 48,
+                qrLabel: 22,
+                button: 38,
+                qrSize: 220
+            },
+            medium: {
+                badge: 28,
+                promo: 36,
+                title: 80,
+                description: 48,
+                price: 120,
+                priceSuffix: 60,
+                qrLabel: 24,
+                button: 48,
+                qrSize: 280
+            },
+            large: {
+                badge: 32,
+                promo: 42,
+                title: 96,
+                description: 56,
+                price: 140,
+                priceSuffix: 72,
+                qrLabel: 28,
+                button: 56,
+                qrSize: 320
+            }
+        };
+        
+        const canvasFont = canvasFontSizes[fontSize] || canvasFontSizes.medium;
+        
         // Gradiente de fundo
         const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
         gradient.addColorStop(0, selectedGradient.start);
@@ -5387,87 +5487,79 @@ async function generatePromoBannerPNG(linkUrl, qrCodeBase64, value, description,
         ctx.arc(150, 900, 250, 0, Math.PI * 2);
         ctx.fill();
         
-        let currentY = 80;
+        let currentY = fontSize === 'small' ? 100 : fontSize === 'large' ? 60 : 80;
         
         // Badge do tipo de cobrança
         ctx.textAlign = 'center';
+        
+        const badgeHeight = canvasFont.badge * 1.8;
+        const badgeWidth = canvasFont.badge * 14;
         
         if (chargeType === 'monthly') {
             // Badge verde para assinatura mensal
             ctx.fillStyle = '#10b981'; // Verde
             ctx.beginPath();
-            ctx.roundRect(canvas.width / 2 - 180, currentY, 360, 50, 25);
+            ctx.roundRect(canvas.width / 2 - badgeWidth / 2, currentY, badgeWidth, badgeHeight, badgeHeight / 2);
             ctx.fill();
             
             ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 28px Arial';
-            ctx.fillText('🔄 ASSINATURA MENSAL', canvas.width / 2, currentY + 35);
+            ctx.font = `bold ${canvasFont.badge}px Arial`;
+            ctx.fillText('🔄 ASSINATURA MENSAL', canvas.width / 2, currentY + badgeHeight / 2 + canvasFont.badge / 3);
         } else {
             // Badge azul para pagamento único
             ctx.fillStyle = '#3b82f6'; // Azul
             ctx.beginPath();
-            ctx.roundRect(canvas.width / 2 - 180, currentY, 360, 50, 25);
+            ctx.roundRect(canvas.width / 2 - badgeWidth / 2, currentY, badgeWidth, badgeHeight, badgeHeight / 2);
             ctx.fill();
             
             ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 28px Arial';
-            ctx.fillText('📄 PAGAMENTO ÚNICO', canvas.width / 2, currentY + 35);
+            ctx.font = `bold ${canvasFont.badge}px Arial`;
+            ctx.fillText('📄 PAGAMENTO ÚNICO', canvas.width / 2, currentY + badgeHeight / 2 + canvasFont.badge / 3);
         }
         
-        currentY += 90;
+        currentY += badgeHeight + 30;
         
         // Texto de promoção (se houver)
         if (promo) {
             ctx.fillStyle = '#ffdd00';
-            ctx.font = 'bold 36px Arial';
+            ctx.font = `bold ${canvasFont.promo}px Arial`;
             ctx.fillText(promo, canvas.width / 2, currentY);
-            currentY += 80;
+            currentY += canvasFont.promo + 40;
         }
         
-        // Título principal
+        // Título principal (quebra automática se muito longo)
         ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 80px Arial';
-        ctx.fillText(title || 'ASSINE AGORA', canvas.width / 2, currentY);
-        currentY += 100;
+        ctx.font = `bold ${canvasFont.title}px Arial`;
+        const titleText = title || 'ASSINE AGORA';
+        const titleLines = wrapText(ctx, titleText, 920);
+        titleLines.forEach((line, i) => {
+            ctx.fillText(line, canvas.width / 2, currentY + (i * (canvasFont.title + 10)));
+        });
+        currentY += (titleLines.length * (canvasFont.title + 10)) + 30;
         
-        // Descrição
-        ctx.font = 'bold 48px Arial';
+        // Descrição (quebra automática)
+        ctx.font = `bold ${canvasFont.description}px Arial`;
         ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
         const descText = description || 'Plano Premium com benefícios exclusivos';
-        
-        // Quebrar texto se muito longo
-        const maxWidth = 900;
-        const words = descText.split(' ');
-        let line = '';
-        
-        for (let i = 0; i < words.length; i++) {
-            const testLine = line + words[i] + ' ';
-            const metrics = ctx.measureText(testLine);
-            
-            if (metrics.width > maxWidth && i > 0) {
-                ctx.fillText(line, canvas.width / 2, currentY);
-                line = words[i] + ' ';
-                currentY += 60;
-            } else {
-                line = testLine;
-            }
-        }
-        ctx.fillText(line, canvas.width / 2, currentY);
-        currentY += 120;
+        const descLines = wrapText(ctx, descText, 920);
+        descLines.forEach((line, i) => {
+            ctx.fillText(line, canvas.width / 2, currentY + (i * (canvasFont.description + 15)));
+        });
+        currentY += (descLines.length * (canvasFont.description + 15)) + 50;
         
         // Valor
-        ctx.font = 'bold 120px Arial';
+        ctx.font = `bold ${canvasFont.price}px Arial`;
         ctx.fillStyle = '#ffffff';
         const valueText = `R$ ${parseFloat(value).toFixed(2).replace('.', ',')}`;
         ctx.fillText(valueText, canvas.width / 2, currentY);
         
         // Mostrar "/mês" apenas se for assinatura mensal
         if (chargeType === 'monthly') {
-            ctx.font = 'bold 60px Arial';
-            ctx.fillText('/mês', canvas.width / 2, currentY + 70);
-            currentY += 150;
+            ctx.font = `bold ${canvasFont.priceSuffix}px Arial`;
+            ctx.fillText('/mês', canvas.width / 2, currentY + canvasFont.priceSuffix + 20);
+            currentY += canvasFont.price + 50;
         } else {
-            currentY += 90;
+            currentY += canvasFont.price - 20;
         }
         
         // QR Code
@@ -5479,7 +5571,7 @@ async function generatePromoBannerPNG(linkUrl, qrCodeBase64, value, description,
             ctx.shadowOffsetX = 0;
             ctx.shadowOffsetY = 10;
             
-            const qrSize = 280;
+            const qrSize = canvasFont.qrSize;
             const qrX = (canvas.width - qrSize) / 2 - 30;
             const qrY = currentY;
             const padding = 30;
@@ -5502,28 +5594,18 @@ async function generatePromoBannerPNG(linkUrl, qrCodeBase64, value, description,
             
             // Texto abaixo do QR Code
             ctx.fillStyle = '#000000';
-            ctx.font = 'bold 28px Arial';
-            ctx.fillText('Escaneie para assinar', canvas.width / 2, qrY + qrSize + 55);
+            ctx.font = `bold ${canvasFont.qrLabel}px Arial`;
+            const qrLabelText = chargeType === 'monthly' ? 'Escaneie para assinar' : 'Escaneie para comprar';
+            ctx.fillText(qrLabelText, canvas.width / 2, qrY + qrSize + 55);
         }
         
-        // Link por extenso (embaixo do QR Code)
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 20px Arial';
-        ctx.textAlign = 'center';
+        // Link por extenso (embaixo do QR Code) - removido para economizar espaço
         
-        // Encurtar link se muito longo
-        let displayLink = linkUrl;
-        if (linkUrl.length > 60) {
-            displayLink = linkUrl.substring(0, 60) + '...';
-        }
-        
-        ctx.fillText(displayLink, canvas.width / 2, canvas.height - 150);
-        
-        // Botão "PAGAR AGORA"
-        const btnWidth = 500;
-        const btnHeight = 100;
+        // Botão de ação
+        const btnWidth = canvasFont.button * 10;
+        const btnHeight = canvasFont.button * 2;
         const btnX = (canvas.width - btnWidth) / 2;
-        const btnY = canvas.height - 100;
+        const btnY = canvas.height - btnHeight - 60;
         
         ctx.fillStyle = '#ffffff';
         ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
@@ -5537,9 +5619,9 @@ async function generatePromoBannerPNG(linkUrl, qrCodeBase64, value, description,
         ctx.shadowBlur = 0;
         
         ctx.fillStyle = selectedGradient.start;
-        ctx.font = 'bold 48px Arial';
+        ctx.font = `bold ${canvasFont.button}px Arial`;
         ctx.textAlign = 'center';
-        ctx.fillText((buttonText || 'PAGAR AGORA') + ' →', canvas.width / 2, btnY + 65);
+        ctx.fillText((buttonText || 'PAGAR AGORA') + ' →', canvas.width / 2, btnY + btnHeight / 2 + canvasFont.button / 3);
         
         // Download do banner
         const dataUrl = canvas.toDataURL('image/png');

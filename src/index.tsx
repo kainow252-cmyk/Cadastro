@@ -10619,8 +10619,32 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?sta
                                     oninput="updatePromoBannerPreview()">
                             </div>
 
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    <i class="fas fa-font mr-1 text-orange-600"></i>Tamanho das Fontes
+                                </label>
+                                <div class="grid grid-cols-3 gap-2">
+                                    <button type="button" onclick="setFontSize('small')" 
+                                        id="font-size-small"
+                                        class="px-4 py-2 border-2 border-gray-300 rounded-lg hover:border-orange-500 transition text-sm">
+                                        <i class="fas fa-compress-alt mr-1"></i>Pequeno
+                                    </button>
+                                    <button type="button" onclick="setFontSize('medium')" 
+                                        id="font-size-medium"
+                                        class="px-4 py-2 border-2 border-orange-500 bg-orange-50 rounded-lg transition text-sm font-semibold">
+                                        <i class="fas fa-text-height mr-1"></i>Médio
+                                    </button>
+                                    <button type="button" onclick="setFontSize('large')" 
+                                        id="font-size-large"
+                                        class="px-4 py-2 border-2 border-gray-300 rounded-lg hover:border-orange-500 transition text-sm">
+                                        <i class="fas fa-expand-alt mr-1"></i>Grande
+                                    </button>
+                                </div>
+                            </div>
+
                             <input type="hidden" id="promo-banner-link" value="">
                             <input type="hidden" id="promo-banner-qrcode" value="">
+                            <input type="hidden" id="promo-banner-font-size" value="medium">
                         </div>
 
                         <!-- Coluna Direita: Preview do Banner -->
