@@ -5254,8 +5254,14 @@ async function openQuickBannerEditor(accountId, walletId, accountName) {
                 walletIdInput.id = 'promo-banner-wallet-id';
                 document.getElementById('promo-banner-link').parentElement.appendChild(walletIdInput);
             }
+            
+            console.log('🎯 Definindo accountId no modal:', accountId);
+            console.log('📏 Tamanho do accountId:', accountId?.length, 'caracteres');
+            
             document.getElementById('promo-banner-account-id').value = accountId;
             document.getElementById('promo-banner-wallet-id').value = walletId;
+            
+            console.log('✅ AccountId definido:', document.getElementById('promo-banner-account-id').value);
             
             // Abrir editor
             openBannerEditor(link.linkUrl, qrCodeBase64, 10.00, 'Mensalidade', 'monthly');
@@ -5280,20 +5286,11 @@ function openBannerEditor(linkUrl, qrCodeBase64, value, description, chargeType)
     document.getElementById('promo-banner-link').value = linkUrl;
     document.getElementById('promo-banner-qrcode').value = qrCodeBase64;
     
-    // Extrair accountId do linkUrl (formato: /subscription-signup/accountId-timestamp-random)
-    const linkMatch = linkUrl.match(/subscription-signup\/([^-]+)/);
-    if (linkMatch) {
-        const accountId = linkMatch[1];
-        
-        // Criar campo hidden se não existir
-        if (!document.getElementById('promo-banner-account-id')) {
-            const input = document.createElement('input');
-            input.type = 'hidden';
-            input.id = 'promo-banner-account-id';
-            document.getElementById('promo-banner-link').parentElement.appendChild(input);
-        }
-        document.getElementById('promo-banner-account-id').value = accountId;
-    }
+    // NÃO extrair accountId da URL pois isso trunca o UUID
+    // O accountId correto já foi definido pela função que chamou openBannerEditor
+    // (linha 5257 em openBannerGeneratorModal)
+    console.log('🎨 Editor aberto para link:', linkUrl);
+    console.log('🔑 AccountId já definido:', document.getElementById('promo-banner-account-id')?.value);
     
     // Preencher campos com valores padrão
     document.getElementById('promo-banner-value').value = value;
@@ -5502,6 +5499,10 @@ async function savePromoBannerOnly() {
     const chargeType = document.getElementById('promo-banner-charge-type')?.value || 'monthly';
     const fontSize = document.getElementById('promo-banner-font-size')?.value || 'medium';
     const accountId = document.getElementById('promo-banner-account-id')?.value;
+    
+    console.log('💾 Salvando banner...');
+    console.log('🔑 AccountId capturado:', accountId);
+    console.log('📏 Tamanho do accountId:', accountId?.length, 'caracteres');
     
     if (!accountId) {
         alert('❌ Erro: ID da conta não encontrado');
