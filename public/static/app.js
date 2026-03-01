@@ -5285,13 +5285,18 @@ function openBannerEditor(linkUrl, qrCodeBase64, value, description, chargeType,
     const qrElement = document.getElementById('promo-banner-qrcode');
     const modalElement = document.getElementById('promo-banner-editor-modal');
     
+    // Listar TODOS os IDs que contêm 'banner' para debug
+    const allBannerIds = Array.from(document.querySelectorAll('[id*="banner"]')).map(el => el.id);
+    
     console.log('🔍 Verificando elementos:', {
         linkElement: !!linkElement,
         qrElement: !!qrElement,
         modalElement: !!modalElement,
         DOMReady: isDOMReady,
         readyState: document.readyState,
-        bodyChildrenCount: document.body ? document.body.children.length : 0
+        bodyChildrenCount: document.body ? document.body.children.length : 0,
+        allBannerIdsFound: allBannerIds,
+        lookingFor: ['promo-banner-link', 'promo-banner-qrcode', 'promo-banner-editor-modal']
     });
     
     if (!linkElement || !qrElement || !modalElement) {
@@ -6210,13 +6215,18 @@ function showSavedBanners(accountId, accountName, retryCount = 0) {
     const emptyState = document.getElementById('saved-banners-empty');
     const modalElement = document.getElementById('saved-banners-modal');
     
+    // Listar TODOS os IDs que contêm 'banner' para debug
+    const allBannerIds = Array.from(document.querySelectorAll('[id*="banner"]')).map(el => el.id);
+    
     console.log('🔍 Verificando elementos do modal de banners:', {
         titleElement: !!titleElement,
         listContainer: !!listContainer,
         emptyState: !!emptyState,
         modalElement: !!modalElement,
         DOMReady: isDOMReady,
-        readyState: document.readyState
+        readyState: document.readyState,
+        allBannerIdsFound: allBannerIds,
+        lookingFor: ['saved-banners-modal', 'saved-banners-list', 'saved-banners-empty']
     });
     
     if (!listContainer || !emptyState || !modalElement) {
