@@ -14,7 +14,11 @@ function openBannerModal(accountId, accountName) {
     }
     
     document.getElementById('banner-modal').classList.remove('hidden');
-    updateBannerPreview();
+    
+    // Aguardar um pouco para garantir que modal está visível antes de gerar preview
+    setTimeout(() => {
+        updateBannerPreview();
+    }, 100);
 }
 
 // Gerar link simples para cadastro e pagamento
@@ -68,6 +72,9 @@ async function updateBannerPreview() {
     const link = generateBannerLink();
     let qrCodeDataUrl = '';
     
+    console.log('🔗 Link gerado para QR Code:', link);
+    console.log('📦 QRCode library disponível:', typeof QRCode !== 'undefined');
+    
     if (link && typeof QRCode !== 'undefined') {
         try {
             qrCodeDataUrl = await QRCode.toDataURL(link, {
@@ -78,39 +85,47 @@ async function updateBannerPreview() {
                     light: '#FFFFFF'
                 }
             });
+            console.log('✅ QR Code gerado com sucesso!');
         } catch (err) {
-            console.error('Erro ao gerar QR Code:', err);
+            console.error('❌ Erro ao gerar QR Code:', err);
+        }
+    } else {
+        if (!link) {
+            console.error('❌ Link não foi gerado');
+        }
+        if (typeof QRCode === 'undefined') {
+            console.error('❌ Biblioteca QRCode não carregada. Verifique se o script está no HTML.');
         }
     }
     
-    // HTML do preview
+    // HTML do preview - RESPONSIVO
     const previewHTML = `
-        <div class="w-full h-full bg-gradient-to-br ${gradient} p-8 flex flex-col justify-between text-white relative overflow-hidden">
+        <div class="w-full h-full bg-gradient-to-br ${gradient} p-4 sm:p-6 md:p-8 flex flex-col justify-between text-white relative overflow-hidden">
             <!-- Decoração de fundo -->
-            <div class="absolute top-0 right-0 w-64 h-64 bg-white opacity-10 rounded-full -mr-32 -mt-32"></div>
-            <div class="absolute bottom-0 left-0 w-48 h-48 bg-white opacity-10 rounded-full -ml-24 -mb-24"></div>
+            <div class="absolute top-0 right-0 w-32 h-32 sm:w-48 sm:h-48 md:w-64 md:h-64 bg-white opacity-10 rounded-full -mr-16 -mt-16 sm:-mr-24 sm:-mt-24 md:-mr-32 md:-mt-32"></div>
+            <div class="absolute bottom-0 left-0 w-24 h-24 sm:w-36 sm:h-36 md:w-48 md:h-48 bg-white opacity-10 rounded-full -ml-12 -mb-12 sm:-ml-18 sm:-mb-18 md:-ml-24 md:-mb-24"></div>
             
             <!-- Conteúdo -->
             <div class="relative z-10">
-                <div class="mb-6">
-                    <div class="text-sm font-semibold mb-2 opacity-90">${typeText}</div>
-                    <h1 class="text-4xl font-bold mb-4 leading-tight">${title}</h1>
-                    <p class="text-lg opacity-90 mb-6">${description}</p>
-                    <div class="text-5xl font-bold mb-2">
+                <div class="mb-3 sm:mb-4 md:mb-6">
+                    <div class="text-xs sm:text-sm font-semibold mb-1 sm:mb-2 opacity-90">${typeText}</div>
+                    <h1 class="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-bold mb-2 sm:mb-3 md:mb-4 leading-tight">${title.length > 40 ? title.substring(0, 37) + '...' : title}</h1>
+                    <p class="text-sm sm:text-base md:text-lg opacity-90 mb-3 sm:mb-4 md:mb-6 line-clamp-2">${description}</p>
+                    <div class="text-3xl sm:text-4xl md:text-5xl font-bold mb-1 sm:mb-2">
                         R$ ${parseFloat(value).toFixed(2).replace('.', ',')}
-                        ${type === 'monthly' ? '<span class="text-2xl">/mês</span>' : ''}
+                        ${type === 'monthly' ? '<span class="text-lg sm:text-xl md:text-2xl">/mês</span>' : ''}
                     </div>
                 </div>
             </div>
             
             <!-- QR Code e CTA -->
-            <div class="relative z-10 flex items-end justify-between">
-                <div class="bg-white rounded-xl p-4 shadow-2xl">
-                    ${qrCodeDataUrl ? `<img src="${qrCodeDataUrl}" class="w-32 h-32" alt="QR Code" />` : '<div class="w-32 h-32 bg-gray-200 flex items-center justify-center text-gray-500 text-xs">QR Code</div>'}
-                    <p class="text-center text-xs text-gray-800 mt-2 font-semibold">Escaneie para cadastrar</p>
+            <div class="relative z-10 flex flex-col sm:flex-row items-center sm:items-end justify-between gap-3 sm:gap-4">
+                <div class="bg-white rounded-lg sm:rounded-xl p-2 sm:p-3 md:p-4 shadow-2xl">
+                    ${qrCodeDataUrl ? `<img src="${qrCodeDataUrl}" class="w-20 h-20 sm:w-24 sm:h-24 md:w-32 md:h-32" alt="QR Code" />` : '<div class="w-20 h-20 sm:w-24 sm:h-24 md:w-32 md:h-32 bg-gray-200 flex items-center justify-center text-gray-500 text-xs">Carregando...</div>'}
+                    <p class="text-center text-xs text-gray-800 mt-1 sm:mt-2 font-semibold">Escaneie aqui</p>
                 </div>
-                <div class="text-right">
-                    <button class="bg-white text-${color}-600 px-8 py-4 rounded-full font-bold text-lg shadow-2xl hover:scale-105 transition transform">
+                <div class="text-center sm:text-right">
+                    <button class="bg-white text-${color}-600 px-4 py-2 sm:px-6 sm:py-3 md:px-8 md:py-4 rounded-full font-bold text-sm sm:text-base md:text-lg shadow-2xl hover:scale-105 transition transform whitespace-nowrap">
                         ${buttonText} →
                     </button>
                 </div>
