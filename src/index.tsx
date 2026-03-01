@@ -4073,6 +4073,7 @@ app.post('/api/pix/subscription-link', async (c) => {
 })
 
 // Obter dados do link de auto-cadastro (público)
+// Rota antiga (manter para compatibilidade)
 app.get('/api/pix/subscription-link/:linkId', async (c) => {
   try {
     const linkId = c.req.param('linkId')
@@ -4098,7 +4099,42 @@ app.get('/api/pix/subscription-link/:linkId', async (c) => {
         description: result.description,
         walletId: result.wallet_id,
         accountId: result.account_id,
-        chargeType: result.charge_type || 'monthly' // Adicionar charge_type
+        chargeType: result.charge_type || 'monthly'
+      }
+    })
+  } catch (error: any) {
+    console.error('Erro ao buscar link:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Rota nova correta (subscription-signup)
+app.get('/api/pix/subscription-signup/:linkId', async (c) => {
+  try {
+    const linkId = c.req.param('linkId')
+    
+    const result = await c.env.DB.prepare(`
+      SELECT * FROM subscription_signup_links WHERE id = ? AND active = 1
+    `).bind(linkId).first()
+    
+    if (!result) {
+      return c.json({ error: 'Link não encontrado ou expirado' }, 404)
+    }
+    
+    // Verificar expiração
+    if (new Date(result.expires_at as string) < new Date()) {
+      return c.json({ error: 'Link expirado' }, 410)
+    }
+    
+    return c.json({
+      ok: true,
+      data: {
+        linkId: result.id,
+        value: result.value,
+        description: result.description,
+        walletId: result.wallet_id,
+        accountId: result.account_id,
+        chargeType: result.charge_type || 'monthly'
       }
     })
   } catch (error: any) {
@@ -7326,7 +7362,7 @@ app.get('/subscription-signup/:linkId', async (c) => {
         
         async function loadLinkData() {
             try {
-                const response = await axios.get(\`/api/pix/subscription-link/\${linkId}\`);
+                const response = await axios.get(\`/api/pix/subscription-signup/\${linkId}\`);
                 if (response.data.ok) {
                     linkData = response.data.data;
                     document.getElementById('loading-state').classList.add('hidden');
