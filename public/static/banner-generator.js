@@ -13,12 +13,27 @@ function openBannerModal(accountId, accountName) {
         document.getElementById('banner-title').value = `Assine ${accountName}`;
     }
     
-    document.getElementById('banner-modal').classList.remove('hidden');
+    // Resetar estado do modal
+    document.getElementById('generate-banner-container').classList.remove('hidden');
+    document.getElementById('banner-preview-container').classList.add('hidden');
+    document.getElementById('banner-actions').classList.add('hidden');
     
-    // Aguardar um pouco para garantir que modal está visível antes de gerar preview
-    setTimeout(() => {
-        updateBannerPreview();
-    }, 100);
+    document.getElementById('banner-modal').classList.remove('hidden');
+}
+
+// Gerar e mostrar banner
+async function generateAndShowBanner() {
+    // Esconder botão "Gerar Banner"
+    document.getElementById('generate-banner-container').classList.add('hidden');
+    
+    // Mostrar preview container
+    document.getElementById('banner-preview-container').classList.remove('hidden');
+    
+    // Gerar preview do banner
+    await updateBannerPreview();
+    
+    // Mostrar botões de ação
+    document.getElementById('banner-actions').classList.remove('hidden');
 }
 
 // Gerar link do banner (página de oferta) que direciona para cadastro

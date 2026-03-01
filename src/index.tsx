@@ -10460,19 +10460,34 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?sta
                             <input type="hidden" id="banner-account-id" value="">
                         </div>
 
-                        <!-- Coluna Direita: Preview -->
+                        <!-- Coluna Direita: Banner Gerado -->
                         <div>
-                            <label class="block text-sm font-semibold text-gray-700 mb-2">
-                                <i class="fas fa-eye mr-1"></i>Preview do Banner
-                            </label>
-                            <div id="banner-preview" class="w-full aspect-square rounded-lg overflow-hidden shadow-lg bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-white">
-                                <p class="text-sm">Preview será gerado aqui</p>
+                            <!-- Botão Gerar Banner (Aparece Primeiro) -->
+                            <div id="generate-banner-container" class="flex flex-col items-center justify-center">
+                                <button onclick="generateAndShowBanner()" 
+                                    class="px-8 py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 font-bold text-lg shadow-lg transition">
+                                    <i class="fas fa-magic mr-2"></i>Gerar Banner
+                                </button>
+                                <p class="text-sm text-gray-500 mt-3 text-center">
+                                    <i class="fas fa-info-circle mr-1"></i>
+                                    Clique para gerar o banner com QR Code funcionando
+                                </p>
+                            </div>
+
+                            <!-- Preview do Banner (Aparece Depois de Gerar) -->
+                            <div id="banner-preview-container" class="hidden">
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    <i class="fas fa-check-circle text-green-600 mr-1"></i>Banner Gerado com Sucesso!
+                                </label>
+                                <div id="banner-preview" class="w-full aspect-square rounded-lg overflow-hidden shadow-lg bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-white">
+                                    <p class="text-sm">Gerando banner...</p>
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Ações -->
-                    <div class="flex gap-3">
+                    <!-- Ações (Aparecem Depois de Gerar) -->
+                    <div id="banner-actions" class="hidden flex gap-3">
                         <button onclick="downloadBanner()" 
                             class="flex-1 px-6 py-3 bg-gradient-to-r from-orange-600 to-red-600 text-white rounded-lg hover:from-orange-700 hover:to-red-700 font-semibold">
                             <i class="fas fa-download mr-2"></i>Baixar Banner (PNG)
