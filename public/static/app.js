@@ -5958,9 +5958,19 @@ function showSavedBanners(accountId, accountName) {
     const rawData = localStorage.getItem(storageKey);
     console.log('💾 Dados brutos do localStorage:', rawData);
     
-    const banners = getSavedBanners(accountId);
-    console.log('📊 Banners encontrados:', banners.length);
-    console.log('📦 Dados dos banners:', banners);
+    let banners = getSavedBanners(accountId);
+    console.log('📊 Banners encontrados (antes da limpeza):', banners.length);
+    
+    // Limpar banners com linkUrl inválido automaticamente
+    const invalidBanners = banners.filter(b => !b.linkUrl || b.linkUrl.includes('/api/pix/subscription-link/'));
+    if (invalidBanners.length > 0) {
+        console.warn('⚠️ Encontrados', invalidBanners.length, 'banner(s) com link inválido. Removendo...');
+        banners = banners.filter(b => b.linkUrl && !b.linkUrl.includes('/api/pix/subscription-link/'));
+        localStorage.setItem(storageKey, JSON.stringify(banners));
+        console.log('✅ Banners inválidos removidos. Restam:', banners.length);
+    }
+    
+    console.log('📦 Dados dos banners (após limpeza):', banners);
     
     // Debug: listar todas as chaves de banners no localStorage
     console.log('🔍 Todas as chaves de banners no localStorage:');
@@ -6126,6 +6136,13 @@ function viewBannerDetails(accountId, bannerId) {
         return;
     }
     
+    // Validar e corrigir linkUrl se estiver com formato errado
+    if (!banner.linkUrl || banner.linkUrl.includes('/api/pix/subscription-link/')) {
+        console.warn('⚠️ Banner com linkUrl inválido:', banner.linkUrl);
+        alert('⚠️ Este banner foi criado com uma versão antiga e precisa ser regerado.\n\nPor favor:\n1. Exclua este banner\n2. Gere um novo através de "Link Auto-Cadastro"');
+        return;
+    }
+    
     // Criar modal de visualização
     const modal = document.createElement('div');
     modal.id = 'banner-detail-modal';
@@ -6274,6 +6291,12 @@ function viewBannerDetails(accountId, bannerId) {
 
 // Compartilhar no WhatsApp
 function shareToWhatsApp(linkUrl, title, value) {
+    // Validar linkUrl
+    if (!linkUrl || linkUrl.includes('/api/pix/subscription-link/')) {
+        alert('⚠️ Link de pagamento inválido!\n\nEste banner precisa ser regerado:\n1. Exclua este banner\n2. Gere um novo através de "Link Auto-Cadastro"');
+        return;
+    }
+    
     const message = `🎉 *${title}*\n\n💰 Valor: R$ ${parseFloat(value).toFixed(2).replace('.', ',')}\n\n🔗 Clique aqui para pagar:\n${linkUrl}\n\n✅ Pagamento rápido e seguro via PIX`;
     
     const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
@@ -6287,6 +6310,12 @@ function shareToWhatsApp(linkUrl, title, value) {
 
 // Copiar link do banner
 function copyBannerLink(linkUrl) {
+    // Validar linkUrl
+    if (!linkUrl || linkUrl.includes('/api/pix/subscription-link/')) {
+        alert('⚠️ Link de pagamento inválido!\n\nEste banner precisa ser regerado:\n1. Exclua este banner\n2. Gere um novo através de "Link Auto-Cadastro"');
+        return;
+    }
+    
     navigator.clipboard.writeText(linkUrl).then(() => {
         // Modal de confirmação melhorado
         const modal = document.createElement('div');
