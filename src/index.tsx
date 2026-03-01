@@ -10539,10 +10539,18 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?sta
         <!-- Seção Banners Salvos -->
         <div id="banners-section" class="section hidden">
             <div class="bg-white rounded-lg shadow-md p-8">
-                <h2 class="text-2xl font-bold text-gray-800 mb-6 flex items-center">
-                    <i class="fas fa-images mr-3 text-pink-600"></i>
-                    Banners Salvos
-                </h2>
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-2xl font-bold text-gray-800 flex items-center">
+                        <i class="fas fa-images mr-3 text-pink-600"></i>
+                        Banners Salvos
+                    </h2>
+                    
+                    <button onclick="clearOrphanBanners()" 
+                        class="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm font-semibold shadow-md hover:shadow-lg">
+                        <i class="fas fa-trash-alt"></i>
+                        Limpar Banners
+                    </button>
+                </div>
                 
                 <div id="banners-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     <!-- Banners serão carregados aqui -->

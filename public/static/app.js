@@ -6171,6 +6171,40 @@ function loadSavedBanners() {
     `).join('');
 }
 
+// Limpar todos os banners órfãos (funcão administrativa)
+function clearOrphanBanners() {
+    if (!confirm('🗑️ Limpar TODOS os banners salvos?\n\n⚠️ Esta ação NÃO pode ser desfeita!\n\n💡 Use isso se houver banners com IDs incorretos.\nDepois você pode gerar novos banners.')) {
+        return;
+    }
+    
+    let removedCount = 0;
+    const keysToRemove = [];
+    
+    // Identificar todas as chaves de banners
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('banners_')) {
+            keysToRemove.push(key);
+        }
+    }
+    
+    // Remover todas as chaves
+    keysToRemove.forEach(key => {
+        const bannersData = JSON.parse(localStorage.getItem(key) || '[]');
+        removedCount += bannersData.length;
+        localStorage.removeItem(key);
+        console.log(`🗑️ Removida chave: ${key} (${bannersData.length} banner(s))`);
+    });
+    
+    console.log(`✅ Total de banners removidos: ${removedCount}`);
+    alert(`✅ Limpeza concluída!\n\n🗑️ ${removedCount} banner(s) removido(s)\n\n💡 Agora você pode gerar novos banners através de "Link Auto-Cadastro"`);
+    
+    // Recarregar a página de banners se estiver aberta
+    if (document.getElementById('banners-section').classList.contains('active')) {
+        loadSavedBanners();
+    }
+}
+
 // Gerar Links de Auto-Cadastro para TODAS as subcontas
 async function generateAllAutoSignupLinks() {
     // Primeira confirmação
