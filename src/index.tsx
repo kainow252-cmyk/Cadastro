@@ -8511,50 +8511,56 @@ app.get('/', (c) => {
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
             <!-- Dashboard Section -->
             <div id="dashboard-section" class="section hidden">
-                <!-- Quick Actions - TOPO -->
-                <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-                    <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
-                        <i class="fas fa-bolt mr-2 text-yellow-500"></i>
+                <!-- Quick Actions - TOPO - Cards Format -->
+                <div class="mb-6">
+                    <h3 class="text-2xl font-bold text-gray-800 mb-6 flex items-center">
+                        <i class="fas fa-bolt mr-3 text-yellow-500"></i>
                         Ações Rápidas
                     </h3>
-                    <div class="flex flex-wrap gap-3 justify-center">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                        <!-- Card Dashboard -->
                         <button onclick="showSection('dashboard')" 
-                            class="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 font-semibold shadow-md transition">
-                            <i class="fas fa-chart-line text-xl"></i>
-                            <span class="text-sm">Dashboard</span>
+                            class="bg-white rounded-2xl shadow-lg p-6 hover:shadow-2xl transition-all duration-300 hover:scale-105 flex flex-col items-center justify-center gap-4 group border border-gray-100">
+                            <div class="w-16 h-16 rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <i class="fas fa-chart-line text-3xl text-white"></i>
+                            </div>
+                            <span class="font-semibold text-gray-700 text-center">Dashboard</span>
                         </button>
-                        <!-- Botão "Criar Subconta" removido - use o menu "Subcontas" -->
-                        <!-- Botão "Gerar Link" removido - use "Links Pagamento" -->
+
+                        <!-- Card Subcontas -->
                         <button onclick="showSection('accounts')" 
-                            class="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 font-semibold shadow-md transition">
-                            <i class="fas fa-list text-xl"></i>
-                            <span class="text-sm">Subcontas</span>
+                            class="bg-white rounded-2xl shadow-lg p-6 hover:shadow-2xl transition-all duration-300 hover:scale-105 flex flex-col items-center justify-center gap-4 group border border-gray-100">
+                            <div class="w-16 h-16 rounded-full bg-gradient-to-r from-green-500 to-green-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <i class="fas fa-users text-3xl text-white"></i>
+                            </div>
+                            <span class="font-semibold text-gray-700 text-center">Subcontas</span>
                         </button>
+
+                        <!-- Card Relatórios -->
                         <button onclick="showSection('reports')" 
-                            class="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-lg hover:from-orange-600 hover:to-red-600 font-semibold shadow-md transition">
-                            <i class="fas fa-chart-bar text-xl"></i>
-                            <span class="text-sm">Relatórios</span>
+                            class="bg-white rounded-2xl shadow-lg p-6 hover:shadow-2xl transition-all duration-300 hover:scale-105 flex flex-col items-center justify-center gap-4 group border border-gray-100">
+                            <div class="w-16 h-16 rounded-full bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <i class="fas fa-chart-bar text-3xl text-white"></i>
+                            </div>
+                            <span class="font-semibold text-gray-700 text-center">Relatórios</span>
                         </button>
+
+                        <!-- Card APIs Externas -->
                         <button onclick="showSection('api-links')" 
-                            class="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-green-500 to-teal-500 text-white rounded-lg hover:from-green-600 hover:to-teal-600 font-semibold shadow-md transition">
-                            <i class="fas fa-plug text-xl"></i>
-                            <span class="text-sm">APIs Externas</span>
+                            class="bg-white rounded-2xl shadow-lg p-6 hover:shadow-2xl transition-all duration-300 hover:scale-105 flex flex-col items-center justify-center gap-4 group border border-gray-100">
+                            <div class="w-16 h-16 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <i class="fas fa-plug text-3xl text-white"></i>
+                            </div>
+                            <span class="font-semibold text-gray-700 text-center">APIs Externas</span>
                         </button>
+
+                        <!-- Card Cartão -->
                         <button onclick="showSection('deltapag-section')" 
-                            class="flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 font-semibold shadow-md transition">
-                            <i class="fas fa-credit-card text-xl"></i>
-                            <span class="text-sm">Cartão</span>
-                        </button>
-                        <button onclick="generateAllAutoSignupLinks()" 
-                            class="hidden flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-orange-500 to-red-600 text-white rounded-lg hover:from-orange-600 hover:to-red-700 font-semibold shadow-md transition">
-                            <i class="fas fa-link text-xl"></i>
-                            <span class="text-sm">Link de Auto-Cadastro</span>
-                        </button>
-                        <!-- Botão Banners Salvos oculto -->
-                        <button onclick="showSection('banners-section')" 
-                            class="hidden flex items-center gap-2 px-4 py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-lg hover:from-pink-600 hover:to-rose-600 font-semibold shadow-md transition">
-                            <i class="fas fa-images text-xl"></i>
-                            <span class="text-sm">Banners Salvos</span>
+                            class="bg-white rounded-2xl shadow-lg p-6 hover:shadow-2xl transition-all duration-300 hover:scale-105 flex flex-col items-center justify-center gap-4 group border border-gray-100">
+                            <div class="w-16 h-16 rounded-full bg-gradient-to-r from-purple-500 to-pink-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <i class="fas fa-credit-card text-3xl text-white"></i>
+                            </div>
+                            <span class="font-semibold text-gray-700 text-center">Cartão</span>
                         </button>
                     </div>
                 </div>
