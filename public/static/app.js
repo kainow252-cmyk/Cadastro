@@ -5504,6 +5504,9 @@ async function savePromoBannerOnly() {
     console.log('💾 Salvando banner...');
     console.log('🔑 AccountId capturado:', accountId);
     console.log('📏 Tamanho do accountId:', accountId?.length, 'caracteres');
+    console.log('📊 ChargeType capturado:', chargeType);
+    console.log('📝 Título capturado:', title);
+    console.log('💰 Valor capturado:', value);
     
     if (!accountId) {
         alert('❌ Erro: ID da conta não encontrado');
@@ -5526,6 +5529,8 @@ async function savePromoBannerOnly() {
         fontSize,
         createdAt: new Date().toISOString()
     };
+    
+    console.log('📦 Dados do banner antes de salvar:', bannerData);
     
     // Salvar no localStorage
     saveBanner(accountId, bannerData);
