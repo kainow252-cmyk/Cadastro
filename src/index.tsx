@@ -7084,8 +7084,21 @@ app.get('/login', (c) => {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Login - Gerenciador Asaas</title>
+        <!-- Google Fonts - Inter -->
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <style>
+            * {
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+                -webkit-font-smoothing: antialiased;
+            }
+            h1, h2 { font-weight: 700; letter-spacing: -0.02em; }
+            button { font-weight: 600; letter-spacing: 0.01em; }
+            input { font-size: 0.9375rem; line-height: 1.5; }
+        </style>
     </head>
     <body class="bg-gradient-to-br from-blue-600 to-indigo-700 min-h-screen flex items-center justify-center">
         <div class="max-w-md w-full mx-4">
@@ -7205,10 +7218,25 @@ app.get('/subscription-signup/:linkId', async (c) => {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Assinatura Mensal PIX - Auto-Cadastro</title>
+    <!-- Google Fonts - Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
     <style>
+        /* Tipografia Profissional */
+        * {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        h1, h2 { font-weight: 700; line-height: 1.2; letter-spacing: -0.02em; }
+        h3 { font-weight: 600; line-height: 1.3; }
+        button { font-weight: 600; letter-spacing: 0.01em; }
+        input, label { font-size: 0.9375rem; line-height: 1.5; }
+        
+        /* Animações */
         @keyframes pulse-slow {
             0%, 100% { transform: scale(1); }
             50% { transform: scale(1.05); }
@@ -7906,9 +7934,122 @@ app.get('/', (c) => {
         <title>Gerenciador Asaas - Contas e Subcontas</title>
         <link rel="icon" type="image/svg+xml" href="/favicon.svg">
         <link rel="alternate icon" href="/favicon.ico">
+        <!-- Google Fonts - Inter (Tipografia Profissional) -->
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+        
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
         <link href="/static/responsive.css?v=1.0" rel="stylesheet">
+        
+        <!-- Tipografia e Layout Profissional -->
+        <style>
+            /* Configuração Global - Fonte Inter */
+            :root {
+                --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+                --color-primary: #1E293B;
+                --color-secondary: #64748B;
+                --color-accent: #3B82F6;
+                --color-dark: #0F172A;
+            }
+            
+            * {
+                font-family: var(--font-sans);
+                -webkit-font-smoothing: antialiased;
+                -moz-osx-font-smoothing: grayscale;
+            }
+            
+            body {
+                font-size: 16px;
+                line-height: 1.6;
+                color: var(--color-primary);
+            }
+            
+            /* Hierarquia de Títulos Profissional */
+            h1, .text-3xl, .text-4xl, .text-5xl {
+                font-weight: 700;
+                line-height: 1.2;
+                letter-spacing: -0.02em;
+                color: var(--color-dark);
+            }
+            
+            h2, .text-2xl {
+                font-weight: 600;
+                line-height: 1.3;
+                letter-spacing: -0.01em;
+                color: var(--color-primary);
+            }
+            
+            h3, .text-xl {
+                font-weight: 500;
+                line-height: 1.4;
+                color: var(--color-primary);
+            }
+            
+            /* Botões com Tipografia Melhorada */
+            button, .btn, a.button {
+                font-weight: 600;
+                letter-spacing: 0.01em;
+                transition: all 0.2s ease;
+            }
+            
+            /* Cards e Containers */
+            .bg-white {
+                box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            }
+            
+            .shadow-lg {
+                box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            }
+            
+            /* Texto Secundário */
+            .text-gray-500, .text-gray-600 {
+                color: var(--color-secondary);
+                line-height: 1.5;
+            }
+            
+            /* Labels e Small Text */
+            label, .text-sm {
+                font-size: 0.875rem;
+                font-weight: 500;
+                letter-spacing: 0.01em;
+            }
+            
+            /* Inputs Profissionais */
+            input, select, textarea {
+                font-size: 0.9375rem;
+                font-weight: 400;
+                line-height: 1.5;
+            }
+            
+            /* Badges e Tags */
+            .badge, .tag {
+                font-size: 0.75rem;
+                font-weight: 600;
+                letter-spacing: 0.02em;
+                text-transform: uppercase;
+            }
+            
+            /* Links */
+            a {
+                font-weight: 500;
+                transition: color 0.2s ease;
+            }
+            
+            /* Responsivo - Mobile */
+            @media (max-width: 640px) {
+                body { font-size: 15px; }
+                h1, .text-3xl, .text-4xl { font-size: 1.875rem; } /* 30px */
+                h2, .text-2xl { font-size: 1.5rem; } /* 24px */
+                h3, .text-xl { font-size: 1.25rem; } /* 20px */
+            }
+            
+            /* Animações Suaves */
+            * {
+                transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+            }
+        </style>
     </head>
     <body class="bg-gray-50">
         <!-- Navbar Responsiva -->
