@@ -5280,6 +5280,21 @@ function openBannerEditor(linkUrl, qrCodeBase64, value, description, chargeType)
     document.getElementById('promo-banner-link').value = linkUrl;
     document.getElementById('promo-banner-qrcode').value = qrCodeBase64;
     
+    // Extrair accountId do linkUrl (formato: /subscription-signup/accountId-timestamp-random)
+    const linkMatch = linkUrl.match(/subscription-signup\/([^-]+)/);
+    if (linkMatch) {
+        const accountId = linkMatch[1];
+        
+        // Criar campo hidden se não existir
+        if (!document.getElementById('promo-banner-account-id')) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.id = 'promo-banner-account-id';
+            document.getElementById('promo-banner-link').parentElement.appendChild(input);
+        }
+        document.getElementById('promo-banner-account-id').value = accountId;
+    }
+    
     // Preencher campos com valores padrão
     document.getElementById('promo-banner-value').value = value;
     document.getElementById('promo-banner-description').value = description || 'Plano Premium com benefícios exclusivos';
@@ -5451,34 +5466,26 @@ async function downloadPromoBanner() {
     // Gerar PNG
     const bannerDataUrl = await generatePromoBannerPNG(linkUrl, qrCodeBase64, value, description, title, promo, buttonText, color, chargeType, fontSize);
     
-    // Salvar banner no sistema se tiver accountId
-    if (accountId && walletId && bannerDataUrl) {
-        try {
-            await fetch('/api/banners/save', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    accountId,
-                    walletId,
-                    title,
-                    description,
-                    value,
-                    promo,
-                    buttonText,
-                    color,
-                    linkUrl,
-                    chargeType,
-                    fontSize,
-                    bannerImage: bannerDataUrl
-                })
-            });
-            
-            console.log('✅ Banner salvo com sucesso!');
-        } catch (error) {
-            console.error('❌ Erro ao salvar banner:', error);
-        }
+    // Salvar banner localmente no navegador (localStorage)
+    if (accountId) {
+        const bannerData = {
+            id: Date.now().toString(),
+            accountId,
+            title,
+            description,
+            value,
+            promo,
+            buttonText,
+            color,
+            linkUrl,
+            qrCodeBase64,
+            chargeType,
+            fontSize,
+            createdAt: new Date().toISOString()
+        };
+        
+        saveBanner(accountId, bannerData);
+        console.log('✅ Banner salvo automaticamente!');
     }
 }
 
