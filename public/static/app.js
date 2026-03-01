@@ -2208,11 +2208,6 @@ function displayAccounts(accounts) {
         const pixSection = hasWallet ? `
             <div class="mt-4">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <button onclick="toggleAutomaticForm('${account.id}', '${account.walletId}')" 
-                        id="btn-automatic-${account.id}"
-                        class="px-4 py-3 bg-gradient-to-r from-indigo-500 to-cyan-500 text-white rounded-lg hover:from-indigo-600 hover:to-cyan-600 font-semibold shadow-md transition">
-                        <i class="fas fa-robot mr-2"></i>PIX Automático
-                    </button>
                     <button onclick="toggleSignupLinkForm('${account.id}', '${account.walletId}')" 
                         id="btn-signup-link-${account.id}"
                         class="px-4 py-3 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-lg hover:from-orange-600 hover:to-red-600 font-semibold shadow-md transition">
