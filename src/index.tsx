@@ -10280,7 +10280,7 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?sta
                         </button>
                         <button onclick="copyBannerLink()" 
                             class="flex-1 px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 font-semibold">
-                            <i class="fas fa-share-alt mr-2"></i>Copiar Texto para Postagem
+                            <i class="fas fa-link mr-2"></i>Copiar Link do Banner
                         </button>
                     </div>
 
@@ -10288,16 +10288,16 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?sta
                     <div class="bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-lg p-4">
                         <p class="text-sm text-blue-900 font-semibold mb-2">
                             <i class="fas fa-rocket mr-2"></i>
-                            Como usar para postagem:
+                            Como compartilhar nas redes sociais:
                         </p>
                         <ol class="text-xs text-blue-800 space-y-1 ml-4">
-                            <li>1️⃣ <strong>Baixar Banner (PNG)</strong> - Salva a imagem 1080x1080px</li>
-                            <li>2️⃣ <strong>Copiar Texto para Postagem</strong> - Copia o texto com link e hashtags</li>
-                            <li>3️⃣ <strong>Postar</strong> - Cole o texto e anexe a imagem nas redes sociais</li>
+                            <li>1️⃣ <strong>Baixar Banner (PNG)</strong> - Salva a imagem 1080x1080px no seu computador</li>
+                            <li>2️⃣ <strong>Copiar Link do Banner</strong> - Copia o link de cadastro para compartilhar</li>
+                            <li>3️⃣ <strong>Postar nas Redes</strong> - Anexe a imagem + cole o link na legenda/bio</li>
                         </ol>
                         <p class="text-xs text-blue-700 mt-3">
                             <i class="fas fa-qrcode mr-1"></i>
-                            O banner inclui QR Code para cadastro direto. Ideal para Instagram, Facebook, WhatsApp e impressão!
+                            <strong>Dica:</strong> O banner tem QR Code! Cliente pode escanear direto ou clicar no link. Funciona em Instagram, Facebook, WhatsApp, Twitter e impressos!
                         </p>
                     </div>
                 </div>
