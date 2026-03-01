@@ -6022,17 +6022,28 @@ function deleteSavedBanner(accountId, bannerId) {
 
 // Gerar Links de Auto-Cadastro para TODAS as subcontas
 async function generateAllAutoSignupLinks() {
-    if (!confirm('🔗 Gerar Links de Auto-Cadastro para TODAS as subcontas?\n\n✅ Isso irá:\n• Criar links de assinatura mensal para todas as contas\n• Gerar banners automáticos\n• Salvar tudo em "Banners Salvos"\n\n⏱️ Pode levar alguns minutos...')) {
+    if (!confirm('🔗 Gerar Links de Auto-Cadastro para TODAS as subcontas?\n\n✅ Isso irá:\n• Carregar todas as subcontas\n• Criar links de assinatura mensal\n• Gerar banners automáticos\n• Salvar tudo em "Banners Salvos"\n\n⏱️ Pode levar alguns minutos...')) {
         return;
     }
     
-    // Obter todas as subcontas
-    const accounts = window.accounts || [];
+    // Mostrar loading inicial
+    console.log('⏳ Carregando subcontas...');
     
-    if (accounts.length === 0) {
-        alert('⚠️ Nenhuma subconta encontrada!\n\nCarregue as subcontas primeiro clicando em "Subcontas".');
-        return;
-    }
+    try {
+        // 1. CARREGAR SUBCONTAS PRIMEIRO
+        const response = await axios.get('/api/accounts');
+        
+        if (!response.data.success) {
+            throw new Error('Erro ao carregar subcontas');
+        }
+        
+        const accounts = response.data.accounts || [];
+        console.log(`✅ ${accounts.length} subcontas carregadas`);
+        
+        if (accounts.length === 0) {
+            alert('⚠️ Nenhuma subconta encontrada!\n\nCrie subcontas primeiro.');
+            return;
+        }
     
     // Filtrar apenas contas aprovadas
     const approvedAccounts = accounts.filter(acc => acc.status === 'Approved');
@@ -6116,8 +6127,8 @@ async function generateAllAutoSignupLinks() {
         }
     }
     
-    // Relatório final
-    const report = `
+        // Relatório final
+        const report = `
 ✅ Links de Auto-Cadastro Gerados!
 
 📊 Resumo:
@@ -6129,13 +6140,18 @@ ${errorCount > 0 ? '\n⚠️ Erros:\n' + errors.map((e, i) => `${i + 1}. ${e}`).
 
 💡 Acesse "Banners Salvos" para visualizar os banners gerados!
 `;
-    
-    alert(report);
-    console.log(report);
-    
-    // Recarregar subcontas para mostrar os novos links
-    if (typeof loadAccounts === 'function') {
-        loadAccounts();
+        
+        alert(report);
+        console.log(report);
+        
+        // Recarregar subcontas para mostrar os novos links
+        if (typeof loadAccounts === 'function') {
+            loadAccounts();
+        }
+        
+    } catch (error) {
+        console.error('❌ Erro ao carregar subcontas:', error);
+        alert('❌ Erro ao carregar subcontas!\n\n' + error.message + '\n\nTente novamente.');
     }
 }
 
