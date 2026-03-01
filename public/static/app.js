@@ -6100,6 +6100,14 @@ async function generateAllAutoSignupLinks() {
         
         try {
             // 1. Gerar link de assinatura mensal
+            console.log(`📤 Enviando requisição para conta ${account.id}:`, {
+                walletId: account.walletId,
+                accountId: account.id,
+                value: 10.00,
+                description: 'Mensalidade',
+                chargeType: 'monthly'
+            });
+            
             const linkResponse = await axios.post('/api/pix/subscription-link', {
                 walletId: account.walletId,
                 accountId: account.id,
@@ -6108,8 +6116,12 @@ async function generateAllAutoSignupLinks() {
                 chargeType: 'monthly'
             });
             
+            console.log('📥 Resposta recebida:', linkResponse.data);
+            
             if (!linkResponse.data.success) {
-                throw new Error(linkResponse.data.error || 'Erro ao gerar link');
+                const errorMsg = linkResponse.data.error || 'Erro ao gerar link';
+                console.error('❌ Erro na resposta da API:', errorMsg);
+                throw new Error(errorMsg);
             }
             
             const linkUrl = linkResponse.data.link;
@@ -6159,8 +6171,25 @@ async function generateAllAutoSignupLinks() {
             
         } catch (error) {
             console.error(`❌ Erro ao processar ${account.name}:`, error);
+            console.error('📋 Detalhes do erro:', {
+                message: error.message,
+                response: error.response?.data,
+                status: error.response?.status,
+                accountId: account.id,
+                walletId: account.walletId
+            });
+            
             errorCount++;
-            errors.push(`${account.name || account.email}: ${error.message}`);
+            
+            // Capturar mensagem de erro mais detalhada
+            let errorMsg = error.message;
+            if (error.response?.data?.error) {
+                errorMsg = error.response.data.error;
+            } else if (error.response?.data?.message) {
+                errorMsg = error.response.data.message;
+            }
+            
+            errors.push(`${account.name || account.email}: ${errorMsg}`);
         }
     }
     
