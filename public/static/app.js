@@ -6051,12 +6051,30 @@ async function generateAllAutoSignupLinks() {
             alert('⚠️ Nenhuma subconta encontrada!\n\nCrie subcontas primeiro.');
             return;
         }
+        
+        // Log dos status das contas
+        const statusCount = {};
+        accounts.forEach(acc => {
+            const status = acc.status || 'SEM_STATUS';
+            statusCount[status] = (statusCount[status] || 0) + 1;
+        });
+        console.log('📊 Status das contas:', statusCount);
     
-    // Filtrar apenas contas aprovadas
-    const approvedAccounts = accounts.filter(acc => acc.status === 'Approved');
+    // Filtrar contas aprovadas/ativas (Asaas usa 'ACTIVE' como status)
+    const approvedAccounts = accounts.filter(acc => 
+        acc.status === 'Approved' || 
+        acc.status === 'ACTIVE' || 
+        acc.status === 'Active'
+    );
+    
+    console.log(`🔍 Contas aprovadas/ativas: ${approvedAccounts.length}`);
     
     if (approvedAccounts.length === 0) {
-        alert('⚠️ Nenhuma subconta aprovada encontrada!');
+        const statusList = Object.entries(statusCount)
+            .map(([status, count]) => `• ${status}: ${count}`)
+            .join('\n');
+        
+        alert(`⚠️ Nenhuma subconta aprovada/ativa encontrada!\n\n📊 Status das contas:\n${statusList}\n\n💡 Contas precisam ter status 'ACTIVE' ou 'Approved'.`);
         return;
     }
     
