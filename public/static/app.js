@@ -5256,9 +5256,24 @@ function openBannerEditor(linkUrl, qrCodeBase64, value, description, chargeType,
     console.log('  accountId:', accountId);
     console.log('  walletId:', walletId);
     
+    // Verificar se os elementos existem
+    const linkElement = document.getElementById('promo-banner-link');
+    const qrElement = document.getElementById('promo-banner-qrcode');
+    const modalElement = document.getElementById('promo-banner-editor-modal');
+    
+    if (!linkElement || !qrElement || !modalElement) {
+        console.error('❌ Elementos do modal de banner não encontrados:', {
+            linkElement: !!linkElement,
+            qrElement: !!qrElement,
+            modalElement: !!modalElement
+        });
+        alert('Erro: Modal de banner não está carregado. Recarregue a página.');
+        return;
+    }
+    
     // Armazenar dados
-    document.getElementById('promo-banner-link').value = linkUrl;
-    document.getElementById('promo-banner-qrcode').value = qrCodeBase64;
+    linkElement.value = linkUrl;
+    qrElement.value = qrCodeBase64;
     
     // Se accountId foi passado, criar/preencher campos hidden
     if (accountId) {
@@ -6127,11 +6142,19 @@ function showSavedBanners(accountId, accountName) {
     }
     
     // Atualizar título
-    document.getElementById('saved-banners-account-name').textContent = 
-        accountName ? `Banners de ${accountName}` : 'Todos os banners gerados para esta conta';
+    const titleElement = document.getElementById('saved-banners-account-name');
+    if (titleElement) {
+        titleElement.textContent = accountName ? `Banners de ${accountName}` : 'Todos os banners gerados para esta conta';
+    }
     
     const listContainer = document.getElementById('saved-banners-list');
     const emptyState = document.getElementById('saved-banners-empty');
+    
+    if (!listContainer || !emptyState) {
+        console.error('❌ Elementos do modal de banners não encontrados');
+        alert('Erro: Modal de banners salvos não está carregado. Recarregue a página.');
+        return;
+    }
     
     if (banners.length === 0) {
         // Verificar se existem banners em outras contas
