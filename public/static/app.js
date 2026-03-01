@@ -3635,7 +3635,7 @@ async function generateSignupLink(accountId, walletId) {
                                 class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition">
                                 <i class="fas fa-code mr-2"></i>Gerar HTML
                             </button>
-                            <button onclick="openBannerEditor('${link.linkUrl}', '${qrCodeBase64}', ${value}, '${description}')" 
+                            <button onclick="openBannerEditor('${link.linkUrl}', '${qrCodeBase64}', ${value}, '${description}', '${chargeType}')" 
                                 class="px-4 py-2 bg-gradient-to-r from-orange-600 to-red-600 text-white rounded hover:from-orange-700 hover:to-red-700 transition">
                                 <i class="fas fa-image mr-2"></i>Gerar Banner
                             </button>
@@ -5215,7 +5215,7 @@ function clearApiFilters() {
 }
 
 // Abrir modal de edição de banner
-function openBannerEditor(linkUrl, qrCodeBase64, value, description) {
+function openBannerEditor(linkUrl, qrCodeBase64, value, description, chargeType) {
     // Armazenar dados
     document.getElementById('promo-banner-link').value = linkUrl;
     document.getElementById('promo-banner-qrcode').value = qrCodeBase64;
@@ -5223,6 +5223,19 @@ function openBannerEditor(linkUrl, qrCodeBase64, value, description) {
     // Preencher campos com valores padrão
     document.getElementById('promo-banner-value').value = value;
     document.getElementById('promo-banner-description').value = description || 'Plano Premium com benefícios exclusivos';
+    
+    // Definir título baseado no tipo de cobrança
+    const defaultTitle = chargeType === 'monthly' ? 'ASSINE AGORA' : 'COMPRE AGORA';
+    document.getElementById('promo-banner-title').value = defaultTitle;
+    
+    // Armazenar tipo de cobrança em hidden field
+    if (!document.getElementById('promo-banner-charge-type')) {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.id = 'promo-banner-charge-type';
+        document.getElementById('promo-banner-link').parentElement.appendChild(input);
+    }
+    document.getElementById('promo-banner-charge-type').value = chargeType || 'monthly';
     
     // Mostrar modal
     document.getElementById('promo-banner-editor-modal').classList.remove('hidden');
@@ -5245,6 +5258,7 @@ function updatePromoBannerPreview() {
     const buttonText = document.getElementById('promo-banner-button-text').value || 'PAGAR AGORA';
     const color = document.getElementById('promo-banner-color').value;
     const qrCodeBase64 = document.getElementById('promo-banner-qrcode').value;
+    const chargeType = document.getElementById('promo-banner-charge-type')?.value || 'monthly';
     
     // Cores do gradiente
     const gradients = {
@@ -5257,6 +5271,13 @@ function updatePromoBannerPreview() {
     
     const gradient = gradients[color] || gradients.orange;
     
+    // Definir badge do tipo de cobrança
+    const chargeTypeBadge = chargeType === 'monthly' 
+        ? '<div class="bg-green-500 text-white px-3 py-1 rounded-full inline-block text-xs font-bold mb-2"><i class="fas fa-sync-alt mr-1"></i>ASSINATURA MENSAL</div>'
+        : '<div class="bg-blue-500 text-white px-3 py-1 rounded-full inline-block text-xs font-bold mb-2"><i class="fas fa-receipt mr-1"></i>PAGAMENTO ÚNICO</div>';
+    
+    const priceDisplay = chargeType === 'monthly' ? '/mês' : '';
+    
     // Preview HTML (simplificado)
     const previewHTML = `
         <div class="w-full h-full bg-gradient-to-br ${gradient} p-8 flex flex-col justify-between text-white relative overflow-hidden">
@@ -5266,11 +5287,12 @@ function updatePromoBannerPreview() {
             
             <!-- Conteúdo -->
             <div class="relative z-10 text-center">
+                ${chargeTypeBadge}
                 ${promo ? `<div class="bg-yellow-400 text-gray-900 px-4 py-2 rounded-full inline-block mb-4 font-bold text-sm">${promo}</div>` : ''}
                 <h1 class="text-4xl font-bold mb-4">${title}</h1>
                 <p class="text-lg opacity-90 mb-6">${description}</p>
                 <div class="text-6xl font-bold mb-2">R$ ${value.toFixed(2).replace('.', ',')}</div>
-                <div class="text-2xl">/mês</div>
+                <div class="text-2xl">${priceDisplay}</div>
             </div>
             
             <!-- QR Code e Botão -->
@@ -5301,8 +5323,9 @@ async function downloadPromoBanner() {
     const color = document.getElementById('promo-banner-color').value;
     const linkUrl = document.getElementById('promo-banner-link').value;
     const qrCodeBase64 = document.getElementById('promo-banner-qrcode').value;
+    const chargeType = document.getElementById('promo-banner-charge-type')?.value || 'monthly';
     
-    await generatePromoBannerPNG(linkUrl, qrCodeBase64, value, description, title, promo, buttonText, color);
+    await generatePromoBannerPNG(linkUrl, qrCodeBase64, value, description, title, promo, buttonText, color, chargeType);
 }
 
 // Copiar link da propaganda
@@ -5329,7 +5352,7 @@ function copyPromoBannerLink() {
 }
 
 // Gerar Banner de Propaganda para redes sociais (PNG)
-async function generatePromoBannerPNG(linkUrl, qrCodeBase64, value, description, title, promo, buttonText, color) {
+async function generatePromoBannerPNG(linkUrl, qrCodeBase64, value, description, title, promo, buttonText, color, chargeType) {
     try {
         // Criar canvas
         const canvas = document.createElement('canvas');
@@ -5364,13 +5387,39 @@ async function generatePromoBannerPNG(linkUrl, qrCodeBase64, value, description,
         ctx.arc(150, 900, 250, 0, Math.PI * 2);
         ctx.fill();
         
-        let currentY = 100;
+        let currentY = 80;
+        
+        // Badge do tipo de cobrança
+        ctx.textAlign = 'center';
+        
+        if (chargeType === 'monthly') {
+            // Badge verde para assinatura mensal
+            ctx.fillStyle = '#10b981'; // Verde
+            ctx.beginPath();
+            ctx.roundRect(canvas.width / 2 - 180, currentY, 360, 50, 25);
+            ctx.fill();
+            
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 28px Arial';
+            ctx.fillText('🔄 ASSINATURA MENSAL', canvas.width / 2, currentY + 35);
+        } else {
+            // Badge azul para pagamento único
+            ctx.fillStyle = '#3b82f6'; // Azul
+            ctx.beginPath();
+            ctx.roundRect(canvas.width / 2 - 180, currentY, 360, 50, 25);
+            ctx.fill();
+            
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 28px Arial';
+            ctx.fillText('📄 PAGAMENTO ÚNICO', canvas.width / 2, currentY + 35);
+        }
+        
+        currentY += 90;
         
         // Texto de promoção (se houver)
         if (promo) {
             ctx.fillStyle = '#ffdd00';
             ctx.font = 'bold 36px Arial';
-            ctx.textAlign = 'center';
             ctx.fillText(promo, canvas.width / 2, currentY);
             currentY += 80;
         }
@@ -5378,7 +5427,6 @@ async function generatePromoBannerPNG(linkUrl, qrCodeBase64, value, description,
         // Título principal
         ctx.fillStyle = '#ffffff';
         ctx.font = 'bold 80px Arial';
-        ctx.textAlign = 'center';
         ctx.fillText(title || 'ASSINE AGORA', canvas.width / 2, currentY);
         currentY += 100;
         
@@ -5413,9 +5461,14 @@ async function generatePromoBannerPNG(linkUrl, qrCodeBase64, value, description,
         const valueText = `R$ ${parseFloat(value).toFixed(2).replace('.', ',')}`;
         ctx.fillText(valueText, canvas.width / 2, currentY);
         
-        ctx.font = 'bold 60px Arial';
-        ctx.fillText('/mês', canvas.width / 2, currentY + 70);
-        currentY += 150;
+        // Mostrar "/mês" apenas se for assinatura mensal
+        if (chargeType === 'monthly') {
+            ctx.font = 'bold 60px Arial';
+            ctx.fillText('/mês', canvas.width / 2, currentY + 70);
+            currentY += 150;
+        } else {
+            currentY += 90;
+        }
         
         // QR Code
         if (qrCodeBase64) {
