@@ -1,6 +1,12 @@
 // Configure axios to send cookies with every request
 axios.defaults.withCredentials = true;
 
+console.log('✅ app.js carregado - funções disponíveis:', {
+    showSection: typeof showSection,
+    openLinkModal: typeof openLinkModal,
+    loadAccounts: typeof loadAccounts
+});
+
 // Check authentication on page load
 async function checkAuth() {
     try {
@@ -28,7 +34,7 @@ async function logout() {
 }
 
 // Navigation
-function showSection(section) {
+window.showSection = function showSection(section) {
     document.querySelectorAll('.section').forEach(s => s.classList.add('hidden'));
     
     const targetSection = document.getElementById(section + '-section');
@@ -2514,7 +2520,7 @@ function displayAccounts(accounts) {
 let currentGeneratedLink = '';
 
 // Abrir modal e gerar link
-async function openLinkModal() {
+window.openLinkModal = async function openLinkModal() {
     const modal = document.getElementById('link-modal');
     const loading = document.getElementById('link-loading');
     const content = document.getElementById('link-content');
