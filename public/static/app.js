@@ -6892,14 +6892,14 @@ function showLoginManager(accountId, accountName) {
         successDiv.classList.add('hidden');
         
         try {
-            const response = await axios.post(\`/api/subaccounts/\${accountId}/generate-login\`, {
+            const response = await axios.post('/api/subaccounts/' + accountId + '/generate-login', {
                 username,
                 password
             });
             
             if (response.data.success) {
                 successDiv.classList.remove('hidden');
-                successText.textContent = \`Credenciais geradas com sucesso! Usuário: \${username}\`;
+                successText.textContent = 'Credenciais geradas com sucesso! Usuário: ' + username;
                 
                 // Limpar formulário
                 e.target.reset();
@@ -6915,7 +6915,7 @@ function showLoginManager(accountId, accountName) {
 }
 
 function copyLoginUrl() {
-    const url = \`\${window.location.origin}/subaccount-login\`;
+    const url = window.location.origin + '/subaccount-login';
     navigator.clipboard.writeText(url).then(() => {
         alert('✅ Link de acesso copiado!\\n\\n' + url + '\\n\\nEnvie este link para a subconta fazer login.');
     }).catch(() => {
