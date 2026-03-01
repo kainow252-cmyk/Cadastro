@@ -6,13 +6,7 @@ let currentBannerLink = null;
 function openBannerModal(accountId, accountName) {
     currentBannerAccountId = accountId;
     
-    // Gerar link de auto-cadastro
-    const linkId = `${accountId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const baseUrl = window.location.origin;
-    currentBannerLink = `${baseUrl}/cadastro/${linkId}`;
-    
     document.getElementById('banner-account-id').value = accountId;
-    document.getElementById('banner-link').value = currentBannerLink;
     
     // Pre-preencher com nome da conta se disponível
     if (accountName) {
@@ -21,6 +15,24 @@ function openBannerModal(accountId, accountName) {
     
     document.getElementById('banner-modal').classList.remove('hidden');
     updateBannerPreview();
+}
+
+// Gerar link simples para cadastro e pagamento
+function generateBannerLink() {
+    const accountId = currentBannerAccountId || document.getElementById('banner-account-id').value;
+    
+    // Gerar linkId único para rastreamento
+    const linkId = `${accountId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const baseUrl = window.location.origin;
+    
+    // Link simples que direciona para página de cadastro
+    // Cliente preenche seus dados e paga o valor do banner
+    const fullLink = `${baseUrl}/cadastro/${linkId}`;
+    
+    currentBannerLink = fullLink;
+    document.getElementById('banner-link').value = fullLink;
+    
+    return fullLink;
 }
 
 // Fechar modal de banner
@@ -52,8 +64,8 @@ async function updateBannerPreview() {
     
     const gradient = gradients[color] || gradients.purple;
     
-    // Gerar QR Code
-    const link = currentBannerLink || document.getElementById('banner-link').value;
+    // Gerar link atualizado
+    const link = generateBannerLink();
     let qrCodeDataUrl = '';
     
     if (link && typeof QRCode !== 'undefined') {
@@ -117,7 +129,9 @@ async function downloadBanner() {
     const type = document.getElementById('banner-type').value;
     const color = document.getElementById('banner-color').value;
     const buttonText = document.getElementById('banner-button-text').value || 'Cadastre-se Agora';
-    const link = currentBannerLink || document.getElementById('banner-link').value;
+    
+    // Gerar link atualizado
+    const link = generateBannerLink();
     
     // Criar canvas
     const canvas = document.createElement('canvas');
@@ -273,24 +287,26 @@ async function downloadBanner() {
 
 // Copiar link da cobrança
 function copyBannerLink() {
-    const link = currentBannerLink || document.getElementById('banner-link').value;
+    // Gerar/atualizar link
+    const link = generateBannerLink();
     
     if (!link) {
-        alert('Link não disponível');
+        alert('❌ Erro ao gerar link');
         return;
     }
     
+    // Copiar para área de transferência
     navigator.clipboard.writeText(link).then(() => {
-        alert('✅ Link copiado para a área de transferência!\n\n' + link);
+        alert('✅ Link copiado para a área de transferência!\n\nCompartilhe este link em suas redes sociais ou envie para clientes.\n\n' + link);
     }).catch(() => {
-        // Fallback
+        // Fallback para navegadores antigos
         const input = document.createElement('input');
         input.value = link;
         document.body.appendChild(input);
         input.select();
         document.execCommand('copy');
         document.body.removeChild(input);
-        alert('✅ Link copiado!\n\n' + link);
+        alert('✅ Link copiado!\n\nCompartilhe este link em suas redes sociais ou envie para clientes.\n\n' + link);
     });
 }
 
