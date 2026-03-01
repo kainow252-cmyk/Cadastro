@@ -21,7 +21,7 @@ function openBannerModal(accountId, accountName) {
     }, 100);
 }
 
-// Gerar link simples para cadastro e pagamento
+// Gerar link do banner (página de oferta) que direciona para cadastro
 function generateBannerLink() {
     const accountId = currentBannerAccountId || document.getElementById('banner-account-id').value;
     
@@ -29,14 +29,17 @@ function generateBannerLink() {
     const linkId = `${accountId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const baseUrl = window.location.origin;
     
-    // Link simples que direciona para página de cadastro
-    // Cliente preenche seus dados e paga o valor do banner
-    const fullLink = `${baseUrl}/cadastro/${linkId}`;
+    // Link do banner (página de oferta) que tem botão para cadastro
+    const bannerLink = `${baseUrl}/banner/${linkId}`;
     
-    currentBannerLink = fullLink;
-    document.getElementById('banner-link').value = fullLink;
+    // Link de cadastro direto (usado no QR Code)
+    const cadastroLink = `${baseUrl}/cadastro/${linkId}`;
     
-    return fullLink;
+    currentBannerLink = bannerLink;
+    document.getElementById('banner-link').value = bannerLink;
+    
+    // Retornar link de cadastro para o QR Code
+    return cadastroLink;
 }
 
 // Fechar modal de banner
@@ -302,21 +305,24 @@ async function downloadBanner() {
 
 // Copiar link do banner para postagem
 async function copyBannerLink() {
-    // Gerar link de cadastro
-    const link = generateBannerLink();
+    // Gerar links (banner e cadastro)
+    generateBannerLink();
     
-    if (!link) {
-        alert('❌ Erro ao gerar link');
+    // Pegar link do banner (não o de cadastro)
+    const bannerLink = currentBannerLink;
+    
+    if (!bannerLink) {
+        alert('❌ Erro ao gerar link do banner');
         return;
     }
     
-    // Copiar APENAS o link para área de transferência
-    navigator.clipboard.writeText(link).then(() => {
-        alert('✅ Link copiado!\n\n' + link + '\n\n📱 Compartilhe este link:\n- Cole nas redes sociais\n- Envie por WhatsApp\n- Compartilhe por email\n\n🖼️ Anexe a imagem do banner baixada para melhor resultado!');
+    // Copiar link do banner para área de transferência
+    navigator.clipboard.writeText(bannerLink).then(() => {
+        alert('✅ Link do Banner copiado!\n\n' + bannerLink + '\n\n📱 Compartilhe este link:\n- Cole nas redes sociais\n- Envie por WhatsApp\n- Compartilhe por email\n\n💡 Este link mostra a página de oferta com botão "Cadastre-se Agora"');
     }).catch(() => {
         // Fallback para navegadores antigos
         const input = document.createElement('input');
-        input.value = link;
+        input.value = bannerLink;
         document.body.appendChild(input);
         input.select();
         document.execCommand('copy');

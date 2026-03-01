@@ -6425,6 +6425,123 @@ app.post('/api/proxy/payments', async (c) => {
   }
 })
 
+// Página do Banner (para compartilhar nas redes sociais)
+app.get('/banner/:bannerId', (c) => {
+  const bannerId = c.req.param('bannerId')
+  
+  // Extrair dados do bannerId (formato: accountId-timestamp-random-title-value-type)
+  // ou simplesmente usar o linkId de cadastro
+  const cadastroLink = `${new URL(c.req.url).origin}/cadastro/${bannerId}`
+  
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Oferta Especial - Cadastre-se Agora!</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <meta property="og:title" content="Oferta Especial - Assine Agora!" />
+        <meta property="og:description" content="Plano Premium com benefícios exclusivos. Clique para se cadastrar!" />
+        <meta property="og:type" content="website" />
+        <style>
+            body {
+                margin: 0;
+                padding: 0;
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            }
+            .banner-container {
+                max-width: 600px;
+                width: 90%;
+                background: white;
+                border-radius: 20px;
+                padding: 2rem;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            }
+            .cta-button {
+                display: inline-block;
+                width: 100%;
+                padding: 1.5rem 2rem;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                text-align: center;
+                border-radius: 50px;
+                font-size: 1.5rem;
+                font-weight: bold;
+                text-decoration: none;
+                transition: all 0.3s ease;
+                margin-top: 2rem;
+                box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+            }
+            .cta-button:hover {
+                transform: translateY(-5px);
+                box-shadow: 0 15px 40px rgba(102, 126, 234, 0.6);
+            }
+            .banner-info {
+                text-align: center;
+                margin-bottom: 2rem;
+            }
+            .banner-info h1 {
+                font-size: 2rem;
+                color: #2d3748;
+                margin-bottom: 1rem;
+            }
+            .banner-info p {
+                color: #718096;
+                font-size: 1.1rem;
+            }
+            .price {
+                font-size: 3rem;
+                font-weight: bold;
+                color: #667eea;
+                margin: 1rem 0;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="banner-container">
+            <div class="banner-info">
+                <div class="mb-4">
+                    <i class="fas fa-star text-yellow-400 text-5xl"></i>
+                </div>
+                <h1>🚀 Oferta Especial!</h1>
+                <p>Plano Premium com benefícios exclusivos</p>
+                <div class="price">R$ 149,90</div>
+                <p class="text-gray-500"><span class="font-semibold">Assinatura Mensal</span></p>
+            </div>
+            
+            <div class="bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl p-6 mb-6">
+                <h3 class="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                    <i class="fas fa-check-circle text-green-500"></i>
+                    Benefícios Inclusos:
+                </h3>
+                <ul class="space-y-2 text-gray-700">
+                    <li><i class="fas fa-check text-green-500 mr-2"></i> Acesso completo à plataforma</li>
+                    <li><i class="fas fa-check text-green-500 mr-2"></i> Suporte prioritário 24/7</li>
+                    <li><i class="fas fa-check text-green-500 mr-2"></i> Atualizações gratuitas</li>
+                    <li><i class="fas fa-check text-green-500 mr-2"></i> Recursos premium exclusivos</li>
+                </ul>
+            </div>
+            
+            <a href="${cadastroLink}" class="cta-button">
+                <i class="fas fa-rocket mr-3"></i>Cadastre-se Agora →
+            </a>
+            
+            <p class="text-center text-sm text-gray-500 mt-6">
+                <i class="fas fa-shield-alt mr-1"></i>
+                Pagamento 100% seguro via PIX
+            </p>
+        </div>
+    </body>
+    </html>
+  `)
+})
+
 // Página de cadastro público
 app.get('/cadastro/:linkId', (c) => {
   const linkId = c.req.param('linkId')
