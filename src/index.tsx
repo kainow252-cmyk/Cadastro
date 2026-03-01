@@ -3943,7 +3943,7 @@ app.post('/api/pix/subscription', async (c) => {
 app.post('/api/subaccounts/:accountId/generate-login', async (c) => {
   try {
     const { accountId } = c.req.param()
-    const { username, password } = await c.req.json()
+    const { username, password, accountName, accountEmail } = await c.req.json()
     
     if (!username || !password) {
       return c.json({ error: 'Username e password são obrigatórios' }, 400)
@@ -3951,22 +3951,38 @@ app.post('/api/subaccounts/:accountId/generate-login', async (c) => {
     
     // Verificar se username já existe
     const existing = await c.env.DB.prepare(
-      'SELECT id FROM users WHERE login_username = ? AND id != ?'
+      'SELECT account_id FROM subaccount_credentials WHERE login_username = ? AND account_id != ?'
     ).bind(username, accountId).first()
     
     if (existing) {
       return c.json({ error: 'Username já está em uso' }, 400)
     }
     
-    // Atualizar subconta com credenciais (senha em texto plano por simplicidade)
-    // Em produção, usar bcrypt ou similar
-    await c.env.DB.prepare(`
-      UPDATE users 
-      SET login_username = ?, 
-          login_password = ?, 
-          login_enabled = 1
-      WHERE id = ?
-    `).bind(username, password, accountId).run()
+    // Verificar se já existe credencial para esta conta
+    const existingAccount = await c.env.DB.prepare(
+      'SELECT account_id FROM subaccount_credentials WHERE account_id = ?'
+    ).bind(accountId).first()
+    
+    if (existingAccount) {
+      // Atualizar credenciais existentes
+      await c.env.DB.prepare(`
+        UPDATE subaccount_credentials 
+        SET login_username = ?, 
+            login_password = ?, 
+            login_enabled = 1,
+            account_name = ?,
+            account_email = ?
+        WHERE account_id = ?
+      `).bind(username, password, accountName, accountEmail, accountId).run()
+    } else {
+      // Inserir novas credenciais
+      await c.env.DB.prepare(`
+        INSERT INTO subaccount_credentials (
+          account_id, account_name, account_email, 
+          login_username, login_password, login_enabled
+        ) VALUES (?, ?, ?, ?, ?, 1)
+      `).bind(accountId, accountName, accountEmail, username, password).run()
+    }
     
     return c.json({ 
       success: true, 
@@ -3985,9 +4001,9 @@ app.post('/api/subaccounts/:accountId/disable-login', async (c) => {
     const { accountId } = c.req.param()
     
     await c.env.DB.prepare(`
-      UPDATE users 
+      UPDATE subaccount_credentials 
       SET login_enabled = 0
-      WHERE id = ?
+      WHERE account_id = ?
     `).bind(accountId).run()
     
     return c.json({ success: true, message: 'Login desabilitado' })
@@ -4013,8 +4029,8 @@ app.post('/api/subaccount-login', async (c) => {
     
     // Buscar subconta por username e password
     const subaccount = await c.env.DB.prepare(`
-      SELECT id, name, email, login_enabled 
-      FROM users 
+      SELECT account_id, account_name, account_email, login_enabled 
+      FROM subaccount_credentials 
       WHERE login_username = ? AND login_password = ? AND login_enabled = 1
     `).bind(username, password).first()
     
@@ -4024,12 +4040,12 @@ app.post('/api/subaccount-login', async (c) => {
     
     // Atualizar último login
     await c.env.DB.prepare(`
-      UPDATE users SET last_login_at = datetime('now') WHERE id = ?
-    `).bind(subaccount.id).run()
+      UPDATE subaccount_credentials SET last_login_at = datetime('now') WHERE account_id = ?
+    `).bind(subaccount.account_id).run()
     
     // Criar token JWT para subconta (usar secret padrão se não estiver configurado)
     const jwtSecret = c.env?.JWT_SECRET || 'default-secret-change-in-production'
-    const token = await createToken(`subaccount:${subaccount.id}`, jwtSecret)
+    const token = await createToken(`subaccount:${subaccount.account_id}`, jwtSecret)
     
     setCookie(c, 'subaccount_token', token, {
       httpOnly: true,
@@ -4041,9 +4057,9 @@ app.post('/api/subaccount-login', async (c) => {
     return c.json({ 
       success: true, 
       subaccount: {
-        id: subaccount.id,
-        name: subaccount.name,
-        email: subaccount.email
+        id: subaccount.account_id,
+        name: subaccount.account_name,
+        email: subaccount.account_email
       }
     })
   } catch (error: any) {
@@ -4074,7 +4090,7 @@ app.get('/api/subaccount-check-auth', async (c) => {
   
   // Buscar dados da subconta
   const subaccount = await c.env.DB.prepare(
-    'SELECT id, name, email FROM users WHERE id = ? AND login_enabled = 1'
+    'SELECT account_id, account_name, account_email FROM subaccount_credentials WHERE account_id = ? AND login_enabled = 1'
   ).bind(accountId).first()
   
   if (!subaccount) {
@@ -4084,9 +4100,9 @@ app.get('/api/subaccount-check-auth', async (c) => {
   return c.json({ 
     authenticated: true,
     subaccount: {
-      id: subaccount.id,
-      name: subaccount.name,
-      email: subaccount.email
+      id: subaccount.account_id,
+      name: subaccount.account_name,
+      email: subaccount.account_email
     }
   })
 })

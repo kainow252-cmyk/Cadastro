@@ -2218,7 +2218,7 @@ function displayAccounts(accounts) {
                         class="px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-700 hover:to-pink-700 font-semibold shadow-md transition">
                         <i class="fas fa-images mr-2"></i>Banners Salvos
                     </button>
-                    <button onclick="showLoginManager('${account.id}', '${account.name || ''}')" 
+                    <button onclick="showLoginManager('${account.id}', '${account.name || ''}', '${account.email || ''}')" 
                         id="btn-login-${account.id}"
                         class="px-4 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 font-semibold shadow-md transition">
                         <i class="fas fa-key mr-2"></i>Gerar Login
@@ -6966,7 +6966,7 @@ console.log('✅ Funções de APIs Externas carregadas');
 // SISTEMA DE LOGIN PARA SUBCONTAS
 // ========================================
 
-function showLoginManager(accountId, accountName) {
+function showLoginManager(accountId, accountName, accountEmail) {
     const modal = document.createElement('div');
     modal.id = 'login-manager-modal';
     modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
@@ -7086,7 +7086,9 @@ function showLoginManager(accountId, accountName) {
         try {
             const response = await axios.post('/api/subaccounts/' + accountId + '/generate-login', {
                 username,
-                password
+                password,
+                accountName,
+                accountEmail
             });
             
             if (response.data.success) {
