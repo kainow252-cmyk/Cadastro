@@ -10751,8 +10751,8 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?sta
                 </div>
 
                 <div class="p-6">
-                    <!-- Lista de Banners -->
-                    <div id="saved-banners-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <!-- Lista de Banners (formato lista vertical) -->
+                    <div id="saved-banners-list" class="space-y-3">
                         <!-- Banners serão inseridos aqui via JavaScript -->
                     </div>
 

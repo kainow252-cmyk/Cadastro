@@ -6034,63 +6034,39 @@ function showSavedBanners(accountId, accountName) {
         emptyState.classList.add('hidden');
         listContainer.classList.remove('hidden');
         
-        // Renderizar banners
+        // Renderizar banners como LISTA COMPACTA
         listContainer.innerHTML = banners.map((banner, index) => `
-            <div class="bg-white border-2 border-gray-200 rounded-xl overflow-hidden hover:border-purple-500 transition shadow-md">
-                <!-- Preview do Banner -->
-                <div class="aspect-square bg-gradient-to-br ${getGradientClass(banner.color)} p-4 relative flex flex-col">
-                    <div class="text-white text-center flex-1 flex flex-col justify-between">
-                        <div>
-                            ${banner.chargeType === 'monthly' 
-                                ? '<div class="bg-green-500 text-xs px-2 py-1 rounded-full inline-block mb-2">🔄 MENSAL</div>'
-                                : '<div class="bg-blue-500 text-xs px-2 py-1 rounded-full inline-block mb-2">📄 ÚNICO</div>'
-                            }
-                            ${banner.promo ? `<div class="bg-yellow-400 text-gray-900 text-xs px-2 py-1 rounded-full inline-block mb-2">${banner.promo}</div>` : ''}
-                            <h3 class="font-bold text-base mb-1 leading-tight">${banner.title}</h3>
-                            <p class="text-xs opacity-90 mb-2 line-clamp-2">${banner.description}</p>
-                            <div class="text-2xl font-bold">R$ ${parseFloat(banner.value).toFixed(2).replace('.', ',')}</div>
-                            ${banner.chargeType === 'monthly' ? '<div class="text-xs">/mês</div>' : ''}
-                        </div>
-                        
-                        <!-- QR Code (se existir) -->
-                        ${banner.qrCodeBase64 ? `
-                            <div class="mt-2">
-                                <img src="${banner.qrCodeBase64}" alt="QR Code" class="w-24 h-24 mx-auto bg-white p-1 rounded shadow-lg">
-                            </div>
-                        ` : '<div class="text-xs opacity-75 mt-2">⚠️ QR Code não disponível</div>'}
-                        
-                        <!-- Botão -->
-                        <div class="mt-2">
-                            <div class="bg-white text-gray-800 text-xs font-bold py-1 px-3 rounded-full inline-block">
-                                ${banner.buttonText || 'PAGAR AGORA'} →
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Informações -->
-                <div class="p-4">
-                    <div class="text-xs text-gray-500 mb-3">
-                        <i class="fas fa-clock mr-1"></i>
-                        ${new Date(banner.createdAt).toLocaleString('pt-BR')}
+            <div onclick="viewBannerDetails('${accountId}', '${banner.id}')" 
+                class="bg-white border border-gray-200 rounded-lg p-4 hover:border-purple-500 hover:shadow-lg transition cursor-pointer">
+                <div class="flex items-center gap-4">
+                    <!-- Thumbnail pequeno do banner -->
+                    <div class="w-20 h-20 flex-shrink-0 bg-gradient-to-br ${getGradientClass(banner.color)} rounded-lg flex items-center justify-center relative overflow-hidden">
+                        ${banner.qrCodeBase64 
+                            ? `<img src="${banner.qrCodeBase64}" alt="QR" class="w-12 h-12 bg-white p-1 rounded">`
+                            : '<i class="fas fa-image text-white text-2xl opacity-50"></i>'
+                        }
+                        ${banner.chargeType === 'monthly' 
+                            ? '<div class="absolute top-0 right-0 bg-green-500 text-white text-xs px-1 rounded-bl">🔄</div>'
+                            : '<div class="absolute top-0 right-0 bg-blue-500 text-white text-xs px-1 rounded-bl">📄</div>'
+                        }
                     </div>
                     
-                    <!-- Ações -->
-                    <div class="flex gap-2 mb-2">
-                        <button onclick="editSavedBanner('${accountId}', '${banner.id}')" 
-                            class="flex-1 px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition text-sm font-semibold">
-                            <i class="fas fa-edit mr-1"></i>Editar
-                        </button>
-                        <button onclick="redownloadBanner('${accountId}', '${banner.id}')" 
-                            class="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-semibold">
-                            <i class="fas fa-download mr-1"></i>Baixar
-                        </button>
+                    <!-- Informações -->
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 mb-1">
+                            <h3 class="font-bold text-gray-800 truncate">${banner.title}</h3>
+                            ${banner.promo ? `<span class="bg-yellow-400 text-gray-900 text-xs px-2 py-0.5 rounded-full">${banner.promo}</span>` : ''}
+                        </div>
+                        <p class="text-sm text-gray-600 truncate mb-1">${banner.description}</p>
+                        <div class="flex items-center gap-3 text-xs text-gray-500">
+                            <span class="font-semibold text-purple-600">R$ ${parseFloat(banner.value).toFixed(2).replace('.', ',')}${banner.chargeType === 'monthly' ? '/mês' : ''}</span>
+                            <span><i class="fas fa-clock mr-1"></i>${new Date(banner.createdAt).toLocaleDateString('pt-BR')}</span>
+                        </div>
                     </div>
-                    <div class="flex gap-2">
-                        <button onclick="deleteSavedBanner('${accountId}', '${banner.id}')" 
-                            class="w-full px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm">
-                            <i class="fas fa-trash mr-1"></i>Excluir
-                        </button>
+                    
+                    <!-- Ícone de visualizar -->
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-chevron-right text-gray-400"></i>
                     </div>
                 </div>
             </div>
@@ -6138,6 +6114,141 @@ async function redownloadBanner(accountId, bannerId) {
             banner.fontSize
         );
     }
+}
+
+// Visualizar detalhes do banner em tela cheia
+function viewBannerDetails(accountId, bannerId) {
+    const banners = getSavedBanners(accountId);
+    const banner = banners.find(b => b.id === bannerId);
+    
+    if (!banner) {
+        alert('❌ Banner não encontrado!');
+        return;
+    }
+    
+    // Criar modal de visualização
+    const modal = document.createElement('div');
+    modal.id = 'banner-detail-modal';
+    modal.className = 'fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4';
+    modal.onclick = (e) => {
+        if (e.target === modal) modal.remove();
+    };
+    
+    modal.innerHTML = `
+        <div class="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-auto" onclick="event.stopPropagation()">
+            <!-- Header -->
+            <div class="bg-gradient-to-r from-purple-600 to-pink-600 text-white p-6 rounded-t-2xl relative">
+                <button onclick="document.getElementById('banner-detail-modal').remove()" 
+                    class="absolute top-4 right-4 text-white hover:bg-white/20 rounded-full w-8 h-8 flex items-center justify-center">
+                    <i class="fas fa-times"></i>
+                </button>
+                <h2 class="text-2xl font-bold mb-2">
+                    <i class="fas fa-image mr-2"></i>Detalhes do Banner
+                </h2>
+                <p class="text-purple-100 text-sm">
+                    Criado em ${new Date(banner.createdAt).toLocaleString('pt-BR')}
+                </p>
+            </div>
+            
+            <!-- Preview do Banner em TAMANHO GRANDE -->
+            <div class="p-6">
+                <div class="bg-gradient-to-br ${getGradientClass(banner.color)} rounded-xl p-8 text-white text-center mb-6 shadow-2xl">
+                    <div class="flex flex-col items-center justify-center space-y-4">
+                        <!-- Badges -->
+                        <div class="flex gap-2">
+                            ${banner.chargeType === 'monthly' 
+                                ? '<div class="bg-green-500 text-sm px-3 py-1 rounded-full">🔄 ASSINATURA MENSAL</div>'
+                                : '<div class="bg-blue-500 text-sm px-3 py-1 rounded-full">📄 PAGAMENTO ÚNICO</div>'
+                            }
+                            ${banner.promo ? `<div class="bg-yellow-400 text-gray-900 text-sm px-3 py-1 rounded-full font-bold">${banner.promo}</div>` : ''}
+                        </div>
+                        
+                        <!-- Título -->
+                        <h3 class="text-3xl font-bold leading-tight">${banner.title}</h3>
+                        
+                        <!-- Descrição -->
+                        <p class="text-lg opacity-90">${banner.description}</p>
+                        
+                        <!-- Valor -->
+                        <div class="text-5xl font-bold">
+                            R$ ${parseFloat(banner.value).toFixed(2).replace('.', ',')}
+                        </div>
+                        ${banner.chargeType === 'monthly' ? '<div class="text-lg">/mês</div>' : ''}
+                        
+                        <!-- QR Code -->
+                        ${banner.qrCodeBase64 ? `
+                            <div class="bg-white p-4 rounded-xl shadow-xl">
+                                <img src="${banner.qrCodeBase64}" alt="QR Code" class="w-48 h-48">
+                            </div>
+                        ` : '<div class="text-sm opacity-75 mt-4">⚠️ QR Code não disponível</div>'}
+                        
+                        <!-- Botão -->
+                        <div class="mt-4">
+                            <div class="bg-white text-gray-800 text-lg font-bold py-3 px-8 rounded-full inline-block shadow-lg">
+                                ${banner.buttonText || 'PAGAR AGORA'} →
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Informações Técnicas -->
+                <div class="bg-gray-50 rounded-lg p-4 mb-6 space-y-2 text-sm">
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">🎨 Cor:</span>
+                        <span class="font-semibold">${banner.color}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">🔤 Tamanho da fonte:</span>
+                        <span class="font-semibold">${banner.fontSize}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">🔗 Link:</span>
+                        <span class="font-mono text-xs truncate ml-2">${banner.linkUrl}</span>
+                    </div>
+                </div>
+                
+                <!-- Botões de Ação -->
+                <div class="grid grid-cols-2 gap-3 mb-3">
+                    <button onclick="redownloadBanner('${accountId}', '${banner.id}')" 
+                        class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold">
+                        <i class="fas fa-download mr-2"></i>Baixar PNG
+                    </button>
+                    <button onclick="copyBannerLink('${banner.linkUrl}')" 
+                        class="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold">
+                        <i class="fas fa-share-alt mr-2"></i>Compartilhar
+                    </button>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <button onclick="document.getElementById('banner-detail-modal').remove(); editSavedBanner('${accountId}', '${banner.id}')" 
+                        class="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition font-semibold">
+                        <i class="fas fa-edit mr-2"></i>Editar
+                    </button>
+                    <button onclick="if(confirm('❌ Deseja realmente excluir este banner?')) { deleteBanner('${accountId}', '${banner.id}'); document.getElementById('banner-detail-modal').remove(); showSavedBanners('${accountId}', ''); }" 
+                        class="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-semibold">
+                        <i class="fas fa-trash mr-2"></i>Excluir
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+}
+
+// Copiar link do banner
+function copyBannerLink(linkUrl) {
+    navigator.clipboard.writeText(linkUrl).then(() => {
+        alert('✅ Link copiado!\n\n' + linkUrl + '\n\n📱 Compartilhe este link:\n• Cole nas redes sociais\n• Envie por WhatsApp\n• Envie por email\n\n💡 Cliente acessa e paga via PIX');
+    }).catch(() => {
+        // Fallback
+        const input = document.createElement('input');
+        input.value = linkUrl;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        document.body.removeChild(input);
+        alert('✅ Link copiado!\n\n' + linkUrl);
+    });
 }
 
 // Editar banner salvo
