@@ -5284,15 +5284,33 @@ function openBannerEditor(linkUrl, qrCodeBase64, value, description, chargeType,
     const qrElement = document.getElementById('promo-banner-qrcode');
     const modalElement = document.getElementById('promo-banner-editor-modal');
     
+    console.log('🔍 Verificando elementos:', {
+        linkElement: !!linkElement,
+        qrElement: !!qrElement,
+        modalElement: !!modalElement,
+        DOMReady: isDOMReady,
+        readyState: document.readyState,
+        bodyChildrenCount: document.body ? document.body.children.length : 0
+    });
+    
     if (!linkElement || !qrElement || !modalElement) {
-        console.error('❌ Elementos do modal de banner não encontrados:', {
+        // Tentar aguardar mais um pouco
+        if (document.readyState !== 'complete') {
+            console.log('⏳ Documento ainda carregando, aguardando evento load...');
+            window.addEventListener('load', () => {
+                openBannerEditor(linkUrl, qrCodeBase64, value, description, chargeType, accountId, walletId);
+            }, { once: true });
+            return;
+        }
+        
+        console.error('❌ Elementos do modal de banner não encontrados mesmo após load:', {
             linkElement: !!linkElement,
             qrElement: !!qrElement,
             modalElement: !!modalElement,
             DOMReady: isDOMReady,
             readyState: document.readyState
         });
-        alert('Erro: Modal de banner não está carregado. Recarregue a página.');
+        alert('Erro: Modal de banner não foi carregado. Por favor, recarregue a página (Ctrl+F5).');
         return;
     }
     
@@ -6177,17 +6195,36 @@ function showSavedBanners(accountId, accountName) {
     
     // Atualizar título
     const titleElement = document.getElementById('saved-banners-account-name');
-    if (titleElement) {
-        titleElement.textContent = accountName ? `Banners de ${accountName}` : 'Todos os banners gerados para esta conta';
-    }
-    
     const listContainer = document.getElementById('saved-banners-list');
     const emptyState = document.getElementById('saved-banners-empty');
+    const modalElement = document.getElementById('saved-banners-modal');
     
-    if (!listContainer || !emptyState) {
-        console.error('❌ Elementos do modal de banners não encontrados');
-        alert('Erro: Modal de banners salvos não está carregado. Recarregue a página.');
+    console.log('🔍 Verificando elementos do modal de banners:', {
+        titleElement: !!titleElement,
+        listContainer: !!listContainer,
+        emptyState: !!emptyState,
+        modalElement: !!modalElement,
+        DOMReady: isDOMReady,
+        readyState: document.readyState
+    });
+    
+    if (!listContainer || !emptyState || !modalElement) {
+        // Tentar aguardar mais um pouco
+        if (document.readyState !== 'complete') {
+            console.log('⏳ Documento ainda carregando, aguardando evento load...');
+            window.addEventListener('load', () => {
+                showSavedBanners(accountId, accountName);
+            }, { once: true });
+            return;
+        }
+        
+        console.error('❌ Elementos do modal de banners não encontrados mesmo após load');
+        alert('Erro: Modal de banners salvos não foi carregado. Por favor, recarregue a página (Ctrl+F5).');
         return;
+    }
+    
+    if (titleElement) {
+        titleElement.textContent = accountName ? `Banners de ${accountName}` : 'Todos os banners gerados para esta conta';
     }
     
     if (banners.length === 0) {
