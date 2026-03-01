@@ -6266,19 +6266,29 @@ async function redownloadBanner(accountId, bannerId) {
     const banner = banners.find(b => b.id === bannerId);
     
     if (banner) {
-        // Regenerar o banner PNG com os dados salvos
-        await generatePromoBannerPNG(
-            banner.linkUrl,
-            banner.qrCodeBase64,
-            banner.value,
-            banner.description,
-            banner.title,
-            banner.promo,
-            banner.buttonText,
-            banner.color,
-            banner.chargeType,
-            banner.fontSize
-        );
+        // Verificar se é banner personalizado
+        if (banner.isCustomBanner && banner.bannerImageBase64) {
+            // Para banner personalizado, apenas baixar a imagem final
+            const link = document.createElement('a');
+            link.href = banner.bannerImageBase64;
+            link.download = `banner-personalizado-${Date.now()}.png`;
+            link.click();
+            console.log('✅ Banner personalizado baixado');
+        } else {
+            // Para banner gerado, regenerar o PNG
+            await generatePromoBannerPNG(
+                banner.linkUrl,
+                banner.qrCodeBase64,
+                banner.value,
+                banner.description,
+                banner.title,
+                banner.promo,
+                banner.buttonText,
+                banner.color,
+                banner.chargeType,
+                banner.fontSize
+            );
+        }
     }
 }
 
@@ -6307,6 +6317,9 @@ function viewBannerDetails(accountId, bannerId) {
         if (e.target === modal) modal.remove();
     };
     
+    // Verificar se é banner personalizado
+    const isCustomBanner = banner.isCustomBanner && banner.bannerImageBase64;
+    
     modal.innerHTML = `
         <div class="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-auto" onclick="event.stopPropagation()">
             <!-- Header -->
@@ -6316,7 +6329,7 @@ function viewBannerDetails(accountId, bannerId) {
                     <i class="fas fa-times"></i>
                 </button>
                 <h2 class="text-2xl font-bold mb-2">
-                    <i class="fas fa-image mr-2"></i>Detalhes do Banner
+                    <i class="fas fa-image mr-2"></i>${isCustomBanner ? 'Banner Personalizado' : 'Detalhes do Banner'}
                 </h2>
                 <p class="text-purple-100 text-sm">
                     Criado em ${new Date(banner.createdAt).toLocaleString('pt-BR')}
@@ -6325,7 +6338,14 @@ function viewBannerDetails(accountId, bannerId) {
             
             <!-- Preview do Banner em TAMANHO GRANDE -->
             <div class="p-6">
-                <div class="bg-gradient-to-br ${getGradientClass(banner.color)} rounded-xl p-8 text-white text-center mb-6 shadow-2xl">
+                ${isCustomBanner ? `
+                    <!-- Banner Personalizado: Apenas mostrar imagem final -->
+                    <div class="mb-6">
+                        <img src="${banner.bannerImageBase64}" alt="Banner Personalizado" class="w-full rounded-xl shadow-2xl">
+                    </div>
+                ` : `
+                    <!-- Banner Gerado: Mostrar preview formatado -->
+                    <div class="bg-gradient-to-br ${getGradientClass(banner.color)} rounded-xl p-8 text-white text-center mb-6 shadow-2xl">
                     <div class="flex flex-col items-center justify-center space-y-4">
                         <!-- Badges -->
                         <div class="flex gap-2">
@@ -6381,6 +6401,25 @@ function viewBannerDetails(accountId, bannerId) {
                         </div>
                     </div>
                 </div>
+                `}
+                
+                <!-- Link do QR Code (comum para ambos os tipos) -->
+                <div class="mb-6 bg-gray-50 border border-gray-200 rounded-xl p-4">
+                    <div class="flex items-center gap-2 mb-2">
+                        <i class="fas fa-link text-purple-600"></i>
+                        <span class="text-gray-700 text-sm font-semibold">Link de Pagamento:</span>
+                    </div>
+                    <div class="flex gap-2">
+                        <input type="text" readonly value="${banner.linkUrl}" 
+                            class="flex-1 bg-white text-gray-800 text-sm px-3 py-2 rounded-lg border border-gray-300 font-mono truncate"
+                            onclick="this.select()">
+                        <button onclick="navigator.clipboard.writeText('${banner.linkUrl}').then(() => alert('✅ Link copiado!')).catch(() => alert('❌ Erro ao copiar'))" 
+                            class="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition flex items-center gap-2 font-semibold text-sm">
+                            <i class="fas fa-copy"></i>
+                            Copiar
+                        </button>
+                    </div>
+                </div>
                 
                 <!-- Seção: Gerenciar -->
                 <div class="pt-4 border-t border-gray-200">
@@ -6388,15 +6427,17 @@ function viewBannerDetails(accountId, bannerId) {
                         <i class="fas fa-cog text-purple-600"></i>
                         Gerenciar Banner
                     </h3>
-                    <div class="grid grid-cols-3 gap-3">
+                    <div class="grid ${isCustomBanner ? 'grid-cols-2' : 'grid-cols-3'} gap-3">
                         <button onclick="redownloadBanner('${accountId}', '${banner.id}')" 
                             class="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold text-sm">
                             <i class="fas fa-download mr-1"></i>Baixar
                         </button>
-                        <button onclick="document.getElementById('banner-detail-modal').remove(); editSavedBanner('${accountId}', '${banner.id}')" 
-                            class="px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition font-semibold text-sm">
-                            <i class="fas fa-edit mr-1"></i>Editar
-                        </button>
+                        ${!isCustomBanner ? `
+                            <button onclick="document.getElementById('banner-detail-modal').remove(); editSavedBanner('${accountId}', '${banner.id}')" 
+                                class="px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition font-semibold text-sm">
+                                <i class="fas fa-edit mr-1"></i>Editar
+                            </button>
+                        ` : ''}
                         <button onclick="if(confirm('❌ Deseja realmente excluir este banner?')) { deleteBanner('${accountId}', '${banner.id}'); document.getElementById('banner-detail-modal').remove(); showSavedBanners('${accountId}', ''); }" 
                             class="px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-semibold text-sm">
                             <i class="fas fa-trash mr-1"></i>Excluir
