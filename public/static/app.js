@@ -6226,22 +6226,6 @@ function viewBannerDetails(accountId, bannerId) {
                     </div>
                 </div>
                 
-                <!-- Informações Técnicas -->
-                <div class="bg-gray-50 rounded-lg p-4 mb-6 space-y-2 text-sm">
-                    <div class="flex justify-between">
-                        <span class="text-gray-600">🎨 Cor:</span>
-                        <span class="font-semibold">${banner.color}</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span class="text-gray-600">🔤 Tamanho da fonte:</span>
-                        <span class="font-semibold">${banner.fontSize}</span>
-                    </div>
-                    <div class="flex justify-between">
-                        <span class="text-gray-600">🔗 Link:</span>
-                        <span class="font-mono text-xs truncate ml-2">${banner.linkUrl}</span>
-                    </div>
-                </div>
-                
                 <!-- Seção: Compartilhar -->
                 <div class="mb-4">
                     <h3 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
