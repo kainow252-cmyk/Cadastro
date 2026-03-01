@@ -285,9 +285,9 @@ async function downloadBanner() {
     });
 }
 
-// Copiar link da cobrança
-function copyBannerLink() {
-    // Gerar/atualizar link
+// Copiar link do banner para postagem
+async function copyBannerLink() {
+    // Gerar link de cadastro
     const link = generateBannerLink();
     
     if (!link) {
@@ -295,13 +295,29 @@ function copyBannerLink() {
         return;
     }
     
-    // Copiar para área de transferência
-    navigator.clipboard.writeText(link).then(() => {
-        alert('✅ Link copiado para a área de transferência!\n\nCompartilhe este link em suas redes sociais ou envie para clientes.\n\n' + link);
+    const title = document.getElementById('banner-title').value || 'Assine Agora!';
+    const value = document.getElementById('banner-value').value || '149.90';
+    const type = document.getElementById('banner-type').value;
+    const typeText = type === 'single' ? 'Pagamento Único' : 'Assinatura Mensal';
+    
+    // Criar mensagem de postagem com link
+    const postMessage = `🚀 ${title}
+
+${typeText}
+💰 R$ ${parseFloat(value).toFixed(2).replace('.', ',')}${type === 'monthly' ? '/mês' : ''}
+
+📲 Cadastre-se agora:
+${link}
+
+#AssineJa #Oferta #Promocao`;
+    
+    // Copiar mensagem completa para área de transferência
+    navigator.clipboard.writeText(postMessage).then(() => {
+        alert('✅ Texto de postagem copiado!\n\n📋 Cole em suas redes sociais:\n- Facebook\n- Instagram (bio ou stories)\n- WhatsApp Status\n- Twitter/X\n\n🖼️ Não esqueça de anexar a imagem do banner baixada!');
     }).catch(() => {
         // Fallback para navegadores antigos
         const input = document.createElement('input');
-        input.value = link;
+        input.value = postMessage;
         document.body.appendChild(input);
         input.select();
         document.execCommand('copy');
