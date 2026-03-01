@@ -10359,8 +10359,8 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?sta
             </div>
         </div>
 
-        <!-- Modal Gerar Banner de Propaganda -->
-        <div id="banner-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <!-- Modal Gerar Banner de Propaganda (OCULTO) -->
+        <div id="banner-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" style="display: none !important;">
             <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
                 <div class="bg-gradient-to-r from-orange-600 to-red-600 text-white px-6 py-5 rounded-t-2xl">
                     <div class="flex items-center justify-between">

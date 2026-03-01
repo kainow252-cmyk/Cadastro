@@ -2218,7 +2218,8 @@ function displayAccounts(accounts) {
                     </button>
                     <button onclick="openBannerModal('${account.id}', '${account.name || ''}')" 
                         id="btn-banner-${account.id}"
-                        class="px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-700 hover:to-pink-700 font-semibold shadow-md transition">
+                        class="px-4 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-700 hover:to-pink-700 font-semibold shadow-md transition"
+                        style="display: none !important;">
                         <i class="fas fa-image mr-2"></i>Gerar Banner
                     </button>
                 </div>
