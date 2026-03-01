@@ -6031,14 +6031,21 @@ async function generateAllAutoSignupLinks() {
     
     try {
         // 1. CARREGAR SUBCONTAS PRIMEIRO
+        console.log('🔍 Fazendo requisição GET /api/accounts...');
         const response = await axios.get('/api/accounts');
         
-        if (!response.data.success) {
-            throw new Error('Erro ao carregar subcontas');
+        console.log('📦 Resposta recebida:', response);
+        console.log('📊 response.data:', response.data);
+        
+        if (!response.data || !response.data.success) {
+            const errorMsg = response.data?.error || 'Resposta inválida do servidor';
+            console.error('❌ Erro na resposta:', errorMsg);
+            throw new Error(errorMsg);
         }
         
         const accounts = response.data.accounts || [];
         console.log(`✅ ${accounts.length} subcontas carregadas`);
+        console.log('📋 Contas:', accounts);
         
         if (accounts.length === 0) {
             alert('⚠️ Nenhuma subconta encontrada!\n\nCrie subcontas primeiro.');
@@ -6151,7 +6158,32 @@ ${errorCount > 0 ? '\n⚠️ Erros:\n' + errors.map((e, i) => `${i + 1}. ${e}`).
         
     } catch (error) {
         console.error('❌ Erro ao carregar subcontas:', error);
-        alert('❌ Erro ao carregar subcontas!\n\n' + error.message + '\n\nTente novamente.');
+        console.error('📍 Stack trace:', error.stack);
+        console.error('📋 Detalhes do erro:', {
+            message: error.message,
+            response: error.response?.data,
+            status: error.response?.status,
+            statusText: error.response?.statusText
+        });
+        
+        let errorMessage = '❌ Erro ao carregar subcontas!\n\n';
+        
+        if (error.response) {
+            // Erro da API
+            errorMessage += `Status: ${error.response.status}\n`;
+            errorMessage += `Mensagem: ${error.response.data?.error || error.message}\n`;
+        } else if (error.request) {
+            // Erro de rede
+            errorMessage += 'Erro de conexão com o servidor.\n';
+            errorMessage += 'Verifique sua internet.\n';
+        } else {
+            // Outro erro
+            errorMessage += error.message + '\n';
+        }
+        
+        errorMessage += '\nTente novamente ou contate o suporte.';
+        
+        alert(errorMessage);
     }
 }
 

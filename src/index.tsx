@@ -3512,6 +3512,7 @@ app.get('/api/accounts', async (c) => {
     // Transformar resposta para formato esperado pelo frontend
     if (result.ok && result.data && result.data.data) {
       return c.json({ 
+        success: true,
         accounts: result.data.data,
         totalCount: result.data.totalCount || 0
       })
@@ -3519,7 +3520,7 @@ app.get('/api/accounts', async (c) => {
     
     // Se não houver dados, retornar vazio
     console.log('Retornando array vazio')
-    return c.json({ accounts: [], totalCount: 0 })
+    return c.json({ success: true, accounts: [], totalCount: 0 })
   } catch (error: any) {
     console.error('Erro ao buscar contas:', error)
     return c.json({ error: error.message }, 500)
