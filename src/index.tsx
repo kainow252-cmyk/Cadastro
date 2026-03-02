@@ -8411,7 +8411,7 @@ app.get('/', (c) => {
         
         <!-- Load scripts early with defer to ensure functions are available -->
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js" defer></script>
-        <script src="/static/app.js?v=6.0" defer></script>
+        <script src="/static/app.js?v=6.1" defer></script>
         
         <!-- Tipografia e Layout Profissional -->
         <style>
@@ -11303,26 +11303,31 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?sta
                             </div>
                         </div>
                         
-                        <!-- Campos Hidden necessários -->
-                        <div class="hidden">
-                            <input type="hidden" id="promo-banner-title" value="">
-                                <input type="text" id="promo-banner-title" 
-                                    placeholder="Ex: ASSINE AGORA"
-                                    value="ASSINE AGORA"
-                                    class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                                    oninput="updatePromoBannerPreview()">
-                            </div>
+                        <!-- Campo: Título do Banner -->
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                <i class="fas fa-heading mr-1 text-orange-600"></i>Título do Banner
+                            </label>
+                            <input type="text" id="promo-banner-title" 
+                                placeholder="Ex: ASSINE AGORA"
+                                value="ASSINE AGORA"
+                                class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                oninput="updatePromoBannerPreview()">
+                        </div>
 
-                            <div>
-                                <label class="block text-sm font-semibold text-gray-700 mb-2">
-                                    <i class="fas fa-file-alt mr-1 text-orange-600"></i>Descrição / Detalhes
-                                </label>
-                                <textarea id="promo-banner-description" rows="3"
-                                    placeholder="Ex: Plano Premium com benefícios exclusivos"
-                                    class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"></textarea>
-                            </div>
-                            
-                            <!-- Hidden fields para armazenar dados -->
+                        <!-- Campo: Descrição -->
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                <i class="fas fa-file-alt mr-1 text-orange-600"></i>Descrição / Detalhes
+                            </label>
+                            <textarea id="promo-banner-description" rows="3"
+                                placeholder="Ex: Plano Premium com benefícios exclusivos"
+                                class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                oninput="updatePromoBannerPreview()"></textarea>
+                        </div>
+                        
+                        <!-- Hidden fields para armazenar dados -->
+                        <div class="hidden">
                             <input type="hidden" id="promo-banner-link" value="">
                             <input type="hidden" id="promo-banner-qrcode" value="">
                             <input type="hidden" id="promo-banner-font-size" value="medium">
