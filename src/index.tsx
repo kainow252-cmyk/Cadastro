@@ -8393,6 +8393,7 @@ app.get('/', (c) => {
     <html lang="pt-BR">
     <head>
         <meta charset="UTF-8">
+        <script>(function(){const o=console.warn;console.warn=function(){for(var n=arguments.length,e=new Array(n),r=0;r<n;r++)e[r]=arguments[r];e[0]&&"string"==typeof e[0]&&e[0].includes("cdn.tailwindcss.com")||o.apply(console,e)}})();</script>
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
         <meta name="mobile-web-app-capable" content="yes">
         <meta name="apple-mobile-web-app-capable" content="yes">
@@ -8405,19 +8406,6 @@ app.get('/', (c) => {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
         
-        <script>
-            // Suprimir warning do Tailwind CDN em produção - DEVE vir ANTES do Tailwind
-            (function() {
-                const originalWarn = console.warn;
-                console.warn = function(...args) {
-                    // Filtrar apenas o warning específico do Tailwind
-                    if (args[0] && typeof args[0] === 'string' && args[0].includes('cdn.tailwindcss.com')) {
-                        return; // Suprimir este warning específico
-                    }
-                    originalWarn.apply(console, args); // Manter outros warnings
-                };
-            })();
-        </script>
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
         <link href="/static/responsive.css?v=1.0" rel="stylesheet">
@@ -8427,7 +8415,7 @@ app.get('/', (c) => {
         
         <!-- Load scripts early with defer to ensure functions are available -->
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js" defer></script>
-        <script src="/static/app.js?v=6.7" defer></script>
+        <script src="/static/app.js?v=6.8" defer></script>
         
         <!-- Tipografia e Layout Profissional -->
         <style>
