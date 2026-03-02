@@ -6322,12 +6322,12 @@ function showSavedBanners(accountId, accountName, retryCount = 0) {
                     <!-- Informações -->
                     <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-2 mb-1">
-                            <h3 class="font-bold text-gray-800 truncate">${banner.title}</h3>
+                            <h3 class="font-bold text-gray-800 truncate">${banner.title || (banner.chargeType === 'monthly' ? 'ASSINE AGORA' : 'COMPRE AGORA')}</h3>
                             ${banner.promo ? `<span class="bg-yellow-400 text-gray-900 text-xs px-2 py-0.5 rounded-full">${banner.promo}</span>` : ''}
                         </div>
-                        <p class="text-sm text-gray-600 truncate mb-1">${banner.description}</p>
+                        <p class="text-sm text-gray-600 truncate mb-1">${banner.description || 'Plano Premium'}</p>
                         <div class="flex items-center gap-3 text-xs text-gray-500">
-                            <span class="font-semibold text-purple-600">R$ ${parseFloat(banner.value).toFixed(2).replace('.', ',')}${banner.chargeType === 'monthly' ? '/mês' : ''}</span>
+                            <span class="font-semibold text-purple-600">R$ ${parseFloat(banner.value || 0).toFixed(2).replace('.', ',')}${banner.chargeType === 'monthly' ? '/mês' : ''}</span>
                             <span><i class="fas fa-clock mr-1"></i>${new Date(banner.createdAt).toLocaleDateString('pt-BR')}</span>
                         </div>
                     </div>
@@ -6459,14 +6459,14 @@ function viewBannerDetails(accountId, bannerId) {
                         </div>
                         
                         <!-- Título -->
-                        <h3 class="text-3xl font-bold leading-tight">${banner.title}</h3>
+                        <h3 class="text-3xl font-bold leading-tight">${banner.title || (banner.chargeType === 'monthly' ? 'ASSINE AGORA' : 'COMPRE AGORA')}</h3>
                         
                         <!-- Descrição -->
-                        <p class="text-lg opacity-90">${banner.description}</p>
+                        <p class="text-lg opacity-90">${banner.description || 'Plano Premium'}</p>
                         
                         <!-- Valor -->
                         <div class="text-5xl font-bold">
-                            R$ ${parseFloat(banner.value).toFixed(2).replace('.', ',')}
+                            R$ ${parseFloat(banner.value || 0).toFixed(2).replace('.', ',')}
                         </div>
                         ${banner.chargeType === 'monthly' ? '<div class="text-lg">/mês</div>' : ''}
                         
