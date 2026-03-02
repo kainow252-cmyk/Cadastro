@@ -6142,9 +6142,55 @@ function getSavedBanners(accountId) {
 }
 
 function saveBanner(accountId, bannerData) {
-    const banners = getSavedBanners(accountId);
-    banners.unshift(bannerData); // Adicionar no início
-    localStorage.setItem(`banners_${accountId}`, JSON.stringify(banners));
+    try {
+        let banners = getSavedBanners(accountId);
+        banners.unshift(bannerData); // Adicionar no início
+        
+        // Limitar a 10 banners por conta para evitar exceder quota
+        if (banners.length > 10) {
+            console.warn('⚠️ Limite de 10 banners atingido. Removendo os mais antigos...');
+            banners = banners.slice(0, 10);
+        }
+        
+        // Tentar salvar
+        const storageKey = `banners_${accountId}`;
+        const dataToSave = JSON.stringify(banners);
+        
+        // Verificar tamanho antes de salvar
+        const sizeInMB = (new Blob([dataToSave]).size / 1024 / 1024).toFixed(2);
+        console.log(`💾 Salvando ${banners.length} banner(s) (${sizeInMB} MB)`);
+        
+        localStorage.setItem(storageKey, dataToSave);
+        console.log('✅ Banner salvo com sucesso!');
+        
+    } catch (error) {
+        if (error.name === 'QuotaExceededError') {
+            console.error('❌ Quota de armazenamento excedida!');
+            
+            // Tentar limpar banners antigos
+            let banners = getSavedBanners(accountId);
+            if (banners.length > 5) {
+                console.log('🔄 Reduzindo para 5 banners mais recentes...');
+                banners = banners.slice(0, 5);
+                try {
+                    localStorage.setItem(`banners_${accountId}`, JSON.stringify(banners));
+                    console.log('✅ Espaço liberado! Tente gerar o banner novamente.');
+                    alert('⚠️ Espaço de armazenamento cheio!\n\nAlguns banners antigos foram removidos automaticamente.\n\n✅ Tente gerar o banner novamente.');
+                } catch (e) {
+                    console.error('❌ Ainda sem espaço. Limpando TODOS os banners...');
+                    localStorage.removeItem(`banners_${accountId}`);
+                    alert('❌ Espaço de armazenamento esgotado!\n\nTodos os banners desta conta foram removidos.\n\n💡 Dica: Baixe os banners importantes antes de gerar novos.');
+                }
+            } else {
+                console.error('❌ Sem espaço mesmo com poucos banners.');
+                alert('❌ Erro ao salvar banner!\n\nO banner é muito grande ou o armazenamento está cheio.\n\n💡 Tente usar uma imagem menor ou limpar o cache do navegador.');
+            }
+        } else {
+            console.error('❌ Erro ao salvar banner:', error);
+            alert('❌ Erro ao salvar banner: ' + error.message);
+        }
+        throw error;
+    }
 }
 
 function deleteBanner(accountId, bannerId) {
@@ -6339,6 +6385,31 @@ function showSavedBanners(accountId, accountName, retryCount = 0) {
                 </div>
             </div>
         `).join('');
+    }
+    
+    // Calcular uso de armazenamento
+    let totalSize = 0;
+    for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('banners_')) {
+            const value = localStorage.getItem(key) || '';
+            totalSize += new Blob([value]).size;
+        }
+    }
+    
+    const sizeInMB = (totalSize / 1024 / 1024).toFixed(2);
+    const quotaWarning = totalSize > 8 * 1024 * 1024; // Mais de 8MB = aviso
+    
+    // Adicionar informação de uso no topo do modal
+    if (titleElement && titleElement.parentElement) {
+        const storageInfo = document.createElement('div');
+        storageInfo.className = `text-xs mt-2 ${quotaWarning ? 'text-yellow-200' : 'text-purple-200'}`;
+        storageInfo.innerHTML = `
+            <i class="fas fa-database mr-1"></i>
+            Armazenamento usado: ${sizeInMB} MB / ~10 MB
+            ${quotaWarning ? '<span class="ml-2">⚠️ Próximo ao limite!</span>' : ''}
+        `;
+        titleElement.parentElement.appendChild(storageInfo);
     }
     
     // Mostrar modal
