@@ -8405,9 +8405,8 @@ app.get('/', (c) => {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
         
-        <script src="https://cdn.tailwindcss.com"></script>
         <script>
-            // Suprimir warning do Tailwind CDN em produção
+            // Suprimir warning do Tailwind CDN em produção - DEVE vir ANTES do Tailwind
             (function() {
                 const originalWarn = console.warn;
                 console.warn = function(...args) {
@@ -8419,6 +8418,7 @@ app.get('/', (c) => {
                 };
             })();
         </script>
+        <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
         <link href="/static/responsive.css?v=1.0" rel="stylesheet">
         
@@ -8427,7 +8427,7 @@ app.get('/', (c) => {
         
         <!-- Load scripts early with defer to ensure functions are available -->
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js" defer></script>
-        <script src="/static/app.js?v=6.6" defer></script>
+        <script src="/static/app.js?v=6.7" defer></script>
         
         <!-- Tipografia e Layout Profissional -->
         <style>
