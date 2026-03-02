@@ -8406,12 +8406,21 @@ app.get('/', (c) => {
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
         
         <script src="https://cdn.tailwindcss.com"></script>
+        <script>
+            // Suprimir warning do Tailwind CDN
+            tailwind.config = {
+                devMode: false
+            }
+        </script>
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
         <link href="/static/responsive.css?v=1.0" rel="stylesheet">
         
+        <!-- Load Chart.js for dashboard graphs -->
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+        
         <!-- Load scripts early with defer to ensure functions are available -->
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js" defer></script>
-        <script src="/static/app.js?v=6.4" defer></script>
+        <script src="/static/app.js?v=6.5" defer></script>
         
         <!-- Tipografia e Layout Profissional -->
         <style>

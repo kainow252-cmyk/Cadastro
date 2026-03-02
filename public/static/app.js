@@ -18,7 +18,8 @@ console.log('✅ app.js carregado - funções disponíveis:', {
     showSection: typeof showSection,
     openLinkModal: typeof openLinkModal,
     loadAccounts: typeof loadAccounts,
-    DOMReady: isDOMReady
+    DOMReady: isDOMReady,
+    ChartJS: typeof Chart !== 'undefined' ? '✅ Disponível' : '❌ Não carregado'
 });
 
 // Variável global para armazenar informações do usuário
@@ -2711,6 +2712,12 @@ async function loadDashboardStats() {
 function renderStatusChart(accountStats) {
     const canvas = document.getElementById('status-chart');
     if (!canvas) return;
+    
+    // Verificar se Chart.js está disponível
+    if (typeof Chart === 'undefined') {
+        console.warn('⚠️ Chart.js não está carregado. Gráficos do dashboard não serão exibidos.');
+        return;
+    }
     
     const ctx = canvas.getContext('2d');
     
