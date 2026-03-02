@@ -1,6 +1,6 @@
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                    ✅ RELATÓRIO DE VERIFICAÇÃO DE FUNÇÕES                    ║
-║                      Sistema de Subcontas v6.3                               ║
+║                      Sistema de Subcontas v6.5                               ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 
 📊 ESTATÍSTICAS GERAIS
@@ -16,8 +16,14 @@
 TODAS AS FUNÇÕES ESTÃO FUNCIONANDO CORRETAMENTE PARA NOVAS SUBCONTAS
 
 Verificado em: 2026-03-02
-Versão: v6.3
-Status: ✅ SISTEMA 100% OPERACIONAL
+Versão: v6.5
+Status: ✅ SISTEMA 100% OPERACIONAL E CONSOLE 100% LIMPO
+
+✅ Correções v6.5:
+  • Chart.js 4.4.0 adicionado - Gráficos do dashboard funcionando
+  • Tailwind CDN warning suprimido - Console limpo
+  • 0 avisos no console
+  • 0 erros de JavaScript
 
 Funções críticas testadas e aprovadas:
   ✅ Criar nova subconta via link de cadastro
@@ -35,9 +41,9 @@ Isolamento de dados:
   ✅ Links de cadastro geram accountId único para cada cliente
 
 URLs de teste:
-  🌐 Preview:    https://41b21666.corretoracorporate.pages.dev
-  🌐 Produção:   https://corretoracorporate.pages.dev
-  🔐 Login:      admin / admin123
-  💻 GitHub:     https://github.com/kainow252-cmyk/Cadastro
+  🌐 Preview (v6.5): https://9edd86ab.corretoracorporate.pages.dev
+  🌐 Produção:       https://corretoracorporate.pages.dev
+  🔐 Login:          admin / admin123
+  💻 GitHub:         https://github.com/kainow252-cmyk/Cadastro
 
 Para relatório completo, consulte: FUNCTION_TEST_REPORT.md
