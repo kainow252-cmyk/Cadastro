@@ -6445,50 +6445,6 @@ function viewBannerDetails(accountId, bannerId) {
                     <div class="mb-6">
                         <img src="${banner.bannerImageBase64}" alt="Banner Personalizado" class="w-full rounded-xl shadow-2xl">
                     </div>
-                    
-                    <!-- Link da Imagem do Banner -->
-                    <div class="bg-gradient-to-r from-blue-50 to-cyan-50 rounded-xl p-4 mb-4">
-                        <div class="flex items-center gap-2 mb-3">
-                            <i class="fas fa-image text-blue-600"></i>
-                            <span class="text-gray-800 font-semibold">Link da Imagem do Banner:</span>
-                        </div>
-                        <div class="flex gap-2">
-                            <input type="text" readonly id="banner-image-url-${banner.id}" value="${banner.bannerImageBase64}" 
-                                class="flex-1 bg-white text-gray-800 text-xs px-4 py-3 rounded-lg font-mono border-2 border-blue-200 truncate"
-                                onclick="this.select()">
-                            <button onclick="navigator.clipboard.writeText(document.getElementById('banner-image-url-${banner.id}').value).then(() => alert('✅ Link da imagem copiado!\\n\\nVocê pode usar em:\\n• <img src=\\\"...\\\">\\n• Redes sociais\\n• WhatsApp\\n• Email')).catch(() => alert('❌ Erro ao copiar'))" 
-                                class="bg-gradient-to-r from-blue-600 to-cyan-600 text-white px-6 py-3 rounded-lg hover:from-blue-700 hover:to-cyan-700 transition flex items-center gap-2 font-semibold whitespace-nowrap">
-                                <i class="fas fa-copy"></i>
-                                Copiar
-                            </button>
-                        </div>
-                        <p class="text-xs text-gray-600 mt-2">
-                            <i class="fas fa-info-circle mr-1"></i>
-                            Este é o link direto da imagem. Use em posts, stories, emails ou sites
-                        </p>
-                    </div>
-                    
-                    <!-- Link de Pagamento para Banner Personalizado -->
-                    <div class="bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl p-4 mb-4">
-                        <div class="flex items-center gap-2 mb-3">
-                            <i class="fas fa-link text-purple-600"></i>
-                            <span class="text-gray-800 font-semibold">Link de Pagamento:</span>
-                        </div>
-                        <div class="flex gap-2">
-                            <input type="text" readonly value="${banner.linkUrl}" 
-                                class="flex-1 bg-white text-gray-800 text-sm px-4 py-3 rounded-lg font-mono border-2 border-purple-200 truncate"
-                                onclick="this.select()">
-                            <button onclick="navigator.clipboard.writeText('${banner.linkUrl}').then(() => alert('✅ Link de pagamento copiado!')).catch(() => alert('❌ Erro ao copiar'))" 
-                                class="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-3 rounded-lg hover:from-purple-700 hover:to-pink-700 transition flex items-center gap-2 font-semibold whitespace-nowrap">
-                                <i class="fas fa-copy"></i>
-                                Copiar
-                            </button>
-                        </div>
-                        <p class="text-xs text-gray-600 mt-2">
-                            <i class="fas fa-info-circle mr-1"></i>
-                            Link para os clientes pagarem através deste banner
-                        </p>
-                    </div>
                 ` : `
                     <!-- Banner Gerado: Mostrar preview formatado -->
                     <div class="bg-gradient-to-br ${getGradientClass(banner.color)} rounded-xl p-8 text-white text-center mb-6 shadow-2xl">
