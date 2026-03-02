@@ -8407,10 +8407,17 @@ app.get('/', (c) => {
         
         <script src="https://cdn.tailwindcss.com"></script>
         <script>
-            // Suprimir warning do Tailwind CDN
-            tailwind.config = {
-                devMode: false
-            }
+            // Suprimir warning do Tailwind CDN em produção
+            (function() {
+                const originalWarn = console.warn;
+                console.warn = function(...args) {
+                    // Filtrar apenas o warning específico do Tailwind
+                    if (args[0] && typeof args[0] === 'string' && args[0].includes('cdn.tailwindcss.com')) {
+                        return; // Suprimir este warning específico
+                    }
+                    originalWarn.apply(console, args); // Manter outros warnings
+                };
+            })();
         </script>
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
         <link href="/static/responsive.css?v=1.0" rel="stylesheet">
@@ -8420,7 +8427,7 @@ app.get('/', (c) => {
         
         <!-- Load scripts early with defer to ensure functions are available -->
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js" defer></script>
-        <script src="/static/app.js?v=6.5" defer></script>
+        <script src="/static/app.js?v=6.6" defer></script>
         
         <!-- Tipografia e Layout Profissional -->
         <style>
