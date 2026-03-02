@@ -7,6 +7,11 @@ window.ReportsDetailed = window.ReportsDetailed || {};
 // Variável para armazenar dados do relatório atual
 window.ReportsDetailed.currentData = null;
 
+// Variáveis para controle de auto-atualização
+window.ReportsDetailed.autoUpdateInterval = null;
+window.ReportsDetailed.isAutoUpdateActive = false;
+window.ReportsDetailed.lastUpdateTime = null;
+
 // Função principal para gerar relatório detalhado
 window.generateDetailedReport = async function() {
     const accountId = document.getElementById('report-account-select')?.value;
@@ -44,7 +49,10 @@ window.generateDetailedReport = async function() {
         
         if (data.ok) {
             window.ReportsDetailed.currentData = data.data;
+            window.ReportsDetailed.lastUpdateTime = new Date();
             displayDetailedReport(data.data);
+            updateLastUpdateStatus();
+            startAutoUpdate();
         } else {
             resultsDiv.innerHTML = '<div class="text-center py-12 text-red-500"><i class="fas fa-exclamation-triangle text-6xl mb-4"></i><p class="text-lg">Erro ao gerar relatório: ' + (data.error || 'Erro desconhecido') + '</p></div>';
         }
@@ -177,6 +185,101 @@ function displayDetailedReport(data) {
     html += '</tbody></table></div></div></div>';
     
     resultsDiv.innerHTML = html;
+}
+
+// Atualizar indicador de última atualização
+function updateLastUpdateStatus() {
+    const statusDiv = document.getElementById('report-auto-update-status');
+    if (!statusDiv) return;
+    
+    if (window.ReportsDetailed.lastUpdateTime) {
+        const now = new Date();
+        const diff = Math.floor((now - window.ReportsDetailed.lastUpdateTime) / 1000);
+        
+        let timeText;
+        if (diff < 60) {
+            timeText = 'há poucos segundos';
+        } else if (diff < 3600) {
+            const minutes = Math.floor(diff / 60);
+            timeText = `há ${minutes} minuto${minutes > 1 ? 's' : ''}`;
+        } else {
+            const hours = Math.floor(diff / 3600);
+            timeText = `há ${hours} hora${hours > 1 ? 's' : ''}`;
+        }
+        
+        statusDiv.innerHTML = `
+            <i class="fas fa-check-circle text-green-500"></i>
+            <span>Última atualização: ${timeText}</span>
+        `;
+    } else {
+        statusDiv.innerHTML = `
+            <i class="fas fa-info-circle text-blue-500"></i>
+            <span>Aguardando dados...</span>
+        `;
+    }
+}
+
+// Iniciar auto-atualização automática
+function startAutoUpdate() {
+    // Limpar intervalo anterior se existir
+    if (window.ReportsDetailed.autoUpdateInterval) {
+        clearInterval(window.ReportsDetailed.autoUpdateInterval);
+    }
+    
+    window.ReportsDetailed.isAutoUpdateActive = true;
+    
+    // Atualizar a cada 30 segundos
+    window.ReportsDetailed.autoUpdateInterval = setInterval(async () => {
+        const accountId = document.getElementById('report-account-select')?.value;
+        
+        if (accountId && accountId !== 'ALL_ACCOUNTS' && window.ReportsDetailed.currentData) {
+            console.log('🔄 Auto-atualização em andamento...');
+            
+            // Atualizar silenciosamente sem mostrar loading
+            const startDate = document.getElementById('report-start-date')?.value;
+            const endDate = document.getElementById('report-end-date')?.value;
+            const chargeType = document.getElementById('report-charge-type')?.value || 'all';
+            const status = document.getElementById('report-status')?.value || 'all';
+            
+            try {
+                let url = `/api/reports/${accountId}/detailed?`;
+                if (startDate) url += `startDate=${startDate}&`;
+                if (endDate) url += `endDate=${endDate}&`;
+                if (chargeType) url += `chargeType=${chargeType}&`;
+                if (status) url += `status=${status}&`;
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.ok) {
+                    window.ReportsDetailed.currentData = data.data;
+                    window.ReportsDetailed.lastUpdateTime = new Date();
+                    displayDetailedReport(data.data);
+                    console.log('✅ Relatório atualizado automaticamente');
+                }
+            } catch (error) {
+                console.error('❌ Erro na auto-atualização:', error);
+            }
+        }
+        
+        updateLastUpdateStatus();
+    }, 30000); // 30 segundos
+    
+    // Atualizar status a cada 5 segundos para manter o "há X segundos" preciso
+    setInterval(() => {
+        if (window.ReportsDetailed.isAutoUpdateActive) {
+            updateLastUpdateStatus();
+        }
+    }, 5000);
+}
+
+// Parar auto-atualização
+function stopAutoUpdate() {
+    if (window.ReportsDetailed.autoUpdateInterval) {
+        clearInterval(window.ReportsDetailed.autoUpdateInterval);
+        window.ReportsDetailed.autoUpdateInterval = null;
+    }
+    window.ReportsDetailed.isAutoUpdateActive = false;
 }
 
 // Função para exportar para PDF
@@ -401,6 +504,49 @@ window.exportReportToExcel = function() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+}
+
+// Sincronizar transações do Asaas para D1
+async function syncAccountTransactions() {
+    const accountSelect = document.getElementById('report-account-select');
+    const accountId = accountSelect ? accountSelect.value : '';
+    
+    if (!accountId || accountId === 'ALL_ACCOUNTS') {
+        alert('⚠️ Selecione uma subconta específica para sincronizar');
+        return;
+    }
+    
+    if (!confirm('🔄 Deseja sincronizar as transações desta subconta com o Asaas?\n\nIsso irá buscar os pagamentos dos últimos 90 dias e atualizar o banco de dados.')) {
+        return;
+    }
+    
+    try {
+        console.log('🔄 Sincronizando transações para conta:', accountId);
+        
+        const response = await axios.post(`/api/sync-transactions/${accountId}`);
+        
+        if (response.data && response.data.ok) {
+            const { synced, updated, errors, total } = response.data;
+            
+            let message = `✅ Sincronização concluída!\n\n`;
+            message += `📊 Total de pagamentos: ${total}\n`;
+            message += `✨ Novas transações: ${synced}\n`;
+            message += `🔄 Atualizadas: ${updated}\n`;
+            if (errors > 0) {
+                message += `❌ Erros: ${errors}\n`;
+            }
+            
+            alert(message);
+            
+            // Recarregar relatório
+            generateDetailedReport();
+        } else {
+            throw new Error(response.data?.error || 'Erro desconhecido');
+        }
+    } catch (error) {
+        console.error('❌ Erro ao sincronizar:', error);
+        alert('❌ Erro ao sincronizar transações:\n\n' + (error.response?.data?.error || error.message));
+    }
 }
 
 console.log('✅ Sistema de Relatórios Detalhados carregado');

@@ -9376,11 +9376,15 @@ app.get('/', (c) => {
                                 <option value="REFUNDED">↩️ Reembolsados</option>
                             </select>
                         </div>
-                        <div class="flex items-end">
+                        <div class="flex items-end gap-3">
                             <button onclick="generateDetailedReport()" 
-                                class="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white px-4 py-2 rounded-lg hover:from-orange-600 hover:to-red-600 font-semibold shadow-md transition">
+                                class="bg-gradient-to-r from-orange-500 to-red-500 text-white px-6 py-2 rounded-lg hover:from-orange-600 hover:to-red-600 font-semibold shadow-md transition">
                                 <i class="fas fa-search mr-2"></i>Aplicar Filtros
                             </button>
+                            <div id="report-auto-update-status" class="flex items-center gap-2 text-sm text-gray-600">
+                                <i class="fas fa-sync-alt animate-spin text-blue-500"></i>
+                                <span>Atualizando...</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -11378,7 +11382,7 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?sta
         <script src="/static/payment-links.js?v=4.2"></script>
         <script src="/static/payment-filters.js?v=4.2"></script>
         <script src="/static/deltapag-section.js?v=4.1"></script>
-        <script src="/static/reports-detailed.js?v=1.0"></script>
+        <script src="/static/reports-detailed.js?v=2.0"></script>
         <script src="/static/banner-generator.js?v=1.0"></script>
     </body>
     </html>
@@ -12266,6 +12270,77 @@ app.get('/api/admin/database-stats', authMiddleware, async (c) => {
     })
     
   } catch (error: any) {
+    return c.json({ ok: false, error: error.message }, 500)
+  }
+})
+
+// Endpoint para sincronizar transações do Asaas para D1
+app.post('/api/sync-transactions/:accountId', authMiddleware, async (c) => {
+  try {
+    const accountId = c.req.param('accountId')
+    const db = c.env.DB
+    
+    // Buscar transações do Asaas (últimos 90 dias)
+    const dateLimit = new Date()
+    dateLimit.setDate(dateLimit.getDate() - 90)
+    const dateFilter = dateLimit.toISOString().split('T')[0]
+    
+    const response = await asaasRequest(c, `/payments?customer=${accountId}&dateCreated[ge]=${dateFilter}&limit=100`, 'GET')
+    
+    if (!response.ok || !response.data) {
+      return c.json({ ok: false, error: 'Erro ao buscar pagamentos do Asaas' }, 500)
+    }
+    
+    const payments = response.data.data || []
+    let syncedCount = 0
+    let errorCount = 0
+    
+    for (const payment of payments) {
+      try {
+        // Verificar se já existe
+        const existing = await db.prepare('SELECT id FROM transactions WHERE id = ?').bind(payment.id).first()
+        
+        if (!existing) {
+          // Inserir nova transação
+          await db.prepare(`
+            INSERT INTO transactions (id, account_id, wallet_id, value, description, status, billing_type, due_date, payment_date, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+          `).bind(
+            payment.id,
+            accountId,
+            payment.split || accountId,
+            payment.value || 0,
+            payment.description || 'Pagamento',
+            payment.status || 'PENDING',
+            payment.billingType || 'UNDEFINED',
+            payment.dueDate || null,
+            payment.paymentDate || null
+          ).run()
+          syncedCount++
+        } else {
+          // Atualizar status se mudou
+          await db.prepare(`
+            UPDATE transactions 
+            SET status = ?, payment_date = ?
+            WHERE id = ?
+          `).bind(payment.status, payment.paymentDate, payment.id).run()
+        }
+      } catch (error) {
+        console.error(`Erro ao sincronizar pagamento ${payment.id}:`, error)
+        errorCount++
+      }
+    }
+    
+    return c.json({
+      ok: true,
+      synced: syncedCount,
+      updated: payments.length - syncedCount - errorCount,
+      errors: errorCount,
+      total: payments.length
+    })
+    
+  } catch (error: any) {
+    console.error('Erro ao sincronizar transações:', error)
     return c.json({ ok: false, error: error.message }, 500)
   }
 })
