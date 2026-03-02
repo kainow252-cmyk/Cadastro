@@ -21,6 +21,9 @@ console.log('✅ app.js carregado - funções disponíveis:', {
     DOMReady: isDOMReady
 });
 
+// Variável global para armazenar informações do usuário
+window.currentUser = null;
+
 // Check authentication on page load
 async function checkAuth() {
     try {
@@ -28,6 +31,8 @@ async function checkAuth() {
         if (!response.data.authenticated) {
             window.location.href = '/login';
         }
+        // Armazenar username globalmente
+        window.currentUser = response.data.user;
         return response.data;
     } catch (error) {
         window.location.href = '/login';
@@ -6535,10 +6540,12 @@ function viewBannerDetails(accountId, bannerId) {
                                 <i class="fas fa-edit mr-1"></i>Editar
                             </button>
                         ` : ''}
-                        <button onclick="if(confirm('❌ Deseja realmente excluir este banner?')) { deleteBanner('${accountId}', '${banner.id}'); document.getElementById('banner-detail-modal').remove(); showSavedBanners('${accountId}', ''); }" 
-                            class="px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-semibold text-sm">
-                            <i class="fas fa-trash mr-1"></i>Excluir
-                        </button>
+                        ${window.currentUser && window.currentUser.username === 'admin' ? `
+                            <button onclick="if(confirm('❌ Deseja realmente excluir este banner?')) { deleteBanner('${accountId}', '${banner.id}'); document.getElementById('banner-detail-modal').remove(); showSavedBanners('${accountId}', ''); }" 
+                                class="px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-semibold text-sm">
+                                <i class="fas fa-trash mr-1"></i>Excluir
+                            </button>
+                        ` : ''}
                     </div>
                 </div>
             </div>

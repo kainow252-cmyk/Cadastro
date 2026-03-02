@@ -8312,6 +8312,8 @@ app.get('/subaccount-dashboard', (c) => {
                         return
                     }
                     currentSubaccount = response.data.subaccount
+                    // Definir currentUser como subaccount para que o botão Excluir não apareça
+                    window.currentUser = { username: 'subaccount' }
                     document.getElementById('subaccount-name').textContent = currentSubaccount.name
                     document.getElementById('subaccount-email').textContent = currentSubaccount.email
                     loadBanners()
@@ -8409,7 +8411,7 @@ app.get('/', (c) => {
         
         <!-- Load scripts early with defer to ensure functions are available -->
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js" defer></script>
-        <script src="/static/app.js?v=5.9" defer></script>
+        <script src="/static/app.js?v=6.0" defer></script>
         
         <!-- Tipografia e Layout Profissional -->
         <style>
