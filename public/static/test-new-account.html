@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste de Nova Subconta - Verificação de Funções</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6">🧪 Teste de Funções para Nova Subconta</h1>
+        
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">📋 Informações de Teste</h2>
+            <div class="space-y-2">
+                <p><strong>Account ID de Teste:</strong> <code class="bg-gray-100 px-2 py-1 rounded">test-account-12345</code></p>
+                <p><strong>Wallet ID de Teste:</strong> <code class="bg-gray-100 px-2 py-1 rounded">test-wallet-67890</code></p>
+                <p><strong>Nome da Conta:</strong> <code class="bg-gray-100 px-2 py-1 rounded">Subconta Teste Nova</code></p>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">🔍 Testes de Funções</h2>
+            <div id="test-results" class="space-y-2"></div>
+            <button onclick="runAllTests()" class="mt-4 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold">
+                🚀 Executar Todos os Testes
+            </button>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h2 class="text-xl font-semibold mb-4">📊 Resultado Final</h2>
+            <div id="final-result" class="text-lg"></div>
+        </div>
+    </div>
+
+    <script>
+        // Account ID e Wallet ID de teste
+        const TEST_ACCOUNT_ID = 'test-account-12345';
+        const TEST_WALLET_ID = 'test-wallet-67890';
+        const TEST_ACCOUNT_NAME = 'Subconta Teste Nova';
+        const TEST_LINK_URL = 'https://example.com/subscription/test-link';
+        const TEST_QR_CODE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+        // Lista de funções críticas para testar
+        const criticalFunctions = [
+            // Funções de navegação
+            { name: 'showSection', params: ['accounts'], description: 'Mostrar seção de contas' },
+            { name: 'logout', params: [], description: 'Fazer logout' },
+            
+            // Funções de subconta
+            { name: 'createLinkForAccount', params: [TEST_ACCOUNT_ID], description: 'Criar link para subconta' },
+            { name: 'viewAccount', params: [TEST_ACCOUNT_ID], description: 'Visualizar subconta' },
+            { name: 'openLinkModal', params: [], description: 'Abrir modal de link' },
+            
+            // Funções de banner
+            { name: 'openBannerEditor', params: [TEST_LINK_URL, TEST_QR_CODE, '10.00', 'Mensalidade', 'monthly', TEST_ACCOUNT_ID, TEST_WALLET_ID], description: 'Abrir editor de banner' },
+            { name: 'showSavedBanners', params: [TEST_ACCOUNT_ID, TEST_ACCOUNT_NAME], description: 'Mostrar banners salvos' },
+            { name: 'saveBanner', params: [TEST_ACCOUNT_ID, { id: 'test-banner-1', linkUrl: TEST_LINK_URL }], description: 'Salvar banner' },
+            { name: 'deleteBanner', params: [TEST_ACCOUNT_ID, 'test-banner-1'], description: 'Deletar banner' },
+            { name: 'viewBannerDetails', params: [TEST_ACCOUNT_ID, 'test-banner-1'], description: 'Ver detalhes do banner' },
+            { name: 'closePromoBannerEditor', params: [], description: 'Fechar editor de banner' },
+            { name: 'closeSavedBannersModal', params: [], description: 'Fechar modal de banners' },
+            
+            // Funções PIX
+            { name: 'togglePixForm', params: [TEST_ACCOUNT_ID, TEST_WALLET_ID], description: 'Abrir formulário PIX' },
+            { name: 'closePixFrame', params: [TEST_ACCOUNT_ID], description: 'Fechar frame PIX' },
+            { name: 'copyPixPayload', params: [TEST_ACCOUNT_ID], description: 'Copiar payload PIX' },
+            { name: 'copyPixKey', params: [TEST_ACCOUNT_ID], description: 'Copiar chave PIX' },
+            
+            // Funções de API
+            { name: 'createApiKey', params: [TEST_ACCOUNT_ID], description: 'Criar API key' },
+            { name: 'toggleApiKey', params: [TEST_ACCOUNT_ID, 'test-key-1', true], description: 'Ativar API key' },
+            { name: 'deleteApiKey', params: [TEST_ACCOUNT_ID, 'test-key-1'], description: 'Deletar API key' },
+            
+            // Funções DeltaPag
+            { name: 'openDeltapagLinksModal', params: [TEST_ACCOUNT_ID, TEST_WALLET_ID, '12345678900', 'teste@example.com', TEST_ACCOUNT_NAME], description: 'Abrir modal DeltaPag' },
+            { name: 'closeDeltapagLinksModal', params: [], description: 'Fechar modal DeltaPag' },
+        ];
+
+        function testFunction(fn) {
+            const exists = typeof window[fn.name] !== 'undefined';
+            const isFunction = exists && typeof window[fn.name] === 'function';
+            
+            const result = {
+                name: fn.name,
+                description: fn.description,
+                exists: exists,
+                isFunction: isFunction,
+                status: isFunction ? 'OK' : (exists ? 'NÃO É FUNÇÃO' : 'FALTANDO')
+            };
+            
+            return result;
+        }
+
+        function displayResult(result) {
+            const resultsDiv = document.getElementById('test-results');
+            const statusIcon = result.status === 'OK' ? '✅' : '❌';
+            const statusClass = result.status === 'OK' ? 'text-green-600' : 'text-red-600';
+            
+            const resultHTML = `
+                <div class="flex items-start space-x-2 p-2 border-b">
+                    <span class="text-xl">${statusIcon}</span>
+                    <div class="flex-1">
+                        <code class="font-mono text-sm">${result.name}()</code>
+                        <p class="text-sm text-gray-600">${result.description}</p>
+                    </div>
+                    <span class="${statusClass} font-semibold">${result.status}</span>
+                </div>
+            `;
+            
+            resultsDiv.innerHTML += resultHTML;
+        }
+
+        function runAllTests() {
+            console.log('🧪 Iniciando testes de funções...');
+            
+            // Limpar resultados anteriores
+            document.getElementById('test-results').innerHTML = '';
+            document.getElementById('final-result').innerHTML = '';
+            
+            const results = criticalFunctions.map(testFunction);
+            
+            // Exibir cada resultado
+            results.forEach(displayResult);
+            
+            // Calcular estatísticas
+            const total = results.length;
+            const ok = results.filter(r => r.status === 'OK').length;
+            const missing = results.filter(r => r.status === 'FALTANDO').length;
+            const notFunction = results.filter(r => r.status === 'NÃO É FUNÇÃO').length;
+            const percentage = Math.round((ok / total) * 100);
+            
+            // Exibir resultado final
+            const finalResultDiv = document.getElementById('final-result');
+            const finalIcon = percentage === 100 ? '✅' : percentage >= 80 ? '⚠️' : '❌';
+            const finalClass = percentage === 100 ? 'text-green-600' : percentage >= 80 ? 'text-yellow-600' : 'text-red-600';
+            
+            finalResultDiv.innerHTML = `
+                <div class="${finalClass} font-bold text-2xl mb-4">
+                    ${finalIcon} ${percentage}% das funções funcionam corretamente
+                </div>
+                <div class="grid grid-cols-3 gap-4 text-center">
+                    <div class="bg-green-100 p-4 rounded-lg">
+                        <div class="text-3xl font-bold text-green-600">${ok}</div>
+                        <div class="text-sm text-gray-600">Funcionando</div>
+                    </div>
+                    <div class="bg-red-100 p-4 rounded-lg">
+                        <div class="text-3xl font-bold text-red-600">${missing}</div>
+                        <div class="text-sm text-gray-600">Faltando</div>
+                    </div>
+                    <div class="bg-yellow-100 p-4 rounded-lg">
+                        <div class="text-3xl font-bold text-yellow-600">${notFunction}</div>
+                        <div class="text-sm text-gray-600">Não é função</div>
+                    </div>
+                </div>
+                <div class="mt-4 p-4 ${percentage === 100 ? 'bg-green-100' : 'bg-yellow-100'} rounded-lg">
+                    <p class="font-semibold">
+                        ${percentage === 100 
+                            ? '✅ Sistema 100% operacional! Todas as funções para novas subcontas estão funcionando.' 
+                            : '⚠️ Algumas funções estão faltando. Verifique os logs do console.'}
+                    </p>
+                </div>
+            `;
+            
+            console.log('📊 Resultados dos testes:');
+            console.log(`✅ Funcionando: ${ok}/${total}`);
+            console.log(`❌ Faltando: ${missing}/${total}`);
+            console.log(`⚠️ Não é função: ${notFunction}/${total}`);
+            console.log(`📈 Taxa de sucesso: ${percentage}%`);
+            
+            // Log detalhado de funções faltando
+            if (missing > 0 || notFunction > 0) {
+                console.log('\n❌ Funções com problemas:');
+                results
+                    .filter(r => r.status !== 'OK')
+                    .forEach(r => {
+                        console.log(`  - ${r.name}: ${r.status}`);
+                    });
+            }
+        }
+
+        // Executar testes automaticamente ao carregar a página
+        window.addEventListener('load', () => {
+            console.log('🔄 Aguardando 1 segundo para garantir que todos os scripts foram carregados...');
+            setTimeout(runAllTests, 1000);
+        });
+    </script>
+</body>
+</html>
