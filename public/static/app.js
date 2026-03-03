@@ -7602,3 +7602,92 @@ function copyLoginUrl() {
 }
 
 console.log('✅ Sistema de Login para Subcontas carregado');
+
+// ==================== Alteração de Senha ====================
+
+// Mostrar modal de alteração de senha
+function showChangePasswordModal() {
+    const modal = document.createElement('div');
+    modal.id = 'change-password-modal';
+    modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+    
+    const modalContent = '<div class="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full mx-4">' +
+        '<div class="flex justify-between items-center mb-6">' +
+        '<h2 class="text-2xl font-bold text-gray-800"><i class="fas fa-key mr-2 text-blue-600"></i>Alterar Senha</h2>' +
+        '<button onclick="closeChangePasswordModal()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times text-2xl"></i></button>' +
+        '</div>' +
+        '<form id="change-password-form" class="space-y-4">' +
+        '<div><label class="block text-sm font-medium text-gray-700 mb-2"><i class="fas fa-lock mr-2"></i>Senha Atual</label>' +
+        '<input type="password" name="currentPassword" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"></div>' +
+        '<div><label class="block text-sm font-medium text-gray-700 mb-2"><i class="fas fa-key mr-2"></i>Nova Senha</label>' +
+        '<input type="password" name="newPassword" required minlength="6" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">' +
+        '<p class="text-xs text-gray-500 mt-1">Mínimo 6 caracteres</p></div>' +
+        '<div><label class="block text-sm font-medium text-gray-700 mb-2"><i class="fas fa-check-circle mr-2"></i>Confirmar Nova Senha</label>' +
+        '<input type="password" name="confirmPassword" required minlength="6" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"></div>' +
+        '<div class="flex gap-3 mt-6">' +
+        '<button type="button" onclick="closeChangePasswordModal()" class="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition">Cancelar</button>' +
+        '<button type="submit" class="flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"><i class="fas fa-check mr-2"></i>Alterar</button>' +
+        '</div></form></div>';
+    
+    modal.innerHTML = modalContent;
+    document.body.appendChild(modal);
+    
+    // Fechar ao clicar fora
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            closeChangePasswordModal();
+        }
+    });
+    
+    // Listener para o formulário
+    document.getElementById('change-password-form').addEventListener('submit', handleChangePassword);
+}
+
+// Fechar modal de alteração de senha
+function closeChangePasswordModal() {
+    const modal = document.getElementById('change-password-modal');
+    if (modal) {
+        modal.remove();
+    }
+}
+
+// Processar alteração de senha
+async function handleChangePassword(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(e.target);
+    const currentPassword = formData.get('currentPassword');
+    const newPassword = formData.get('newPassword');
+    const confirmPassword = formData.get('confirmPassword');
+    
+    // Validar senhas
+    if (newPassword !== confirmPassword) {
+        alert('❌ As senhas não coincidem!');
+        return;
+    }
+    
+    if (newPassword.length < 6) {
+        alert('❌ A nova senha deve ter no mínimo 6 caracteres!');
+        return;
+    }
+    
+    try {
+        const response = await axios.post('/api/change-password', {
+            currentPassword,
+            newPassword
+        });
+        
+        if (response.data.ok) {
+            alert('✅ Senha alterada com sucesso!\n\nVocê será redirecionado para fazer login novamente.');
+            closeChangePasswordModal();
+            logout();
+        } else {
+            alert('❌ ' + (response.data.error || 'Erro ao alterar senha'));
+        }
+    } catch (error) {
+        console.error('Erro ao alterar senha:', error);
+        alert('❌ ' + (error.response?.data?.error || 'Erro ao alterar senha. Verifique sua senha atual.'));
+    }
+}
+
+console.log('✅ Sistema de Alteração de Senha carregado');
