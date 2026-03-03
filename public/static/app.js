@@ -6455,7 +6455,8 @@ function showSavedBanners(accountId, accountName, retryCount = 0) {
         // Renderizar banners como LISTA COMPACTA
         listContainer.innerHTML = banners.map((banner, index) => `
             <div onclick="viewBannerDetails('${accountId}', '${banner.id}')" 
-                class="bg-white border border-gray-200 rounded-lg p-4 hover:border-purple-500 hover:shadow-lg transition cursor-pointer">
+                class="bg-white border border-gray-200 rounded-lg p-4 hover:border-purple-500 hover:shadow-lg transition cursor-pointer relative">
+                ${index === 0 ? '<div class="absolute top-2 left-2 bg-gradient-to-r from-green-500 to-emerald-500 text-white text-xs px-2 py-1 rounded-full font-bold shadow-lg z-10">✨ MAIS RECENTE</div>' : ''}
                 <div class="flex items-center gap-4">
                     <!-- Thumbnail pequeno do banner -->
                     <div class="w-20 h-20 flex-shrink-0 bg-gradient-to-br ${getGradientClass(banner.color)} rounded-lg flex items-center justify-center relative overflow-hidden">
@@ -6467,6 +6468,7 @@ function showSavedBanners(accountId, accountName, retryCount = 0) {
                             ? '<div class="absolute top-0 right-0 bg-green-500 text-white text-xs px-1 rounded-bl">🔄</div>'
                             : '<div class="absolute top-0 right-0 bg-blue-500 text-white text-xs px-1 rounded-bl">📄</div>'
                         }
+                        ${banner.isCustomBanner ? '<div class="absolute bottom-0 left-0 bg-purple-500 text-white text-xs px-1 rounded-tr">🎨</div>' : ''}
                     </div>
                     
                     <!-- Informações -->
@@ -6474,11 +6476,13 @@ function showSavedBanners(accountId, accountName, retryCount = 0) {
                         <div class="flex items-center gap-2 mb-1">
                             <h3 class="font-bold text-gray-800 truncate">${banner.title || (banner.chargeType === 'monthly' ? 'ASSINE AGORA' : 'COMPRE AGORA')}</h3>
                             ${banner.promo ? `<span class="bg-yellow-400 text-gray-900 text-xs px-2 py-0.5 rounded-full">${banner.promo}</span>` : ''}
+                            ${banner.isCustomBanner ? '<span class="bg-purple-500 text-white text-xs px-2 py-0.5 rounded-full">PERSONALIZADO</span>' : ''}
                         </div>
                         <p class="text-sm text-gray-600 truncate mb-1">${banner.description || 'Plano Premium'}</p>
                         <div class="flex items-center gap-3 text-xs text-gray-500">
                             <span class="font-semibold text-purple-600">R$ ${parseFloat(banner.value || 0).toFixed(2).replace('.', ',')}${banner.chargeType === 'monthly' ? '/mês' : ''}</span>
                             <span><i class="fas fa-clock mr-1"></i>${new Date(banner.createdAt).toLocaleDateString('pt-BR')}</span>
+                            <span class="font-mono text-xs opacity-50">ID: ...${banner.id.substring(banner.id.length - 6)}</span>
                         </div>
                     </div>
                     
@@ -6768,10 +6772,25 @@ function shareToWhatsApp(linkUrl, title, value) {
 // Gerar link de compartilhamento do banner
 function generateBannerShareLink(accountId, bannerId) {
     console.log('🔗 Gerando link de compartilhamento para banner:', bannerId);
+    console.log('📁 Account ID:', accountId);
     
     // Tentar buscar banner no localStorage primeiro
     const banners = getSavedBanners(accountId);
+    console.log('📦 Total de banners encontrados:', banners.length);
+    console.log('📦 IDs dos banners:', banners.map(b => b.id));
+    
     const banner = banners.find(b => b.id === bannerId);
+    console.log('🎯 Banner encontrado:', banner ? 'SIM' : 'NÃO');
+    
+    if (banner) {
+        console.log('ℹ️ Tipo de banner:', banner.isCustomBanner ? 'PERSONALIZADO' : 'GERADO');
+        console.log('ℹ️ Banner data:', {
+            id: banner.id,
+            isCustomBanner: banner.isCustomBanner,
+            hasImage: !!banner.bannerImageBase64,
+            linkUrl: banner.linkUrl
+        });
+    }
     
     // Se não encontrar no localStorage, o banner ainda pode estar no servidor
     // Então continuamos gerando o link mesmo assim
