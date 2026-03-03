@@ -4702,6 +4702,9 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
+// Variável global para armazenar todas as assinaturas DeltaPag
+let allDeltapagSubscriptions = [];
+
 // Função para carregar lista de assinaturas DeltaPag (admin)
 async function loadDeltapagSubscriptions() {
     try {
@@ -4709,21 +4712,53 @@ async function loadDeltapagSubscriptions() {
         const response = await axios.get('/api/admin/deltapag/subscriptions');
         
         if (response.data.ok) {
-            const subscriptions = response.data.subscriptions;
-            console.log(`✅ ${subscriptions.length} assinaturas carregadas`);
+            allDeltapagSubscriptions = response.data.subscriptions;
+            console.log(`✅ ${allDeltapagSubscriptions.length} assinaturas carregadas`);
             
-            // Atualizar a tabela HTML diretamente
-            renderDeltapagTable(subscriptions);
-            
-            // Atualizar coluna CARTÃO com números mascarados (após tabela renderizada)
-            setTimeout(() => updateCardColumns(subscriptions), 200);
-            setTimeout(() => updateCardColumns(subscriptions), 500);
-            setTimeout(() => updateCardColumns(subscriptions), 1000);
+            // Aplicar filtros (que vai chamar renderDeltapagTable)
+            applyDeltapagFilters();
         }
     } catch (error) {
         console.error('❌ Erro ao carregar assinaturas DeltaPag:', error);
     }
 }
+
+// Função para aplicar filtros nas assinaturas DeltaPag
+function applyDeltapagFilters() {
+    const nameFilter = document.getElementById('deltapag-filter-name')?.value.toLowerCase() || '';
+    const emailFilter = document.getElementById('deltapag-filter-email')?.value.toLowerCase() || '';
+    const statusFilter = document.getElementById('deltapag-filter-status')?.value || '';
+    const recurrenceFilter = document.getElementById('deltapag-filter-recurrence')?.value || '';
+    
+    let filteredSubscriptions = allDeltapagSubscriptions.filter(sub => {
+        // Filtro de nome
+        const matchesName = !nameFilter || (sub.customer_name && sub.customer_name.toLowerCase().includes(nameFilter));
+        
+        // Filtro de email
+        const matchesEmail = !emailFilter || (sub.customer_email && sub.customer_email.toLowerCase().includes(emailFilter));
+        
+        // Filtro de status
+        const matchesStatus = !statusFilter || sub.status === statusFilter;
+        
+        // Filtro de recorrência
+        const matchesRecurrence = !recurrenceFilter || sub.recurrence_type === recurrenceFilter;
+        
+        return matchesName && matchesEmail && matchesStatus && matchesRecurrence;
+    });
+    
+    console.log(`🔍 Filtro aplicado: ${filteredSubscriptions.length} assinaturas visíveis de ${allDeltapagSubscriptions.length} total`);
+    
+    // Renderizar tabela com assinaturas filtradas
+    renderDeltapagTable(filteredSubscriptions);
+    
+    // Atualizar coluna CARTÃO com números mascarados (após tabela renderizada)
+    setTimeout(() => updateCardColumns(filteredSubscriptions), 200);
+    setTimeout(() => updateCardColumns(filteredSubscriptions), 500);
+    setTimeout(() => updateCardColumns(filteredSubscriptions), 1000);
+}
+
+// Expor função globalmente
+window.applyDeltapagFilters = applyDeltapagFilters;
 
 // Função para renderizar a tabela DeltaPag
 function renderDeltapagTable(subscriptions) {
