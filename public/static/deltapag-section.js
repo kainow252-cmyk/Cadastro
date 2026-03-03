@@ -747,15 +747,24 @@ async function showQRCodeModal(linkId, linkUrl, description, value, recurrence) 
     document.getElementById('qr-link-value').textContent = `R$ ${value}`;
     document.getElementById('qr-link-recurrence').textContent = recurrence;
     
+    // Mostrar modal ANTES de gerar QR Code (para mostrar loading)
+    const modal = document.getElementById('qrcode-modal');
+    modal.classList.remove('hidden');
+    
     // Gerar QR Code
     const canvas = document.getElementById('qrcode-canvas');
     if (!canvas) {
         console.error('❌ Canvas qrcode-canvas não encontrado');
         alert('Erro: Canvas do QR Code não encontrado.');
+        modal.classList.add('hidden');
         return;
     }
     
     console.log('✅ Canvas encontrado:', canvas);
+    
+    // Adicionar classe de loading ao canvas
+    canvas.style.opacity = '0.5';
+    canvas.style.filter = 'blur(5px)';
     
     try {
         console.log('🔄 Gerando QR Code...');
@@ -771,23 +780,27 @@ async function showQRCodeModal(linkId, linkUrl, description, value, recurrence) 
             if (error) {
                 console.error('❌ Erro ao gerar QR Code:', error);
                 alert(`Erro ao gerar QR Code: ${error.message}`);
+                modal.classList.add('hidden');
                 return;
             }
             
             console.log('✅ QR Code gerado com sucesso!');
+            
+            // Remover loading do canvas
+            canvas.style.opacity = '1';
+            canvas.style.filter = 'none';
             
             // Gerar preview HTML
             const qrDataURL = canvas.toDataURL('image/png');
             const htmlCode = generateQRCodeHTML(linkUrl, description, value, recurrence, qrDataURL);
             document.getElementById('qr-html-preview').textContent = htmlCode;
             
-            // Mostrar modal
-            document.getElementById('qrcode-modal').classList.remove('hidden');
-            console.log('✅ Modal exibido');
+            console.log('✅ Modal pronto para uso');
         });
     } catch (error) {
         console.error('❌ Erro ao gerar QR Code:', error);
         alert(`Erro ao gerar QR Code: ${error.message}\n\nTente recarregar a página.`);
+        modal.classList.add('hidden');
     }
 }
 
@@ -804,7 +817,7 @@ function downloadQRCodeFromCanvas() {
     // Verificar se há dados do QR Code
     if (!currentQRData) {
         console.error('❌ Nenhum QR Code carregado - currentQRData está null/undefined');
-        alert('Erro: Nenhum QR Code carregado. Por favor, gere o QR Code primeiro clicando em "Gerar QR Code".');
+        alert('Erro: Nenhum QR Code carregado. Por favor, gere o QR Code primeiro clicando no botão "Gerar QR Code".');
         return;
     }
     
@@ -820,6 +833,13 @@ function downloadQRCodeFromCanvas() {
     console.log('✅ Canvas encontrado:', canvas);
     console.log('📏 Canvas width:', canvas.width, 'height:', canvas.height);
     
+    // Verificar se canvas tem dimensões válidas
+    if (canvas.width === 0 || canvas.height === 0) {
+        console.error('❌ Canvas com dimensões inválidas (0x0)');
+        alert('Erro: QR Code ainda não foi gerado. Aguarde um momento e tente novamente.');
+        return;
+    }
+    
     try {
         // Verificar se canvas tem conteúdo
         const ctx = canvas.getContext('2d');
@@ -827,12 +847,12 @@ function downloadQRCodeFromCanvas() {
         const hasContent = imageData.data.some(pixel => pixel !== 0);
         
         if (!hasContent) {
-            console.error('❌ Canvas está vazio - QR Code não foi gerado');
-            alert('Erro: QR Code não foi gerado corretamente. Clique em "Gerar QR Code" primeiro.');
+            console.error('❌ Canvas está vazio - QR Code ainda não foi renderizado');
+            alert('Erro: QR Code ainda está sendo gerado. Aguarde um momento e tente novamente.');
             return;
         }
         
-        console.log('✅ Canvas tem conteúdo');
+        console.log('✅ Canvas tem conteúdo válido');
         
         const link = document.createElement('a');
         // Gerar nome seguro do arquivo
@@ -847,8 +867,15 @@ function downloadQRCodeFromCanvas() {
             hrefLength: link.href.length
         });
         
+        // Adicionar ao DOM temporariamente para garantir que funcione em todos os navegadores
+        document.body.appendChild(link);
         link.click();
+        document.body.removeChild(link);
+        
         console.log('✅ QR Code download iniciado:', filename);
+        
+        // Feedback visual
+        alert(`✅ QR Code baixado com sucesso!\n\nArquivo: ${filename}`);
     } catch (error) {
         console.error('❌ Erro ao baixar QR Code:', error);
         alert(`Erro ao baixar QR Code: ${error.message}`);

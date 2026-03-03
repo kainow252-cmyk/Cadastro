@@ -11785,7 +11785,7 @@ curl "https://admin.corretoracorporate.com.br/api/reports/all-accounts/refunded?
         <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
         <script src="/static/payment-links.js?v=4.2"></script>
         <script src="/static/payment-filters.js?v=4.2"></script>
-        <script src="/static/deltapag-section.js?v=4.3"></script>
+        <script src="/static/deltapag-section.js?v=4.4"></script>
         <script src="/static/reports-detailed.js?v=2.0"></script>
         <script src="/static/banner-generator.js?v=1.0"></script>
     </body>
