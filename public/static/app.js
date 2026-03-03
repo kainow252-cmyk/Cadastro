@@ -3639,14 +3639,8 @@ async function generateSignupLink(accountId, walletId) {
         if (data.ok) {
             const link = data.data;
             
-            // DEBUG: Verificar link retornado
-            console.log('🔍 DEBUG - Link retornado pela API:', link.linkUrl);
-            console.log('🔍 DEBUG - Link object completo:', link);
-            
             // Gerar QR Code do link
-            console.log('📱 Gerando QR Code para:', link.linkUrl);
             const qrCodeBase64 = await generateQRCodeFromText(link.linkUrl);
-            console.log('✅ QR Code gerado (primeiros 100 chars):', qrCodeBase64.substring(0, 100));
             
             resultDiv.innerHTML = `
                 <div class="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-4 mb-4">
@@ -3746,15 +3740,11 @@ async function generateSignupLink(accountId, walletId) {
 
 async function generateQRCodeFromText(text) {
     try {
-        console.log('📱 generateQRCodeFromText - Texto recebido:', text);
         const response = await fetch('https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(text));
         const blob = await response.blob();
         return new Promise((resolve) => {
             const reader = new FileReader();
-            reader.onloadend = () => {
-                console.log('✅ QR Code convertido para Base64 (primeiros 100 chars):', reader.result.substring(0, 100));
-                resolve(reader.result);
-            };
+            reader.onloadend = () => resolve(reader.result);
             reader.readAsDataURL(blob);
         });
     } catch (error) {
@@ -5762,10 +5752,6 @@ async function saveCustomBanner() {
         // Comprimir QR Code também
         console.log('🗜️ Comprimindo QR Code...');
         const compressedQR = await compressBase64Image(qrCodeBase64, 500, 0.8);
-        
-        // DEBUG: Verificar se o QR code corresponde ao link correto
-        console.log('🔍 DEBUG - Link do pagamento:', linkUrl);
-        console.log('🔍 DEBUG - QR Code Base64 (primeiros 100 chars):', qrCodeBase64.substring(0, 100));
         
         // Gerar banner final com QR Code sobreposto
         const finalBannerBase64 = await addQRCodeToCustomBanner(compressedBanner, compressedQR, linkUrl);
