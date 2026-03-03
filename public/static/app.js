@@ -2579,7 +2579,7 @@ window.openLinkModal = async function openLinkModal() {
             const qrContainer = document.getElementById('qr-code-container');
             const qrSize = 200;
             const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${qrSize}x${qrSize}&data=${encodeURIComponent(linkData.url)}`;
-            qrContainer.innerHTML = `<img src="${qrUrl}" alt="QR Code" class="mx-auto border-2 border-gray-300 rounded-lg" style="width: ${qrSize}px; height: ${qrSize}px;">`;
+            qrContainer.innerHTML = `<img src="${qrUrl}" alt="QR Code" class="mx-auto border-2 border-gray-300 rounded-lg" style="width: ${qrSize}px; height: ${qrSize}px;" crossorigin="anonymous">`;
             
             // Mostrar conteúdo
             loading.classList.add('hidden');
