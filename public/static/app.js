@@ -5772,23 +5772,10 @@ async function saveCustomBanner() {
             createdAt: new Date().toISOString()
         };
         
-        console.log('🎨 Banner personalizado preparado:', {
-            id: bannerData.id,
-            accountId: accountId,
-            hasAccountId: !!accountId,
-            linkUrl: bannerData.linkUrl,
-            qrSize: (bannerData.qrCodeBase64.length / 1024).toFixed(2) + ' KB',
-            bannerSize: (bannerData.bannerImageBase64.length / 1024).toFixed(2) + ' KB',
-            isCustomBanner: bannerData.isCustomBanner
-        });
-        
         if (accountId) {
-            console.log('⏳ Chamando saveBanner com accountId:', accountId);
             await saveBanner(accountId, bannerData);
             console.log('✅ Banner personalizado salvo com sucesso!');
             alert('✅ Banner salvo com sucesso!\n\nVocê pode visualizá-lo em "Banners Salvos"');
-        } else {
-            console.warn('⚠️ accountId não fornecido, banner NÃO será salvo!');
         }
         
         // Fechar modal
@@ -6230,14 +6217,8 @@ function getSavedBanners(accountId) {
 }
 
 async function saveBanner(accountId, bannerData) {
-    console.log('🚀 saveBanner INICIADA');
-    console.log('   accountId:', accountId);
-    console.log('   bannerData.id:', bannerData.id);
-    console.log('   bannerData.isCustomBanner:', bannerData.isCustomBanner);
-    
     try {
         // 1. Salvar no localStorage (cache local)
-        console.log('📂 Etapa 1: Salvando no localStorage...');
         let banners = getSavedBanners(accountId);
         banners.unshift(bannerData); // Adicionar no início
         
@@ -6260,16 +6241,6 @@ async function saveBanner(accountId, bannerData) {
         
         // 2. Salvar no servidor (para links públicos)
         try {
-            console.log('☁️ Salvando banner no servidor...');
-            console.log('📤 Dados sendo enviados:', {
-                accountId,
-                linkUrl: bannerData.linkUrl,
-                hasQR: !!bannerData.qrCodeBase64,
-                hasBanner: !!bannerData.bannerImageBase64,
-                qrSize: bannerData.qrCodeBase64 ? (bannerData.qrCodeBase64.length / 1024).toFixed(2) + ' KB' : 'N/A',
-                bannerSize: bannerData.bannerImageBase64 ? (bannerData.bannerImageBase64.length / 1024).toFixed(2) + ' KB' : 'N/A'
-            });
-            
             const response = await axios.post('/api/banners', {
                 accountId: accountId,
                 linkUrl: bannerData.linkUrl,
@@ -6285,24 +6256,14 @@ async function saveBanner(accountId, bannerData) {
                 isCustomBanner: bannerData.isCustomBanner || false
             });
             
-            console.log('📥 Resposta do servidor:', response.data);
-            
             if (response.data.ok) {
                 console.log('✅ Banner salvo no servidor! ID:', response.data.bannerId);
                 // Atualizar o ID do banner com o ID do servidor
                 bannerData.id = response.data.bannerId;
                 localStorage.setItem(storageKey, JSON.stringify(banners));
-            } else {
-                console.error('❌ Servidor retornou erro:', response.data);
             }
         } catch (serverError) {
-            console.error('❌ ERRO ao salvar no servidor:', serverError);
-            console.error('📋 Detalhes do erro:', {
-                message: serverError.message,
-                response: serverError.response?.data,
-                status: serverError.response?.status
-            });
-            console.warn('⚠️ Banner salvo apenas localmente. Não será possível compartilhar via link público.');
+            console.warn('⚠️ Banner salvo apenas localmente:', serverError.message);
         }
         
     } catch (error) {
