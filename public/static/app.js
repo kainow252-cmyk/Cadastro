@@ -6242,6 +6242,15 @@ async function saveBanner(accountId, bannerData) {
         // 2. Salvar no servidor (para links públicos)
         try {
             console.log('☁️ Salvando banner no servidor...');
+            console.log('📤 Dados sendo enviados:', {
+                accountId,
+                linkUrl: bannerData.linkUrl,
+                hasQR: !!bannerData.qrCodeBase64,
+                hasBanner: !!bannerData.bannerImageBase64,
+                qrSize: bannerData.qrCodeBase64 ? (bannerData.qrCodeBase64.length / 1024).toFixed(2) + ' KB' : 'N/A',
+                bannerSize: bannerData.bannerImageBase64 ? (bannerData.bannerImageBase64.length / 1024).toFixed(2) + ' KB' : 'N/A'
+            });
+            
             const response = await axios.post('/api/banners', {
                 accountId: accountId,
                 linkUrl: bannerData.linkUrl,
@@ -6257,14 +6266,24 @@ async function saveBanner(accountId, bannerData) {
                 isCustomBanner: bannerData.isCustomBanner || false
             });
             
+            console.log('📥 Resposta do servidor:', response.data);
+            
             if (response.data.ok) {
                 console.log('✅ Banner salvo no servidor! ID:', response.data.bannerId);
                 // Atualizar o ID do banner com o ID do servidor
                 bannerData.id = response.data.bannerId;
                 localStorage.setItem(storageKey, JSON.stringify(banners));
+            } else {
+                console.error('❌ Servidor retornou erro:', response.data);
             }
         } catch (serverError) {
-            console.warn('⚠️ Não foi possível salvar no servidor, mas o banner está salvo localmente:', serverError.message);
+            console.error('❌ ERRO ao salvar no servidor:', serverError);
+            console.error('📋 Detalhes do erro:', {
+                message: serverError.message,
+                response: serverError.response?.data,
+                status: serverError.response?.status
+            });
+            console.warn('⚠️ Banner salvo apenas localmente. Não será possível compartilhar via link público.');
         }
         
     } catch (error) {
