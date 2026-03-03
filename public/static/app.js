@@ -6601,6 +6601,22 @@ function viewBannerDetails(accountId, bannerId) {
                     </div>
                 </div>
                 
+                <!-- Seção: Compartilhar -->
+                <div class="mb-4 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4">
+                    <div class="flex items-center gap-2 mb-3">
+                        <i class="fas fa-share-alt text-green-600 text-lg"></i>
+                        <span class="text-gray-800 font-bold">Compartilhar Banner</span>
+                    </div>
+                    <button onclick="generateBannerShareLink('${accountId}', '${banner.id}')" 
+                        class="w-full px-4 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 transition font-bold text-sm shadow-lg">
+                        <i class="fas fa-link mr-2"></i>Gerar Link de Compartilhamento
+                    </button>
+                    <p class="text-xs text-gray-600 mt-2 text-center">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        Crie um link direto para visualizar este banner
+                    </p>
+                </div>
+                
                 <!-- Seção: Gerenciar -->
                 <div class="pt-4 border-t border-gray-200">
                     <h3 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
@@ -6650,6 +6666,176 @@ function shareToWhatsApp(linkUrl, title, value) {
     
     // Copiar link também (backup)
     navigator.clipboard.writeText(linkUrl).catch(() => {});
+}
+
+// Gerar link de compartilhamento do banner
+function generateBannerShareLink(accountId, bannerId) {
+    console.log('🔗 Gerando link de compartilhamento para banner:', bannerId);
+    
+    const banners = getSavedBanners(accountId);
+    const banner = banners.find(b => b.id === bannerId);
+    
+    if (!banner) {
+        alert('❌ Banner não encontrado!');
+        return;
+    }
+    
+    // Gerar URL base do site
+    const baseUrl = window.location.origin;
+    
+    // Criar link direto para visualização do banner
+    const shareLink = `${baseUrl}/view-banner/${accountId}/${bannerId}`;
+    
+    // Criar código iframe
+    const iframeCode = `<iframe src="${shareLink}" width="100%" height="600" frameborder="0" style="border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);"></iframe>`;
+    
+    // Criar modal com opções de compartilhamento
+    const modal = document.createElement('div');
+    modal.id = 'share-link-modal';
+    modal.className = 'fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4';
+    modal.onclick = (e) => {
+        if (e.target === modal) modal.remove();
+    };
+    
+    modal.innerHTML = `
+        <div class="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-auto" onclick="event.stopPropagation()">
+            <!-- Header -->
+            <div class="bg-gradient-to-r from-green-600 to-emerald-600 text-white p-6 rounded-t-2xl relative">
+                <button onclick="document.getElementById('share-link-modal').remove()" 
+                    class="absolute top-4 right-4 text-white hover:bg-white/20 rounded-full w-8 h-8 flex items-center justify-center">
+                    <i class="fas fa-times"></i>
+                </button>
+                <h2 class="text-2xl font-bold mb-2">
+                    <i class="fas fa-share-alt mr-2"></i>Link de Compartilhamento
+                </h2>
+                <p class="text-green-100 text-sm">
+                    Compartilhe este banner facilmente
+                </p>
+            </div>
+            
+            <!-- Conteúdo -->
+            <div class="p-6 space-y-6">
+                <!-- Link Direto -->
+                <div>
+                    <div class="flex items-center gap-2 mb-2">
+                        <i class="fas fa-link text-green-600"></i>
+                        <span class="text-gray-800 font-semibold">Link Direto</span>
+                    </div>
+                    <p class="text-xs text-gray-600 mb-2">Copie e cole este link em qualquer lugar</p>
+                    <div class="flex gap-2">
+                        <input type="text" readonly value="${shareLink}" 
+                            id="direct-link-input"
+                            class="flex-1 bg-gray-50 text-gray-800 text-sm px-4 py-3 rounded-lg border border-gray-300 font-mono"
+                            onclick="this.select()">
+                        <button onclick="copyToClipboard('${shareLink}', 'Link direto copiado!')" 
+                            class="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition flex items-center gap-2 font-semibold text-sm">
+                            <i class="fas fa-copy"></i>
+                            Copiar
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Código Iframe -->
+                <div>
+                    <div class="flex items-center gap-2 mb-2">
+                        <i class="fas fa-code text-purple-600"></i>
+                        <span class="text-gray-800 font-semibold">Código Iframe</span>
+                    </div>
+                    <p class="text-xs text-gray-600 mb-2">Incorpore o banner diretamente em seu site</p>
+                    <div class="flex gap-2">
+                        <textarea readonly 
+                            id="iframe-code-input"
+                            class="flex-1 bg-gray-50 text-gray-800 text-xs px-4 py-3 rounded-lg border border-gray-300 font-mono h-24 resize-none"
+                            onclick="this.select()">${iframeCode}</textarea>
+                        <button onclick="copyToClipboard(\`${iframeCode.replace(/`/g, '\\`')}\`, 'Código iframe copiado!')" 
+                            class="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition flex items-center gap-2 font-semibold text-sm h-24">
+                            <i class="fas fa-copy"></i>
+                            Copiar
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Compartilhamento Rápido -->
+                <div>
+                    <div class="flex items-center gap-2 mb-3">
+                        <i class="fas fa-share-nodes text-blue-600"></i>
+                        <span class="text-gray-800 font-semibold">Compartilhar em</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <button onclick="shareToWhatsAppBanner('${shareLink}', '${banner.title || 'Banner'}', '${banner.value || '0'}')" 
+                            class="px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold text-sm">
+                            <i class="fab fa-whatsapp mr-2"></i>WhatsApp
+                        </button>
+                        <button onclick="shareViaNativeShare('${shareLink}', '${banner.title || 'Banner'}')" 
+                            class="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold text-sm">
+                            <i class="fas fa-share mr-2"></i>Mais Opções
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Preview -->
+                <div>
+                    <div class="flex items-center gap-2 mb-2">
+                        <i class="fas fa-eye text-gray-600"></i>
+                        <span class="text-gray-800 font-semibold">Pré-visualização</span>
+                    </div>
+                    <button onclick="window.open('${shareLink}', '_blank')" 
+                        class="w-full px-4 py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-900 transition font-semibold text-sm">
+                        <i class="fas fa-external-link-alt mr-2"></i>Abrir em Nova Aba
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+}
+
+// Função auxiliar para copiar texto
+function copyToClipboard(text, successMessage) {
+    navigator.clipboard.writeText(text).then(() => {
+        // Toast de sucesso
+        const toast = document.createElement('div');
+        toast.className = 'fixed top-4 right-4 bg-green-600 text-white px-6 py-3 rounded-lg shadow-xl z-50 flex items-center gap-2';
+        toast.innerHTML = `
+            <i class="fas fa-check-circle"></i>
+            <span>${successMessage}</span>
+        `;
+        document.body.appendChild(toast);
+        
+        setTimeout(() => {
+            toast.style.transition = 'opacity 0.3s';
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 300);
+        }, 2000);
+    }).catch(() => {
+        alert('❌ Erro ao copiar. Tente selecionar e copiar manualmente.');
+    });
+}
+
+// Compartilhar banner no WhatsApp
+function shareToWhatsAppBanner(shareLink, title, value) {
+    const message = `🎉 *${title}*\n\n💰 Valor: R$ ${parseFloat(value).toFixed(2).replace('.', ',')}\n\n🔗 Veja o banner:\n${shareLink}\n\n✅ Pagamento rápido e seguro via PIX`;
+    
+    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+    window.open(whatsappUrl, '_blank');
+}
+
+// Compartilhar via API nativa do navegador
+function shareViaNativeShare(shareLink, title) {
+    if (navigator.share) {
+        navigator.share({
+            title: title,
+            text: 'Confira este banner de pagamento!',
+            url: shareLink
+        }).catch(() => {
+            // Fallback: copiar link
+            copyToClipboard(shareLink, 'Link copiado!');
+        });
+    } else {
+        // Fallback: copiar link
+        copyToClipboard(shareLink, 'Link copiado!');
+    }
 }
 
 // Copiar link do banner

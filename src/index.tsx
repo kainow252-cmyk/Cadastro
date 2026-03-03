@@ -7263,6 +7263,187 @@ app.get('/cadastro/:linkId', (c) => {
   `)
 })
 
+// View Banner (Compartilhamento Público)
+app.get('/view-banner/:accountId/:bannerId', (c) => {
+  const { accountId, bannerId } = c.req.param()
+  
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Banner - Pagamento via PIX</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+        <meta property="og:title" content="Banner de Pagamento PIX">
+        <meta property="og:description" content="Clique para visualizar os detalhes do pagamento">
+        <meta property="og:type" content="website">
+        <style>
+            body {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+            }
+        </style>
+    </head>
+    <body class="flex items-center justify-center p-4">
+        <div class="max-w-2xl w-full">
+            <!-- Loading -->
+            <div id="loading" class="bg-white rounded-2xl shadow-2xl p-8 text-center">
+                <div class="animate-spin rounded-full h-16 w-16 border-b-4 border-purple-600 mx-auto mb-4"></div>
+                <p class="text-gray-600">Carregando banner...</p>
+            </div>
+            
+            <!-- Banner Container -->
+            <div id="banner-container" class="hidden bg-white rounded-2xl shadow-2xl overflow-hidden">
+                <!-- Será preenchido via JavaScript -->
+            </div>
+            
+            <!-- Error -->
+            <div id="error" class="hidden bg-white rounded-2xl shadow-2xl p-8 text-center">
+                <div class="text-red-600 mb-4">
+                    <i class="fas fa-exclamation-triangle text-6xl"></i>
+                </div>
+                <h2 class="text-2xl font-bold text-gray-800 mb-2">Banner não encontrado</h2>
+                <p class="text-gray-600 mb-4">Este banner pode ter sido removido ou o link está incorreto.</p>
+                <a href="/" class="inline-block bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 transition">
+                    <i class="fas fa-home mr-2"></i>Voltar ao início
+                </a>
+            </div>
+        </div>
+        
+        <script>
+            const accountId = '${accountId}';
+            const bannerId = '${bannerId}';
+            
+            // Carregar banner do localStorage
+            function loadBanner() {
+                try {
+                    const key = 'banners_' + accountId;
+                    const data = localStorage.getItem(key);
+                    
+                    if (!data) {
+                        showError();
+                        return;
+                    }
+                    
+                    const banners = JSON.parse(data);
+                    const banner = banners.find(b => b.id === bannerId);
+                    
+                    if (!banner) {
+                        showError();
+                        return;
+                    }
+                    
+                    displayBanner(banner);
+                } catch (error) {
+                    console.error('Erro ao carregar banner:', error);
+                    showError();
+                }
+            }
+            
+            // Exibir banner
+            function displayBanner(banner) {
+                const container = document.getElementById('banner-container');
+                const isCustom = banner.isCustomBanner && banner.bannerImageBase64;
+                
+                // Cores de gradiente
+                const gradients = {
+                    orange: 'from-orange-600 to-red-600',
+                    purple: 'from-purple-600 to-pink-600',
+                    blue: 'from-blue-600 to-cyan-600',
+                    green: 'from-green-600 to-emerald-600',
+                    red: 'from-red-600 to-rose-600'
+                };
+                const gradient = gradients[banner.color] || gradients.orange;
+                
+                if (isCustom) {
+                    // Banner personalizado
+                    container.innerHTML = '<div class="p-6">' +
+                        '<img src="' + banner.bannerImageBase64 + '" alt="Banner" class="w-full rounded-xl">' +
+                        '</div>' +
+                        '<div class="p-6 border-t border-gray-200">' +
+                        '<a href="' + banner.linkUrl + '" target="_blank" rel="noopener noreferrer" ' +
+                        'class="block w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-4 rounded-xl hover:from-purple-700 hover:to-pink-700 transition font-bold text-center text-lg shadow-lg">' +
+                        '<i class="fas fa-qrcode mr-2"></i>Pagar Agora' +
+                        '</a>' +
+                        '</div>';
+                } else {
+                    // Banner gerado - usando concatenação simples
+                    let html = '<div class="bg-gradient-to-br ' + gradient + ' p-8 text-white text-center">';
+                    html += '<div class="flex flex-col items-center space-y-4">';
+                    
+                    // Badges
+                    html += '<div class="flex gap-2 flex-wrap justify-center">';
+                    if (banner.chargeType === 'monthly') {
+                        html += '<div class="bg-green-500 text-sm px-3 py-1 rounded-full">🔄 ASSINATURA MENSAL</div>';
+                    } else {
+                        html += '<div class="bg-blue-500 text-sm px-3 py-1 rounded-full">📄 PAGAMENTO ÚNICO</div>';
+                    }
+                    if (banner.promo) {
+                        html += '<div class="bg-yellow-400 text-gray-900 text-sm px-3 py-1 rounded-full font-bold">' + banner.promo + '</div>';
+                    }
+                    html += '</div>';
+                    
+                    // Título
+                    const title = banner.title || (banner.chargeType === 'monthly' ? 'ASSINE AGORA' : 'COMPRE AGORA');
+                    html += '<h1 class="text-4xl font-bold leading-tight">' + title + '</h1>';
+                    
+                    // Descrição
+                    html += '<p class="text-xl opacity-90">' + (banner.description || 'Plano Premium') + '</p>';
+                    
+                    // Valor
+                    const formattedValue = parseFloat(banner.value || 0).toFixed(2).replace('.', ',');
+                    html += '<div class="text-6xl font-bold">R$ ' + formattedValue + '</div>';
+                    if (banner.chargeType === 'monthly') {
+                        html += '<div class="text-2xl">/mês</div>';
+                    }
+                    
+                    // QR Code
+                    if (banner.qrCodeBase64) {
+                        html += '<div class="bg-white p-6 rounded-xl shadow-xl">';
+                        html += '<img src="' + banner.qrCodeBase64 + '" alt="QR Code PIX" class="w-64 h-64">';
+                        html += '</div>';
+                        html += '<p class="text-sm opacity-90 mt-2">';
+                        html += '<i class="fas fa-mobile-alt mr-1"></i> Escaneie o QR Code com seu app de pagamento';
+                        html += '</p>';
+                    }
+                    
+                    html += '</div></div>';
+                    
+                    // Botão de pagamento
+                    html += '<div class="p-6 bg-gray-50">';
+                    html += '<a href="' + banner.linkUrl + '" target="_blank" rel="noopener noreferrer" ';
+                    html += 'class="block w-full bg-gradient-to-r ' + gradient + ' text-white py-4 rounded-xl hover:opacity-90 transition font-bold text-center text-lg shadow-lg">';
+                    html += (banner.buttonText || 'PAGAR AGORA') + ' →';
+                    html += '</a>';
+                    html += '<div class="mt-4 text-center text-sm text-gray-600">';
+                    html += '<i class="fas fa-shield-alt mr-1"></i> Pagamento seguro via PIX';
+                    html += '</div></div>';
+                    
+                    container.innerHTML = html;
+                }
+                
+                // Mostrar banner
+                document.getElementById('loading').classList.add('hidden');
+                container.classList.remove('hidden');
+            }
+            
+            // Exibir erro
+            function showError() {
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('error').classList.remove('hidden');
+            }
+            
+            // Carregar ao iniciar
+            loadBanner();
+        </script>
+    </body>
+    </html>
+  `)
+})
+
 // Login page
 app.get('/login', (c) => {
   return c.html(`
