@@ -6769,19 +6769,20 @@ function shareToWhatsApp(linkUrl, title, value) {
 function generateBannerShareLink(accountId, bannerId) {
     console.log('🔗 Gerando link de compartilhamento para banner:', bannerId);
     
+    // Tentar buscar banner no localStorage primeiro
     const banners = getSavedBanners(accountId);
     const banner = banners.find(b => b.id === bannerId);
     
-    if (!banner) {
-        alert('❌ Banner não encontrado!');
-        return;
-    }
+    // Se não encontrar no localStorage, o banner ainda pode estar no servidor
+    // Então continuamos gerando o link mesmo assim
     
     // Gerar URL base do site
     const baseUrl = window.location.origin;
     
     // Criar link direto para visualização do banner
     const shareLink = `${baseUrl}/view-banner/${accountId}/${bannerId}`;
+    
+    console.log('✅ Link de compartilhamento gerado:', shareLink);
     
     // Criar código iframe
     const iframeCode = `<iframe src="${shareLink}" width="100%" height="600" frameborder="0" style="border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);"></iframe>`;
@@ -6859,11 +6860,11 @@ function generateBannerShareLink(accountId, bannerId) {
                         <span class="text-gray-800 font-semibold">Compartilhar em</span>
                     </div>
                     <div class="grid grid-cols-2 gap-3">
-                        <button onclick="shareToWhatsAppBanner('${shareLink}', '${banner.title || 'Banner'}', '${banner.value || '0'}')" 
+                        <button onclick="shareToWhatsAppBanner('${shareLink}', '${banner ? banner.title || 'Banner' : 'Banner'}', '${banner ? banner.value || '0' : '0'}')" 
                             class="px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold text-sm">
                             <i class="fab fa-whatsapp mr-2"></i>WhatsApp
                         </button>
-                        <button onclick="shareViaNativeShare('${shareLink}', '${banner.title || 'Banner'}')" 
+                        <button onclick="shareViaNativeShare('${shareLink}', '${banner ? banner.title || 'Banner' : 'Banner'}')" 
                             class="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-semibold text-sm">
                             <i class="fas fa-share mr-2"></i>Mais Opções
                         </button>
