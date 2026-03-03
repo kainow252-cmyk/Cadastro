@@ -725,7 +725,25 @@ app.get('/api/banners/:accountId/:bannerId', async (c) => {
       return c.json({ error: 'Banner não encontrado' }, 404)
     }
     
-    return c.json({ ok: true, banner })
+    // Converter snake_case para camelCase para compatibilidade com frontend
+    const formattedBanner = {
+      id: banner.id,
+      accountId: banner.account_id,
+      linkUrl: banner.link_url,
+      qrCodeBase64: banner.qr_code_base64,
+      bannerImageBase64: banner.banner_image_base64,
+      title: banner.title,
+      description: banner.description,
+      value: banner.value,
+      promo: banner.promo,
+      buttonText: banner.button_text,
+      color: banner.color,
+      chargeType: banner.charge_type,
+      isCustomBanner: banner.is_custom_banner === 1,
+      createdAt: banner.created_at
+    }
+    
+    return c.json({ ok: true, banner: formattedBanner })
   } catch (error: any) {
     console.error('Erro ao buscar banner:', error)
     return c.json({ error: error.message }, 500)
