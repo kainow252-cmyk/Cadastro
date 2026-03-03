@@ -724,14 +724,23 @@ async function deactivateLink(linkId) {
 let currentQRData = null;
 
 async function showQRCodeModal(linkId, linkUrl, description, value, recurrence) {
+    console.log('🎯 showQRCodeModal chamada:', { linkId, linkUrl, description, value, recurrence });
     currentQRData = { linkId, linkUrl, description, value, recurrence };
     
     // Verificar se biblioteca QRCode está carregada
     if (typeof QRCode === 'undefined') {
-        console.error('Biblioteca QRCode não carregada');
+        console.error('❌ Biblioteca QRCode não carregada');
+        console.log('🔍 Bibliotecas disponíveis:', {
+            QRCode: typeof QRCode,
+            qrcode: typeof qrcode,
+            window_QRCode: typeof window.QRCode,
+            window_qrcode: typeof window.qrcode
+        });
         alert('Erro: Biblioteca QR Code não foi carregada. Recarregue a página e tente novamente.');
         return;
     }
+    
+    console.log('✅ Biblioteca QRCode encontrada');
     
     // Atualizar informações do link
     document.getElementById('qr-link-description').textContent = description;
@@ -740,7 +749,16 @@ async function showQRCodeModal(linkId, linkUrl, description, value, recurrence) 
     
     // Gerar QR Code
     const canvas = document.getElementById('qrcode-canvas');
+    if (!canvas) {
+        console.error('❌ Canvas qrcode-canvas não encontrado');
+        alert('Erro: Canvas do QR Code não encontrado.');
+        return;
+    }
+    
+    console.log('✅ Canvas encontrado:', canvas);
+    
     try {
+        console.log('🔄 Gerando QR Code...');
         // Usar a API correta do qrcode.min.js
         QRCode.toCanvas(canvas, linkUrl, {
             width: 280,
@@ -751,10 +769,12 @@ async function showQRCodeModal(linkId, linkUrl, description, value, recurrence) 
             }
         }, function(error) {
             if (error) {
-                console.error('Erro ao gerar QR Code:', error);
+                console.error('❌ Erro ao gerar QR Code:', error);
                 alert(`Erro ao gerar QR Code: ${error.message}`);
                 return;
             }
+            
+            console.log('✅ QR Code gerado com sucesso!');
             
             // Gerar preview HTML
             const qrDataURL = canvas.toDataURL('image/png');
@@ -763,9 +783,10 @@ async function showQRCodeModal(linkId, linkUrl, description, value, recurrence) 
             
             // Mostrar modal
             document.getElementById('qrcode-modal').classList.remove('hidden');
+            console.log('✅ Modal exibido');
         });
     } catch (error) {
-        console.error('Erro ao gerar QR Code:', error);
+        console.error('❌ Erro ao gerar QR Code:', error);
         alert(`Erro ao gerar QR Code: ${error.message}\n\nTente recarregar a página.`);
     }
 }
