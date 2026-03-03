@@ -814,34 +814,38 @@ function downloadQRCodeFromCanvas() {
     console.log('📥 downloadQRCodeFromCanvas chamada');
     console.log('📊 currentQRData:', currentQRData);
     
-    // Tentar encontrar canvas em diferentes locais
-    let canvas = document.getElementById('qrcode-canvas');
+    let canvas = null;
     let isTemporaryCanvas = false;
     
-    // Se não encontrar qrcode-canvas, procurar no qr-code-container (modal de link de cadastro)
-    if (!canvas) {
-        const container = document.getElementById('qr-code-container');
-        if (container) {
-            canvas = container.querySelector('canvas');
+    // PRIORIDADE 1: Procurar imagem no qr-code-container primeiro (modal de link de cadastro)
+    const container = document.getElementById('qr-code-container');
+    if (container) {
+        const img = container.querySelector('img');
+        if (img && img.complete) {
+            console.log('🖼️ Imagem QR Code encontrada no qr-code-container, convertendo para canvas...');
+            canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth || img.width;
+            canvas.height = img.naturalHeight || img.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            isTemporaryCanvas = true;
+            console.log('✅ Imagem convertida para canvas:', {width: canvas.width, height: canvas.height});
+        }
+    }
+    
+    // PRIORIDADE 2: Procurar canvas no qr-code-container (se não for imagem)
+    if (!canvas && container) {
+        canvas = container.querySelector('canvas');
+        if (canvas) {
             console.log('🔍 Canvas encontrado no qr-code-container');
         }
     }
     
-    // Se ainda não encontrou canvas, procurar por imagem (<img>) e converter para canvas
+    // PRIORIDADE 3: Procurar qrcode-canvas (modal DeltaPag) apenas se nada foi encontrado
     if (!canvas) {
-        const container = document.getElementById('qr-code-container');
-        if (container) {
-            const img = container.querySelector('img');
-            if (img && img.complete) {
-                console.log('🖼️ Imagem QR Code encontrada, convertendo para canvas...');
-                canvas = document.createElement('canvas');
-                canvas.width = img.naturalWidth || img.width;
-                canvas.height = img.naturalHeight || img.height;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0);
-                isTemporaryCanvas = true;
-                console.log('✅ Imagem convertida para canvas');
-            }
+        canvas = document.getElementById('qrcode-canvas');
+        if (canvas) {
+            console.log('🔍 Canvas encontrado: qrcode-canvas (modal DeltaPag)');
         }
     }
     
