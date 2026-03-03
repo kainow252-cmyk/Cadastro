@@ -673,6 +673,64 @@ app.get('/api/stats', async (c) => {
   }
 })
 
+// API: Salvar banner no D1 para compartilhamento público
+app.post('/api/banners', async (c) => {
+  try {
+    const body = await c.req.json()
+    const { accountId, linkUrl, qrCodeBase64, bannerImageBase64, title, description, value, promo, buttonText, color, chargeType, isCustomBanner } = body
+    
+    if (!accountId || !linkUrl) {
+      return c.json({ error: 'accountId e linkUrl são obrigatórios' }, 400)
+    }
+    
+    const bannerId = Date.now().toString()
+    
+    await c.env.DB.prepare(`
+      INSERT INTO banners (id, account_id, link_url, qr_code_base64, banner_image_base64, title, description, value, promo, button_text, color, charge_type, is_custom_banner)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      bannerId,
+      accountId,
+      linkUrl,
+      qrCodeBase64 || null,
+      bannerImageBase64 || null,
+      title || null,
+      description || null,
+      value || 0,
+      promo || null,
+      buttonText || null,
+      color || 'orange',
+      chargeType || 'monthly',
+      isCustomBanner ? 1 : 0
+    ).run()
+    
+    return c.json({ ok: true, bannerId })
+  } catch (error: any) {
+    console.error('Erro ao salvar banner:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// API: Buscar banner público por ID
+app.get('/api/banners/:accountId/:bannerId', async (c) => {
+  try {
+    const { accountId, bannerId } = c.req.param()
+    
+    const banner = await c.env.DB.prepare(`
+      SELECT * FROM banners WHERE account_id = ? AND id = ?
+    `).bind(accountId, bannerId).first()
+    
+    if (!banner) {
+      return c.json({ error: 'Banner não encontrado' }, 404)
+    }
+    
+    return c.json({ ok: true, banner })
+  } catch (error: any) {
+    console.error('Erro ao buscar banner:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 // Relatório de subconta
 app.get('/api/reports/:accountId', async (c) => {
   try {
@@ -7317,26 +7375,24 @@ app.get('/view-banner/:accountId/:bannerId', (c) => {
             const accountId = '${accountId}';
             const bannerId = '${bannerId}';
             
-            // Carregar banner do localStorage
-            function loadBanner() {
+            // Carregar banner do servidor (API pública)
+            async function loadBanner() {
                 try {
-                    const key = 'banners_' + accountId;
-                    const data = localStorage.getItem(key);
+                    const response = await fetch(\`/api/banners/\${accountId}/\${bannerId}\`);
                     
-                    if (!data) {
+                    if (!response.ok) {
                         showError();
                         return;
                     }
                     
-                    const banners = JSON.parse(data);
-                    const banner = banners.find(b => b.id === bannerId);
+                    const data = await response.json();
                     
-                    if (!banner) {
+                    if (!data.ok || !data.banner) {
                         showError();
                         return;
                     }
                     
-                    displayBanner(banner);
+                    displayBanner(data.banner);
                 } catch (error) {
                     console.error('Erro ao carregar banner:', error);
                     showError();

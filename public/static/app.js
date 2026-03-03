@@ -6216,8 +6216,9 @@ function getSavedBanners(accountId) {
     return banners ? JSON.parse(banners) : [];
 }
 
-function saveBanner(accountId, bannerData) {
+async function saveBanner(accountId, bannerData) {
     try {
+        // 1. Salvar no localStorage (cache local)
         let banners = getSavedBanners(accountId);
         banners.unshift(bannerData); // Adicionar no início
         
@@ -6227,16 +6228,44 @@ function saveBanner(accountId, bannerData) {
             banners = banners.slice(0, 10);
         }
         
-        // Tentar salvar
+        // Tentar salvar localmente
         const storageKey = `banners_${accountId}`;
         const dataToSave = JSON.stringify(banners);
         
         // Verificar tamanho antes de salvar
         const sizeInMB = (new Blob([dataToSave]).size / 1024 / 1024).toFixed(2);
-        console.log(`💾 Salvando ${banners.length} banner(s) (${sizeInMB} MB)`);
+        console.log(`💾 Salvando ${banners.length} banner(s) localmente (${sizeInMB} MB)`);
         
         localStorage.setItem(storageKey, dataToSave);
-        console.log('✅ Banner salvo com sucesso!');
+        console.log('✅ Banner salvo localmente!');
+        
+        // 2. Salvar no servidor (para links públicos)
+        try {
+            console.log('☁️ Salvando banner no servidor...');
+            const response = await axios.post('/api/banners', {
+                accountId: accountId,
+                linkUrl: bannerData.linkUrl,
+                qrCodeBase64: bannerData.qrCodeBase64,
+                bannerImageBase64: bannerData.bannerImageBase64,
+                title: bannerData.title,
+                description: bannerData.description,
+                value: bannerData.value,
+                promo: bannerData.promo,
+                buttonText: bannerData.buttonText,
+                color: bannerData.color,
+                chargeType: bannerData.chargeType,
+                isCustomBanner: bannerData.isCustomBanner || false
+            });
+            
+            if (response.data.ok) {
+                console.log('✅ Banner salvo no servidor! ID:', response.data.bannerId);
+                // Atualizar o ID do banner com o ID do servidor
+                bannerData.id = response.data.bannerId;
+                localStorage.setItem(storageKey, JSON.stringify(banners));
+            }
+        } catch (serverError) {
+            console.warn('⚠️ Não foi possível salvar no servidor, mas o banner está salvo localmente:', serverError.message);
+        }
         
     } catch (error) {
         if (error.name === 'QuotaExceededError') {
