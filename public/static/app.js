@@ -5004,7 +5004,7 @@ function copyElementToClipboard(elementId) {
 
 // Testar API Link
 async function testApiLink(status) {
-    const url = `https://corretoracorporate.pages.dev/api/reports/all-accounts/${status}`;
+    const url = `${window.location.origin}/api/reports/all-accounts/${status}`;
     const resultsDiv = document.getElementById('api-test-results');
     const contentDiv = document.getElementById('api-test-content');
     
@@ -5102,7 +5102,7 @@ async function testApiLink(status) {
 
 // Expandir JSON completo
 function expandJson(status) {
-    const url = `https://corretoracorporate.pages.dev/api/reports/all-accounts/${status}`;
+    const url = `${window.location.origin}/api/reports/all-accounts/${status}`;
     
     fetch(url)
     .then(response => response.json())
@@ -5155,7 +5155,7 @@ function buildQueryString() {
 // Atualizar todos os links com os filtros atuais
 function updateApiLinks() {
     const queryString = buildQueryString();
-    const baseUrl = 'https://corretoracorporate.pages.dev/api/reports/all-accounts';
+    const baseUrl = `${window.location.origin}/api/reports/all-accounts`;
     
     // Atualizar URLs dos inputs
     const statuses = ['received', 'pending', 'overdue', 'refunded'];

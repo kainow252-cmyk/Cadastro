@@ -8672,7 +8672,7 @@ app.get('/', (c) => {
         
         <!-- Load scripts early with defer to ensure functions are available -->
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js" defer></script>
-        <script src="/static/app.js?v=7.0" defer></script>
+        <script src="/static/app.js?v=7.1" defer></script>
         
         <!-- Tipografia e Layout Profissional -->
         <style>
@@ -9752,7 +9752,7 @@ app.get('/', (c) => {
                         <div class="mb-4">
                             <label class="block text-sm font-semibold text-gray-700 mb-2">URL Completa:</label>
                             <div class="flex gap-2">
-                                <input type="text" readonly value="https://corretoracorporate.pages.dev/api/reports/all-accounts/received?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly"
+                                <input type="text" readonly value="https://admin.corretoracorporate.com.br/api/reports/all-accounts/received?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly"
                                     class="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded text-sm font-mono"
                                     id="link-received">
                                 <button onclick="copyElementToClipboard('link-received')"
@@ -9764,7 +9764,7 @@ app.get('/', (c) => {
                         <div class="mb-4">
                             <label class="block text-sm font-semibold text-gray-700 mb-2">Exemplo curl:</label>
                             <div class="bg-gray-800 text-green-400 p-3 rounded text-xs font-mono overflow-x-auto">
-curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/received?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly"
+curl "https://admin.corretoracorporate.com.br/api/reports/all-accounts/received?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly"
                             </div>
                         </div>
                         <button onclick="testApiLink('received')"
@@ -9787,7 +9787,7 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/received?sta
                         <div class="mb-4">
                             <label class="block text-sm font-semibold text-gray-700 mb-2">URL Completa:</label>
                             <div class="flex gap-2">
-                                <input type="text" readonly value="https://corretoracorporate.pages.dev/api/reports/all-accounts/pending?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly"
+                                <input type="text" readonly value="https://admin.corretoracorporate.com.br/api/reports/all-accounts/pending?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly"
                                     class="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded text-sm font-mono"
                                     id="link-pending">
                                 <button onclick="copyElementToClipboard('link-pending')"
@@ -9799,7 +9799,7 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/received?sta
                         <div class="mb-4">
                             <label class="block text-sm font-semibold text-gray-700 mb-2">Exemplo curl:</label>
                             <div class="bg-gray-800 text-yellow-400 p-3 rounded text-xs font-mono overflow-x-auto">
-curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/pending?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly"
+curl "https://admin.corretoracorporate.com.br/api/reports/all-accounts/pending?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly"
                             </div>
                         </div>
                         <button onclick="testApiLink('pending')"
@@ -9822,7 +9822,7 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/pending?star
                         <div class="mb-4">
                             <label class="block text-sm font-semibold text-gray-700 mb-2">URL Completa:</label>
                             <div class="flex gap-2">
-                                <input type="text" readonly value="https://corretoracorporate.pages.dev/api/reports/all-accounts/overdue?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly"
+                                <input type="text" readonly value="https://admin.corretoracorporate.com.br/api/reports/all-accounts/overdue?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly"
                                     class="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded text-sm font-mono"
                                     id="link-overdue">
                                 <button onclick="copyElementToClipboard('link-overdue')"
@@ -9834,7 +9834,7 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/pending?star
                         <div class="mb-4">
                             <label class="block text-sm font-semibold text-gray-700 mb-2">Exemplo curl:</label>
                             <div class="bg-gray-800 text-red-400 p-3 rounded text-xs font-mono overflow-x-auto">
-curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/overdue?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly"
+curl "https://admin.corretoracorporate.com.br/api/reports/all-accounts/overdue?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly"
                             </div>
                         </div>
                         <button onclick="testApiLink('overdue')"
@@ -9857,7 +9857,7 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/overdue?star
                         <div class="mb-4">
                             <label class="block text-sm font-semibold text-gray-700 mb-2">URL Completa:</label>
                             <div class="flex gap-2">
-                                <input type="text" readonly value="https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly"
+                                <input type="text" readonly value="https://admin.corretoracorporate.com.br/api/reports/all-accounts/refunded?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly"
                                     class="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded text-sm font-mono"
                                     id="link-refunded">
                                 <button onclick="copyElementToClipboard('link-refunded')"
@@ -9869,7 +9869,7 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/overdue?star
                         <div class="mb-4">
                             <label class="block text-sm font-semibold text-gray-700 mb-2">Exemplo curl:</label>
                             <div class="bg-gray-800 text-gray-400 p-3 rounded text-xs font-mono overflow-x-auto">
-curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly"
+curl "https://admin.corretoracorporate.com.br/api/reports/all-accounts/refunded?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly"
                             </div>
                         </div>
                         <button onclick="testApiLink('refunded')"
@@ -9935,7 +9935,7 @@ curl "https://corretoracorporate.pages.dev/api/reports/all-accounts/refunded?sta
                 <div class="mt-4 bg-yellow-50 border-l-4 border-yellow-500 p-4">
                     <p class="text-sm text-yellow-800">
                         <strong>Exemplo com filtros:</strong><br>
-                        <code class="text-xs">https://corretoracorporate.pages.dev/api/reports/all-accounts/received?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly</code>
+                        <code class="text-xs">https://admin.corretoracorporate.com.br/api/reports/all-accounts/received?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly</code>
                     </p>
                 </div>
             </div>
