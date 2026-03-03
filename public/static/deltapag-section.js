@@ -816,6 +816,7 @@ function downloadQRCodeFromCanvas() {
     
     // Tentar encontrar canvas em diferentes locais
     let canvas = document.getElementById('qrcode-canvas');
+    let isTemporaryCanvas = false;
     
     // Se não encontrar qrcode-canvas, procurar no qr-code-container (modal de link de cadastro)
     if (!canvas) {
@@ -826,9 +827,27 @@ function downloadQRCodeFromCanvas() {
         }
     }
     
+    // Se ainda não encontrou canvas, procurar por imagem (<img>) e converter para canvas
     if (!canvas) {
-        console.error('❌ Canvas do QR Code não encontrado');
-        alert('Erro: Canvas do QR Code não encontrado.');
+        const container = document.getElementById('qr-code-container');
+        if (container) {
+            const img = container.querySelector('img');
+            if (img && img.complete) {
+                console.log('🖼️ Imagem QR Code encontrada, convertendo para canvas...');
+                canvas = document.createElement('canvas');
+                canvas.width = img.naturalWidth || img.width;
+                canvas.height = img.naturalHeight || img.height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+                isTemporaryCanvas = true;
+                console.log('✅ Imagem convertida para canvas');
+            }
+        }
+    }
+    
+    if (!canvas) {
+        console.error('❌ Canvas ou imagem do QR Code não encontrado');
+        alert('Erro: QR Code não encontrado. Por favor, gere o QR Code primeiro.');
         return;
     }
     
@@ -843,15 +862,18 @@ function downloadQRCodeFromCanvas() {
     }
     
     try {
-        // Verificar se canvas tem conteúdo
-        const ctx = canvas.getContext('2d');
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const hasContent = imageData.data.some(pixel => pixel !== 0);
-        
-        if (!hasContent) {
-            console.error('❌ Canvas está vazio - QR Code ainda não foi renderizado');
-            alert('Erro: QR Code ainda está sendo gerado. Aguarde um momento e tente novamente.');
-            return;
+        // Se for canvas temporário (de imagem), não precisa verificar conteúdo
+        if (!isTemporaryCanvas) {
+            // Verificar se canvas tem conteúdo
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const hasContent = imageData.data.some(pixel => pixel !== 0);
+            
+            if (!hasContent) {
+                console.error('❌ Canvas está vazio - QR Code ainda não foi renderizado');
+                alert('Erro: QR Code ainda está sendo gerado. Aguarde um momento e tente novamente.');
+                return;
+            }
         }
         
         console.log('✅ Canvas tem conteúdo válido');
