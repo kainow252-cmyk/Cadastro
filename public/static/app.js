@@ -5772,10 +5772,23 @@ async function saveCustomBanner() {
             createdAt: new Date().toISOString()
         };
         
+        console.log('🎨 Banner personalizado preparado:', {
+            id: bannerData.id,
+            accountId: accountId,
+            hasAccountId: !!accountId,
+            linkUrl: bannerData.linkUrl,
+            qrSize: (bannerData.qrCodeBase64.length / 1024).toFixed(2) + ' KB',
+            bannerSize: (bannerData.bannerImageBase64.length / 1024).toFixed(2) + ' KB',
+            isCustomBanner: bannerData.isCustomBanner
+        });
+        
         if (accountId) {
+            console.log('⏳ Chamando saveBanner com accountId:', accountId);
             await saveBanner(accountId, bannerData);
             console.log('✅ Banner personalizado salvo com sucesso!');
             alert('✅ Banner salvo com sucesso!\n\nVocê pode visualizá-lo em "Banners Salvos"');
+        } else {
+            console.warn('⚠️ accountId não fornecido, banner NÃO será salvo!');
         }
         
         // Fechar modal
@@ -6217,8 +6230,14 @@ function getSavedBanners(accountId) {
 }
 
 async function saveBanner(accountId, bannerData) {
+    console.log('🚀 saveBanner INICIADA');
+    console.log('   accountId:', accountId);
+    console.log('   bannerData.id:', bannerData.id);
+    console.log('   bannerData.isCustomBanner:', bannerData.isCustomBanner);
+    
     try {
         // 1. Salvar no localStorage (cache local)
+        console.log('📂 Etapa 1: Salvando no localStorage...');
         let banners = getSavedBanners(accountId);
         banners.unshift(bannerData); // Adicionar no início
         
