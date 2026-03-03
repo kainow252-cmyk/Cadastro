@@ -462,6 +462,46 @@ app.post('/api/logout', async (c) => {
   return c.json({ ok: true, message: 'Logout realizado com sucesso' })
 })
 
+// Change password route (requires authentication)
+app.post('/api/change-password', async (c) => {
+  try {
+    // Verificar autenticação
+    const token = getCookie(c, 'auth_token')
+    if (!token) {
+      return c.json({ error: 'Não autorizado' }, 401)
+    }
+    
+    const payload = await verifyToken(token, c.env.JWT_SECRET)
+    if (!payload) {
+      return c.json({ error: 'Token inválido' }, 401)
+    }
+    
+    const { currentPassword, newPassword } = await c.req.json()
+    
+    // Validar senha atual
+    if (currentPassword !== c.env.ADMIN_PASSWORD) {
+      return c.json({ error: 'Senha atual incorreta' }, 401)
+    }
+    
+    // Validar nova senha
+    if (!newPassword || newPassword.length < 6) {
+      return c.json({ error: 'Nova senha deve ter no mínimo 6 caracteres' }, 400)
+    }
+    
+    // IMPORTANTE: Em produção, você deve atualizar a senha no banco de dados ou variável de ambiente
+    // Por enquanto, retornamos uma mensagem informando que a senha não pode ser alterada via API
+    // pois ADMIN_PASSWORD é uma variável de ambiente do Cloudflare
+    
+    return c.json({ 
+      ok: false, 
+      error: 'Para alterar a senha do administrador, você deve atualizar a variável de ambiente ADMIN_PASSWORD no painel do Cloudflare Pages.\\n\\nAcesse: Cloudflare Dashboard → Pages → corretoracorporate → Settings → Environment Variables' 
+    }, 400)
+    
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 // Check auth status
 app.get('/api/check-auth', async (c) => {
   const token = getCookie(c, 'auth_token')
@@ -7590,12 +7630,12 @@ app.get('/login', (c) => {
                     </button>
                 </form>
 
-                <!-- Info Box -->
-                <div class="mt-6 bg-blue-50 rounded-lg p-4">
-                    <p class="text-sm text-blue-800 text-center">
-                        <i class="fas fa-info-circle mr-2"></i>
-                        Credenciais padrão: admin / admin123
-                    </p>
+                <!-- Links adicionais -->
+                <div class="mt-4 text-center">
+                    <a href="#" id="forgot-password-link" class="text-sm text-blue-100 hover:text-white transition">
+                        <i class="fas fa-key mr-1"></i>
+                        Esqueci minha senha
+                    </a>
                 </div>
             </div>
 
@@ -7613,6 +7653,12 @@ app.get('/login', (c) => {
             // Configure axios to work with cookies
             axios.defaults.withCredentials = true;
             
+            // Handler para "Esqueci minha senha"
+            document.getElementById('forgot-password-link').addEventListener('click', (e) => {
+                e.preventDefault();
+                alert('ℹ️ Para redefinir sua senha:\\n\\n1. Entre em contato com o administrador do sistema\\n2. Ou acesse o painel do Cloudflare Pages\\n3. Vá em Settings → Environment Variables\\n4. Atualize a variável ADMIN_PASSWORD');
+            });
+
             document.getElementById('login-form').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 
@@ -8625,6 +8671,92 @@ app.get('/subaccount-dashboard', (c) => {
                 \`).join('')
             }
 
+            // Mostrar modal de alteração de senha
+            function showChangePasswordModal() {
+                const modal = document.createElement('div');
+                modal.id = 'change-password-modal';
+                modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+                
+                const modalContent = '<div class="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full mx-4">' +
+                    '<div class="flex justify-between items-center mb-6">' +
+                    '<h2 class="text-2xl font-bold text-gray-800"><i class="fas fa-key mr-2 text-blue-600"></i>Alterar Senha</h2>' +
+                    '<button onclick="closeChangePasswordModal()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times text-2xl"></i></button>' +
+                    '</div>' +
+                    '<form id="change-password-form" class="space-y-4">' +
+                    '<div><label class="block text-sm font-medium text-gray-700 mb-2"><i class="fas fa-lock mr-2"></i>Senha Atual</label>' +
+                    '<input type="password" name="currentPassword" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"></div>' +
+                    '<div><label class="block text-sm font-medium text-gray-700 mb-2"><i class="fas fa-key mr-2"></i>Nova Senha</label>' +
+                    '<input type="password" name="newPassword" required minlength="6" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">' +
+                    '<p class="text-xs text-gray-500 mt-1">Mínimo 6 caracteres</p></div>' +
+                    '<div><label class="block text-sm font-medium text-gray-700 mb-2"><i class="fas fa-check-circle mr-2"></i>Confirmar Nova Senha</label>' +
+                    '<input type="password" name="confirmPassword" required minlength="6" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"></div>' +
+                    '<div class="flex gap-3 mt-6">' +
+                    '<button type="button" onclick="closeChangePasswordModal()" class="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition">Cancelar</button>' +
+                    '<button type="submit" class="flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"><i class="fas fa-check mr-2"></i>Alterar</button>' +
+                    '</div></form></div>';
+                
+                modal.innerHTML = modalContent;
+                
+                document.body.appendChild(modal);
+                
+                // Adicionar listener para fechar ao clicar fora
+                modal.addEventListener('click', (e) => {
+                    if (e.target === modal) {
+                        closeChangePasswordModal();
+                    }
+                });
+                
+                // Adicionar listener para o formulário
+                document.getElementById('change-password-form').addEventListener('submit', handleChangePassword);
+            }
+            
+            // Fechar modal de alteração de senha
+            function closeChangePasswordModal() {
+                const modal = document.getElementById('change-password-modal');
+                if (modal) {
+                    modal.remove();
+                }
+            }
+            
+            // Processar alteração de senha
+            async function handleChangePassword(e) {
+                e.preventDefault();
+                
+                const formData = new FormData(e.target);
+                const currentPassword = formData.get('currentPassword');
+                const newPassword = formData.get('newPassword');
+                const confirmPassword = formData.get('confirmPassword');
+                
+                // Validar senhas
+                if (newPassword !== confirmPassword) {
+                    alert('❌ As senhas não coincidem!');
+                    return;
+                }
+                
+                if (newPassword.length < 6) {
+                    alert('❌ A nova senha deve ter no mínimo 6 caracteres!');
+                    return;
+                }
+                
+                try {
+                    const response = await axios.post('/api/change-password', {
+                        currentPassword,
+                        newPassword
+                    });
+                    
+                    if (response.data.ok) {
+                        alert('✅ Senha alterada com sucesso!\\n\\nVocê será redirecionado para fazer login novamente.');
+                        closeChangePasswordModal();
+                        logout();
+                    } else {
+                        alert('❌ ' + (response.data.error || 'Erro ao alterar senha'));
+                    }
+                } catch (error) {
+                    console.error('Erro ao alterar senha:', error);
+                    alert('❌ ' + (error.response?.data?.error || 'Erro ao alterar senha. Verifique sua senha atual.'));
+                }
+            }
+
             async function logout() {
                 try {
                     await axios.post('/api/subaccount-logout')
@@ -8672,7 +8804,7 @@ app.get('/', (c) => {
         
         <!-- Load scripts early with defer to ensure functions are available -->
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js" defer></script>
-        <script src="/static/app.js?v=7.1" defer></script>
+        <script src="/static/app.js?v=7.2" defer></script>
         
         <!-- Tipografia e Layout Profissional -->
         <style>
@@ -8798,6 +8930,10 @@ app.get('/', (c) => {
                         <button onclick="showSection('accounts')" class="nav-btn text-white bg-blue-600 hover:bg-blue-700 px-3 sm:px-4 py-2 rounded-md font-semibold text-sm sm:text-base">
                             <i class="fas fa-users mr-0 sm:mr-2"></i>
                             <span class="hidden sm:inline">Subcontas</span>
+                        </button>
+                        <button onclick="showChangePasswordModal()" class="text-blue-600 hover:text-blue-700 px-2 sm:px-3 py-2 rounded-md hover:bg-blue-50 transition text-sm sm:text-base">
+                            <i class="fas fa-key mr-0 sm:mr-2"></i>
+                            <span class="hidden sm:inline">Alterar Senha</span>
                         </button>
                         <button onclick="logout()" class="text-red-600 hover:text-red-700 px-2 sm:px-3 py-2 rounded-md hover:bg-red-50 transition text-sm sm:text-base">
                             <i class="fas fa-sign-out-alt mr-0 sm:mr-2"></i>
