@@ -5436,15 +5436,31 @@ function setFontSize(size) {
 
 // Atualizar preview do banner em tempo real
 function updatePromoBannerPreview() {
-    const title = document.getElementById('promo-banner-title').value || 'ASSINE AGORA';
-    const description = document.getElementById('promo-banner-description').value || 'Plano Premium';
-    const value = parseFloat(document.getElementById('promo-banner-value').value) || 10.00;
-    const promo = document.getElementById('promo-banner-promo').value;
-    const buttonText = document.getElementById('promo-banner-button-text').value || 'PAGAR AGORA';
-    const color = document.getElementById('promo-banner-color').value;
-    const qrCodeBase64 = document.getElementById('promo-banner-qrcode').value;
-    const chargeType = document.getElementById('promo-banner-charge-type')?.value || 'monthly';
-    const fontSize = document.getElementById('promo-banner-font-size')?.value || 'medium';
+    // Verificar se elementos existem antes de acessar
+    const titleEl = document.getElementById('promo-banner-title');
+    const descEl = document.getElementById('promo-banner-description');
+    const valueEl = document.getElementById('promo-banner-value');
+    const promoEl = document.getElementById('promo-banner-promo');
+    const buttonTextEl = document.getElementById('promo-banner-button-text');
+    const colorEl = document.getElementById('promo-banner-color');
+    const qrCodeEl = document.getElementById('promo-banner-qrcode');
+    const chargeTypeEl = document.getElementById('promo-banner-charge-type');
+    const fontSizeEl = document.getElementById('promo-banner-font-size');
+    
+    if (!titleEl || !descEl || !valueEl || !colorEl) {
+        console.warn('⚠️ Elementos do editor de banner não encontrados, aguardando...');
+        return;
+    }
+    
+    const title = titleEl.value || 'ASSINE AGORA';
+    const description = descEl.value || 'Plano Premium';
+    const value = parseFloat(valueEl.value) || 10.00;
+    const promo = promoEl?.value || '';
+    const buttonText = buttonTextEl?.value || 'PAGAR AGORA';
+    const color = colorEl.value;
+    const qrCodeBase64 = qrCodeEl?.value || '';
+    const chargeType = chargeTypeEl?.value || 'monthly';
+    const fontSize = fontSizeEl?.value || 'medium';
     
     // Cores do gradiente
     const gradients = {
@@ -5729,15 +5745,27 @@ async function saveCustomBanner() {
     }
     
     try {
+        // Comprimir banner antes de adicionar QR Code
+        console.log('🗜️ Comprimindo banner...');
+        const compressedBanner = await compressBase64Image(customBannerBase64, 1000, 0.75);
+        
+        // Comprimir QR Code também
+        console.log('🗜️ Comprimindo QR Code...');
+        const compressedQR = await compressBase64Image(qrCodeBase64, 500, 0.8);
+        
         // Gerar banner final com QR Code sobreposto
-        const finalBannerBase64 = await addQRCodeToCustomBanner(customBannerBase64, qrCodeBase64, linkUrl);
+        const finalBannerBase64 = await addQRCodeToCustomBanner(compressedBanner, compressedQR, linkUrl);
+        
+        // Comprimir banner final uma última vez
+        console.log('🗜️ Comprimindo banner final...');
+        const finalCompressed = await compressBase64Image(finalBannerBase64, 1000, 0.7);
         
         // Salvar no localStorage
         const bannerData = {
             id: Date.now().toString(),
             linkUrl: linkUrl,
-            qrCodeBase64: qrCodeBase64,
-            bannerImageBase64: finalBannerBase64,
+            qrCodeBase64: compressedQR,
+            bannerImageBase64: finalCompressed,
             value: value,
             chargeType: chargeType,
             isCustomBanner: true,
@@ -5745,7 +5773,7 @@ async function saveCustomBanner() {
         };
         
         if (accountId) {
-            saveBanner(accountId, bannerData);
+            await saveBanner(accountId, bannerData);
             console.log('✅ Banner personalizado salvo com sucesso!');
             alert('✅ Banner salvo com sucesso!\n\nVocê pode visualizá-lo em "Banners Salvos"');
         }
@@ -5757,6 +5785,46 @@ async function saveCustomBanner() {
         console.error('❌ Erro ao salvar banner:', error);
         alert('❌ Erro ao processar banner: ' + error.message);
     }
+}
+
+// Função para comprimir imagem Base64
+async function compressBase64Image(base64String, maxWidth = 800, quality = 0.7) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Calcular novas dimensões mantendo proporção
+            let width = img.width;
+            let height = img.height;
+            
+            if (width > maxWidth) {
+                height = (height * maxWidth) / width;
+                width = maxWidth;
+            }
+            
+            canvas.width = width;
+            canvas.height = height;
+            
+            // Desenhar imagem redimensionada
+            ctx.drawImage(img, 0, 0, width, height);
+            
+            // Converter para JPEG com qualidade reduzida
+            const compressed = canvas.toDataURL('image/jpeg', quality);
+            
+            // Log de redução de tamanho
+            const originalSize = (base64String.length * 0.75 / 1024).toFixed(2);
+            const compressedSize = (compressed.length * 0.75 / 1024).toFixed(2);
+            const reduction = (((originalSize - compressedSize) / originalSize) * 100).toFixed(1);
+            
+            console.log(`🗜️ Compressão: ${originalSize} KB → ${compressedSize} KB (${reduction}% redução)`);
+            
+            resolve(compressed);
+        };
+        img.onerror = () => reject(new Error('Falha ao carregar imagem para compressão'));
+        img.src = base64String;
+    });
 }
 
 // Adicionar QR Code ao banner personalizado
