@@ -114,7 +114,8 @@ app.use('/api/*', async (c, next) => {
       path.startsWith('/api/reports/all-accounts/received') ||
       path.startsWith('/api/reports/all-accounts/pending') ||
       path.startsWith('/api/reports/all-accounts/overdue') ||
-      path.startsWith('/api/reports/all-accounts/refunded')) {
+      path.startsWith('/api/reports/all-accounts/refunded') ||
+      path.match(/^\/api\/banners\/[^\/]+\/[^\/]+$/)) {  // GET /api/banners/:accountId/:bannerId (público)
     return next()
   }
   
