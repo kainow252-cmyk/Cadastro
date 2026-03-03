@@ -1134,5 +1134,17 @@ async function syncDeltapagCards() {
     }
 }
 
+// Expor funções globalmente para uso no HTML
+window.showQRCodeModal = showQRCodeModal;
+window.downloadQRCodeFromCanvas = downloadQRCodeFromCanvas;
+window.closeQRCodeModal = closeQRCodeModal;
+window.copyQRCodeHTML = copyQRCodeHTML;
+
 // Log de carregamento
 console.log('✅ DeltaPag Section JS carregado');
+console.log('✅ Funções QR Code exportadas:', {
+    showQRCodeModal: typeof window.showQRCodeModal,
+    downloadQRCodeFromCanvas: typeof window.downloadQRCodeFromCanvas,
+    closeQRCodeModal: typeof window.closeQRCodeModal,
+    copyQRCodeHTML: typeof window.copyQRCodeHTML
+});
