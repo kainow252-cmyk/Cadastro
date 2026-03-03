@@ -814,16 +814,18 @@ function downloadQRCodeFromCanvas() {
     console.log('📥 downloadQRCodeFromCanvas chamada');
     console.log('📊 currentQRData:', currentQRData);
     
-    // Verificar se há dados do QR Code
-    if (!currentQRData) {
-        console.error('❌ Nenhum QR Code carregado - currentQRData está null/undefined');
-        alert('Erro: Nenhum QR Code carregado. Por favor, gere o QR Code primeiro clicando no botão "Gerar QR Code".');
-        return;
+    // Tentar encontrar canvas em diferentes locais
+    let canvas = document.getElementById('qrcode-canvas');
+    
+    // Se não encontrar qrcode-canvas, procurar no qr-code-container (modal de link de cadastro)
+    if (!canvas) {
+        const container = document.getElementById('qr-code-container');
+        if (container) {
+            canvas = container.querySelector('canvas');
+            console.log('🔍 Canvas encontrado no qr-code-container');
+        }
     }
     
-    console.log('✅ currentQRData encontrado:', currentQRData);
-    
-    const canvas = document.getElementById('qrcode-canvas');
     if (!canvas) {
         console.error('❌ Canvas do QR Code não encontrado');
         alert('Erro: Canvas do QR Code não encontrado.');
@@ -856,8 +858,14 @@ function downloadQRCodeFromCanvas() {
         
         const link = document.createElement('a');
         // Gerar nome seguro do arquivo
-        const description = (currentQRData.description || 'qrcode').toLowerCase().replace(/\s+/g, '-');
-        const filename = `qrcode-${description}.png`;
+        let description = 'qrcode';
+        if (currentQRData && currentQRData.description) {
+            description = currentQRData.description.toLowerCase().replace(/\s+/g, '-');
+        } else {
+            // Usar timestamp se não houver descrição
+            description = `qrcode-${Date.now()}`;
+        }
+        const filename = `${description}.png`;
         
         link.download = filename;
         link.href = canvas.toDataURL('image/png');
