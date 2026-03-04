@@ -11842,7 +11842,7 @@ curl "https://admin.corretoracorporate.com.br/api/reports/all-accounts/refunded?
         <script src="/static/payment-links.js?v=4.2"></script>
         <script src="/static/payment-filters.js?v=4.2"></script>
         <script src="/static/deltapag-section.js?v=4.8"></script>
-        <script src="/static/reports-detailed.js?v=2.0"></script>
+        <script src="/static/reports-detailed.js?v=2.1"></script>
         <script src="/static/banner-generator.js?v=1.0"></script>
     </body>
     </html>

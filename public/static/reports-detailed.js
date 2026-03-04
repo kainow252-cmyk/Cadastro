@@ -289,11 +289,17 @@ window.exportReportToPDF = async function() {
         return;
     }
     
-    // Carregar jsPDF e autoTable dinamicamente
-    if (typeof jsPDF === 'undefined') {
+    // Carregar jsPDF e autoTable dinamicamente se necessário
+    if (typeof window.jspdf === 'undefined') {
+        console.log('📦 Carregando bibliotecas jsPDF...');
+        
         const script1 = document.createElement('script');
         script1.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
         document.head.appendChild(script1);
+        
+        await new Promise((resolve) => {
+            script1.onload = resolve;
+        });
         
         const script2 = document.createElement('script');
         script2.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js';
@@ -302,6 +308,8 @@ window.exportReportToPDF = async function() {
         await new Promise((resolve) => {
             script2.onload = resolve;
         });
+        
+        console.log('✅ Bibliotecas jsPDF carregadas com sucesso');
     }
     
     const { account, period, filters, summary, transactions } = window.ReportsDetailed.currentData;
