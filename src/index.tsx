@@ -4616,24 +4616,32 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
       // 2B. ASSINATURA MENSAL: Criar autorização PIX Automático
       console.log('🔄 Criando autorização PIX Automático...')
       
-      // Calcular próxima data (próximo mês)
-      const nextMonth = new Date()
-      nextMonth.setMonth(nextMonth.getMonth() + 1)
-      const firstDueDate = nextMonth.toISOString().split('T')[0]
+      // Calcular datas (início hoje, fim 1 ano)
+      const startDate = new Date().toISOString().split('T')[0]
+      const finishDate = new Date()
+      finishDate.setFullYear(finishDate.getFullYear() + 1)
+      const finishDateStr = finishDate.toISOString().split('T')[0]
       
       const authorizationData = {
-        customer: customerId,
+        frequency: 'MONTHLY',
+        contractId: `CONTRACT-${linkId.substring(0, 8)}`,
+        startDate: startDate,
+        finishDate: finishDateStr,
         value: value,
         description: description || 'Autorização PIX Mensal',
-        format: 'MONTHLY', // Frequência mensal
-        firstDueDate: firstDueDate,
-        // Split será aplicado nos débitos futuros
-        split: createNetSplit(walletId, value, 20)
+        customerId: customerId,
+        // QR Code imediato para primeiro pagamento (opcional)
+        immediateQrCode: {
+          expirationSeconds: 3600,
+          originalValue: value,
+          description: description || 'Primeiro pagamento'
+        }
+        // Nota: split não é suportado diretamente na autorização
       }
       
       console.log('📤 Criando autorização PIX:', JSON.stringify(authorizationData, null, 2))
       
-      const authorizationResult = await asaasRequest(c, '/pix/qrCodes/authorization', 'POST', authorizationData)
+      const authorizationResult = await asaasRequest(c, '/pix/automatic/authorizations', 'POST', authorizationData)
       
       console.log('📥 Resposta Asaas:', {
         ok: authorizationResult.ok,
@@ -4810,7 +4818,7 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
       // Se erro for "no such table: pix_authorizations", aplicar migration
       if (dbError.message && dbError.message.includes('no such table: pix_authorizations')) {
         console.log('⚠️ Tabela pix_authorizations não existe, aplicando migration...')
-        await c.env.DB.exec(`
+        await c.env.DB.prepare(`
           CREATE TABLE IF NOT EXISTS pix_authorizations (
             id TEXT PRIMARY KEY,
             link_id TEXT NOT NULL,
@@ -4831,7 +4839,7 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
           )
-        `)
+        `).run()
         console.log('✅ Migration aplicada, tentando novamente...')
         // Tentar novamente
         if (chargeType === 'monthly') {
