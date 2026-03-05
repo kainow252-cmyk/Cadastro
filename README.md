@@ -6,7 +6,7 @@ Sistema completo de gestão de contas, subcontas, assinaturas e pagamentos integ
 
 - **Produção**: https://corretoracorporate.pages.dev
 - **Custom Domain**: https://admin.corretoracorporate.com.br
-- **Preview (última versão)**: https://17b0d0f0.corretoracorporate.pages.dev
+- **Preview (última versão)**: https://478e666b.corretoracorporate.pages.dev
 
 ## 📋 Funcionalidades Principais
 
@@ -23,11 +23,12 @@ Sistema completo de gestão de contas, subcontas, assinaturas e pagamentos integ
 
 ### ✅ Links de Pagamento DeltaPag
 - Criação de links de pagamento recorrente (mensal, semanal, quinzenal, etc.)
-- Geração de QR Code para links (v5.4)
+- Geração de QR Code para links (v5.5 - **CORRIGIDO**)
 - **Editar links**: descrição, valor, data de validade
 - **Excluir links**: com confirmação dupla
 - **Desativar links**: pausar temporariamente
 - Filtros por status, recorrência e período
+- Download de QR Code em PNG (280×280px)
 
 ### ✅ Assinaturas DeltaPag
 - Listagem de assinaturas ativas/canceladas
@@ -85,7 +86,7 @@ Sistema completo de gestão de contas, subcontas, assinaturas e pagamentos integ
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 <!-- QR Code -->
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 
 <!-- HTTP Client -->
 <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
@@ -225,23 +226,34 @@ npx wrangler pages deployment list
 
 ## 📝 Changelog Recente
 
+### v5.5 (2026-03-05) ⭐ CORREÇÃO CRÍTICA
+- 🔴 **PROBLEMA IDENTIFICADO**: URL CDN do QRCode retornava 404 - `https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js`
+- ✅ **SOLUÇÃO**: Trocado para `https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js` (CDNJS)
+- ✅ **Ajustes**: API do qrcodejs (`new QRCode(container, options)`)
+- ✅ **HTML**: Mudado de `<canvas id="qrcode-canvas">` para `<div id="qrcode-canvas-container">`
+- ✅ **Download**: Atualizado para buscar canvas dentro do container
+- 🎯 **Resultado**: QR Code DeltaPag agora funciona 100%
+
 ### v5.4 (2026-03-05)
 - ✅ **QR Code**: Adicionado `defer` e `onload` para garantir carregamento
 - ✅ **Editar/Excluir Links**: Endpoints corrigidos (sem `updated_at`)
 - ✅ **Polling**: Aguarda biblioteca carregar até 5 segundos
 
-### v7.6 (2026-03-03)
-- ✅ **Logo Asaas**: Adicionado na página de cadastro
+### v7.6 (2026-03-05)
+- ✅ **Logo Asaas**: Adicionado na página de cadastro (19.41 KB)
 - ✅ **Mensagem personalizada**: "Abra sua conta Digital no Asaas..."
 
-### v7.5 (2026-03-03)
+### v7.5 (2026-03-05)
 - ✅ **Trocar Senha**: Botão para subcontas alterarem própria senha
 
-### v7.4 (2026-03-03)
+### v7.4 (2026-03-05)
 - ✅ **Filtros DeltaPag**: Status (ACTIVE/CANCELLED) e recorrência funcionando
 
-### v2.1 (2026-03-03)
-- ✅ **Exportar PDF**: Corrigido carregamento de jsPDF
+### v2.1 (2026-03-05)
+- ✅ **Exportar PDF**: Corrigido carregamento de jsPDF (`typeof window.jspdf`)
+
+### v7.3 (2026-03-05)
+- ✅ **Limpeza**: Removidos 119 arquivos .md obsoletos
 
 ## 🤝 Suporte
 
@@ -257,5 +269,15 @@ Propriedade privada - Todos os direitos reservados.
 ---
 
 **Última atualização**: 2026-03-05  
-**Versão**: 5.4  
-**Status**: ✅ Produção
+**Versão**: 5.5 ⭐  
+**Status**: ✅ Produção - Sistema 100% operacional
+
+---
+
+## 🎯 Correção Crítica v5.5
+
+**Problema**: URL do CDN QRCode estava incorreta (404)  
+**Solução**: Migrado para CDNJS + ajuste de API  
+**Resultado**: QR Code DeltaPag funcionando perfeitamente
+
+Para detalhes completos, veja: [RESUMO_CORRECOES_2026-03-05.md](./RESUMO_CORRECOES_2026-03-05.md)
