@@ -6,7 +6,7 @@ Sistema completo de gestão de contas, subcontas, assinaturas e pagamentos integ
 
 - **Produção**: https://corretoracorporate.pages.dev
 - **Custom Domain**: https://admin.corretoracorporate.com.br
-- **Preview (última versão)**: https://626cfb30.corretoracorporate.pages.dev (v6.0 - PIX Automático 🚀)
+- **Preview (última versão)**: https://6d2f5197.corretoracorporate.pages.dev (v6.0.1 - PIX Automático + Fallback)
 
 ## 📋 Funcionalidades Principais
 
@@ -232,6 +232,14 @@ npx wrangler pages deployment list
 ```
 
 ## 📝 Changelog Recente
+
+### v6.0.1 (2026-03-05) 🔧 FIX + FALLBACK
+- 🔴 **PROBLEMA**: API `/pix/qrCodes/authorization` pode retornar erro 400 (formato incorreto ou não disponível)
+- ✅ **SOLUÇÃO**: Fallback automático para `POST /subscriptions` (PIX mensal tradicional)
+- 🔄 **Lógica**: Tenta autorização PIX → se falhar → cria subscription PIX mensal
+- 📊 **Resultado**: Sistema funcional em ambos os casos (autorização ou subscription)
+- 💡 **Vantagem**: Zero downtime, sempre gera QR Code PIX para o cliente
+- 📦 **Deploy**: https://6d2f5197.corretoracorporate.pages.dev
 
 ### v6.0 (2026-03-05) 🚀 NOVA FUNCIONALIDADE MAJOR
 - ✅ **PIX Automático Implementado**: Débito recorrente verdadeiro via API Asaas
