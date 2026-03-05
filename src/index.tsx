@@ -4504,7 +4504,10 @@ app.get('/api/pix/subscription-signup/:linkId', async (c) => {
 app.post('/api/pix/subscription-signup/:linkId', async (c) => {
   try {
     const linkId = c.req.param('linkId')
-    const { customerName, customerEmail, customerCpf, customerBirthdate } = await c.req.json()
+    const body = await c.req.json()
+    const { customerName, customerEmail, customerCpf, customerBirthdate } = body
+    
+    console.log('📥 Dados recebidos:', JSON.stringify(body, null, 2))
     
     if (!customerName || !customerEmail || !customerCpf) {
       return c.json({ error: 'Nome, email e CPF são obrigatórios' }, 400)
@@ -4538,11 +4541,16 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
     if (searchResult.ok && searchResult.data?.data?.[0]?.id) {
       customerId = searchResult.data.data[0].id
     } else {
-      const customerData = {
+      const customerData: any = {
         name: customerName,
         cpfCnpj: customerCpf,
         email: customerEmail,
         notificationDisabled: false
+      }
+      
+      // Adicionar data de nascimento se fornecida
+      if (customerBirthdate) {
+        customerData.birthDate = customerBirthdate
       }
       
       const createResult = await asaasRequest(c, '/customers', 'POST', customerData)
