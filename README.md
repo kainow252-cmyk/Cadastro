@@ -6,16 +6,27 @@ Sistema completo de gestão de contas, subcontas, assinaturas e pagamentos integ
 
 - **Produção**: https://corretoracorporate.pages.dev
 - **Custom Domain**: https://admin.corretoracorporate.com.br
-- **Preview (última versão)**: https://27ce7e8a.corretoracorporate.pages.dev (v6.0.3 - PIX Automático CORRETO)
+- **Preview (última versão)**: https://54f45fce.corretoracorporate.pages.dev (v6.1.0 - SOMENTE PIX)
 
-## ⚠️ IMPORTANTE: Aplicar Migration
+## ⚠️ PRÉ-REQUISITOS OBRIGATÓRIOS
 
-**ANTES de usar o sistema, execute**:
+### 1. Aplicar Migration (✅ Concluído)
 ```bash
 npx wrangler d1 migrations apply corretoracorporate-db --remote
 ```
 
-Isso criará a tabela `pix_authorizations` necessária para PIX Automático.
+### 2. Configurar Chave PIX no Asaas (⚠️ OBRIGATÓRIO)
+**O sistema agora funciona APENAS com PIX. Sem chave PIX, retorna erro.**
+
+**Como configurar**:
+1. Acesse: https://www.asaas.com (ou https://sandbox.asaas.com)
+2. Menu → Configurações → PIX
+3. Clicar em "Cadastrar Nova Chave PIX"
+4. Escolher tipo: CPF, Email, Celular ou Aleatória
+5. Verificar a chave (email/SMS)
+6. Aguardar ativação (geralmente instantâneo)
+
+**Sem chave PIX configurada, o sistema retornará erro 400 explicando os passos.**
 
 ## 📋 Funcionalidades Principais
 
@@ -241,6 +252,14 @@ npx wrangler pages deployment list
 ```
 
 ## 📝 Changelog Recente
+
+### v6.1.0 (2026-03-05) 🔴 BREAKING CHANGE - SOMENTE PIX
+- 🔴 **REMOVIDO**: Fallback para BOLETO
+- ✅ **POLÍTICA**: Sistema aceita APENAS PIX
+- 📋 **REQUISITO**: Chave PIX obrigatória no Asaas
+- 💬 **ERRO CLARO**: Se PIX não disponível, retorna erro 400 com instruções
+- 🎯 **MOTIVO**: Foco em PIX Automático (débito recorrente)
+- 📦 **Deploy**: https://54f45fce.corretoracorporate.pages.dev
 
 ### v6.0.1 (2026-03-05) 🔧 FIX + FALLBACK
 - 🔴 **PROBLEMA**: API `/pix/qrCodes/authorization` pode retornar erro 400 (formato incorreto ou não disponível)
