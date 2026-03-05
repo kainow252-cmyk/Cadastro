@@ -4651,7 +4651,32 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
       
       if (!authorizationResult.ok) {
         console.error('❌ Erro ao criar autorização PIX:', authorizationResult.data)
-        console.log('⚠️ Fallback: Tentando criar subscription PIX mensal...')
+        
+        // Verificar se é erro de permissão (precisa ativar com suporte)
+        const isPermissionError = authorizationResult.data?.errors?.some((e: any) => 
+          e.code === 'insufficient_permission' || 
+          e.description?.includes('permissão') ||
+          e.description?.includes('saque')
+        )
+        
+        if (isPermissionError) {
+          console.log('⚠️ PIX Automático não habilitado. Precisa contatar suporte Asaas.')
+          return c.json({ 
+            error: 'PIX Automático não está habilitado nesta conta',
+            details: authorizationResult.data,
+            reason: 'A API de PIX Automático requer permissões especiais que precisam ser ativadas pelo suporte Asaas',
+            solution: 'Entre em contato com o suporte Asaas para ativar o PIX Automático (Jornada 3)',
+            contact: {
+              whatsapp: '(16) 3347-8031',
+              email: 'atendimento@asaas.com',
+              message: 'Olá! Sou desenvolvedor da [SUA EMPRESA] e preciso ativar o PIX Automático (endpoint /pix/automatic/authorizations) na minha conta. A chave de API retorna erro "insufficient_permission". Podem ativar essa funcionalidade?'
+            },
+            temporary: 'Enquanto isso, você pode usar cobranças PIX mensais (o cliente recebe um novo QR Code todo mês)',
+            documentation: 'https://docs.asaas.com/docs/pix-automatico'
+          }, 403)
+        }
+        
+        console.log('⚠️ Fallback: Tentando criar pagamento PIX mensal...')
         
         // FALLBACK: Se API de autorização falhar, criar pagamento PIX único
         // Nota: Asaas não permite PIX em subscriptions, então criamos pagamento avulso
@@ -4678,12 +4703,13 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
             authorizationError: authorizationResult.data,
             solution: 'Configure uma chave PIX no painel Asaas: Configurações → PIX → Cadastrar Chave',
             steps: [
-              '1. Acesse https://www.asaas.com (ou sandbox)',
+              '1. Acesse https://www.asaas.com (ou https://sandbox.asaas.com)',
               '2. Menu → Configurações → PIX',
               '3. Cadastrar Nova Chave PIX',
-              '4. Escolha: CPF, Email, Celular ou Aleatória',
-              '5. Verifique a chave (email/SMS)',
-              '6. Tente novamente'
+              '4. Escolha: CPF, Email, Celular ou Aleatória (recomendado)',
+              '5. Verifique a chave (email/SMS se necessário)',
+              '6. Aguarde ativação (geralmente imediata)',
+              '7. Tente novamente'
             ]
           }, 400)
         } else {
