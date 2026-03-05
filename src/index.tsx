@@ -4606,93 +4606,200 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
       firstPayment = paymentResult.data
       
     } else {
-      // 2B. ASSINATURA MENSAL: Criar assinatura recorrente
-      console.log('🔄 Criando assinatura mensal...')
+      // 2B. ASSINATURA MENSAL: Criar autorização PIX Automático
+      console.log('🔄 Criando autorização PIX Automático...')
       
-      const subscriptionData = {
+      // Calcular próxima data (próximo mês)
+      const nextMonth = new Date()
+      nextMonth.setMonth(nextMonth.getMonth() + 1)
+      const firstDueDate = nextMonth.toISOString().split('T')[0]
+      
+      const authorizationData = {
         customer: customerId,
-        billingType: 'PIX',
         value: value,
-        nextDueDate: new Date(Date.now() + 24*60*60*1000).toISOString().split('T')[0],
-        cycle: 'MONTHLY',
-        description: description || 'Mensalidade',
+        description: description || 'Autorização PIX Mensal',
+        format: 'MONTHLY', // Frequência mensal
+        firstDueDate: firstDueDate,
+        // Split será aplicado nos débitos futuros
         split: createNetSplit(walletId, value, 20)
       }
       
-      console.log('📤 Criando assinatura:', JSON.stringify(subscriptionData, null, 2))
+      console.log('📤 Criando autorização PIX:', JSON.stringify(authorizationData, null, 2))
       
-      const subscriptionResult = await asaasRequest(c, '/subscriptions', 'POST', subscriptionData)
+      const authorizationResult = await asaasRequest(c, '/pix/qrCodes/authorization', 'POST', authorizationData)
       
       console.log('📥 Resposta Asaas:', {
-        ok: subscriptionResult.ok,
-        status: subscriptionResult.status,
-        data: subscriptionResult.data
+        ok: authorizationResult.ok,
+        status: authorizationResult.status,
+        data: authorizationResult.data
       })
       
-      if (!subscriptionResult.ok) {
-        console.error('❌ Erro ao criar assinatura:', subscriptionResult.data)
+      if (!authorizationResult.ok) {
+        console.error('❌ Erro ao criar autorização PIX:', authorizationResult.data)
         return c.json({ 
-          error: 'Erro ao criar assinatura',
-          details: subscriptionResult.data,
+          error: 'Erro ao criar autorização PIX Automático',
+          details: authorizationResult.data,
           walletId: walletId,
           value: value
         }, 400)
       }
       
-      subscription = subscriptionResult.data
+      subscription = authorizationResult.data
       
-      // Buscar primeiro pagamento da assinatura
-      const paymentsResult = await asaasRequest(c, `/payments?subscription=${subscription.id}`)
+      // A autorização PIX já retorna o QR Code para aprovação
+      // O cliente escaneia e autoriza no app do banco
+      // Após autorização, débitos são automáticos
       
-      if (!paymentsResult.ok || !paymentsResult.data?.data?.[0]) {
-        return c.json({
-          ok: true,
-          subscription: {
-            id: subscription.id,
-            status: subscription.status,
-            value: subscription.value,
-            nextDueDate: subscription.nextDueDate
-          },
-          warning: 'Assinatura criada, aguardando primeiro pagamento'
-        })
+      firstPayment = {
+        id: subscription.id,
+        value: value,
+        dueDate: firstDueDate,
+        status: 'PENDING_AUTHORIZATION',
+        invoiceUrl: subscription.invoiceUrl || null
       }
-      
-      firstPayment = paymentsResult.data.data[0]
     }
     
     // 4. Buscar QR Code PIX
-    const qrCodeResult = await asaasRequest(c, `/payments/${firstPayment.id}/pixQrCode`)
-    
     let pixData = null
-    if (qrCodeResult.ok && qrCodeResult.data) {
-      const asaasPayload = qrCodeResult.data.payload
-      const valueField = `54${value.toFixed(2).length.toString().padStart(2, '0')}${value.toFixed(2)}`
-      const pos58 = asaasPayload.indexOf('5802')
+    
+    if (chargeType === 'monthly' && subscription?.payload) {
+      // PIX Automático: autorização já retorna o QR Code
+      console.log('🔐 Usando QR Code de autorização PIX Automático')
       
-      if (pos58 !== -1) {
-        const payloadWithValue = asaasPayload.substring(0, pos58) + valueField + asaasPayload.substring(pos58)
-        const payloadWithoutCrc = payloadWithValue.substring(0, payloadWithValue.length - 8)
-        const payloadWithCrcPlaceholder = payloadWithoutCrc + '6304'
-        const crc = calculateCRC16(payloadWithCrcPlaceholder)
-        const finalPayload = payloadWithCrcPlaceholder + crc
+      const qrCodeBase64Image = await generateQRCodeBase64(subscription.payload)
+      
+      pixData = {
+        payload: subscription.payload,
+        qrCodeBase64: qrCodeBase64Image,
+        expirationDate: subscription.expirationDate || firstPayment.dueDate,
+        authorizationId: subscription.id,
+        isAuthorization: true // Flag para frontend saber que é autorização
+      }
+    } else {
+      // Cobrança única: buscar QR Code do pagamento
+      const qrCodeResult = await asaasRequest(c, `/payments/${firstPayment.id}/pixQrCode`)
+      
+      if (qrCodeResult.ok && qrCodeResult.data) {
+        const asaasPayload = qrCodeResult.data.payload
+        const valueField = `54${value.toFixed(2).length.toString().padStart(2, '0')}${value.toFixed(2)}`
+        const pos58 = asaasPayload.indexOf('5802')
         
-        const qrCodeBase64Image = await generateQRCodeBase64(finalPayload)
-        
-        pixData = {
-          payload: finalPayload,
-          qrCodeBase64: qrCodeBase64Image,
-          expirationDate: firstPayment.dueDate
+        if (pos58 !== -1) {
+          const payloadWithValue = asaasPayload.substring(0, pos58) + valueField + asaasPayload.substring(pos58)
+          const payloadWithoutCrc = payloadWithValue.substring(0, payloadWithValue.length - 8)
+          const payloadWithCrcPlaceholder = payloadWithoutCrc + '6304'
+          const crc = calculateCRC16(payloadWithCrcPlaceholder)
+          const finalPayload = payloadWithCrcPlaceholder + crc
+          
+          const qrCodeBase64Image = await generateQRCodeBase64(finalPayload)
+          
+          pixData = {
+            payload: finalPayload,
+            qrCodeBase64: qrCodeBase64Image,
+            expirationDate: firstPayment.dueDate,
+            isAuthorization: false
+          }
         }
       }
     }
     
     // 5. Registrar conversão
     try {
-      await c.env.DB.prepare(`
-        INSERT INTO subscription_conversions (link_id, customer_id, subscription_id, customer_name, customer_email, customer_cpf, customer_birthdate)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).bind(linkId, customerId, subscription?.id || null, customerName, customerEmail, customerCpf, customerBirthdate || null).run()
+      if (chargeType === 'monthly' && subscription?.id) {
+        // PIX Automático: salvar na tabela de autorizações
+        await c.env.DB.prepare(`
+          INSERT INTO pix_authorizations (
+            id, link_id, customer_id, authorization_id, customer_name, customer_email, 
+            customer_cpf, customer_birthdate, value, description, frequency, 
+            first_due_date, status, payload, expiration_date
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          `auth_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+          linkId,
+          customerId,
+          subscription.id,
+          customerName,
+          customerEmail,
+          customerCpf,
+          customerBirthdate || null,
+          value,
+          description || 'Autorização PIX Mensal',
+          'MONTHLY',
+          firstPayment.dueDate,
+          'PENDING_AUTHORIZATION',
+          subscription.payload || null,
+          subscription.expirationDate || null
+        ).run()
+        
+        console.log('✅ Autorização PIX registrada no banco de dados')
+      } else {
+        // Cobrança única: salvar na tabela de conversões
+        await c.env.DB.prepare(`
+          INSERT INTO subscription_conversions (link_id, customer_id, subscription_id, customer_name, customer_email, customer_cpf, customer_birthdate)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).bind(linkId, customerId, subscription?.id || null, customerName, customerEmail, customerCpf, customerBirthdate || null).run()
+        
+        console.log('✅ Conversão registrada no banco de dados')
+      }
     } catch (dbError: any) {
+      console.error('⚠️ Erro ao registrar no banco:', dbError)
+      
+      // Se erro for "no such table: pix_authorizations", aplicar migration
+      if (dbError.message && dbError.message.includes('no such table: pix_authorizations')) {
+        console.log('⚠️ Tabela pix_authorizations não existe, aplicando migration...')
+        await c.env.DB.exec(`
+          CREATE TABLE IF NOT EXISTS pix_authorizations (
+            id TEXT PRIMARY KEY,
+            link_id TEXT NOT NULL,
+            customer_id TEXT NOT NULL,
+            authorization_id TEXT NOT NULL,
+            customer_name TEXT NOT NULL,
+            customer_email TEXT NOT NULL,
+            customer_cpf TEXT NOT NULL,
+            customer_birthdate TEXT,
+            value REAL NOT NULL,
+            description TEXT,
+            frequency TEXT DEFAULT 'MONTHLY',
+            first_due_date TEXT NOT NULL,
+            status TEXT DEFAULT 'PENDING_AUTHORIZATION',
+            authorization_date TEXT,
+            payload TEXT,
+            expiration_date TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+          )
+        `)
+        console.log('✅ Migration aplicada, tentando novamente...')
+        // Tentar novamente
+        if (chargeType === 'monthly') {
+          await c.env.DB.prepare(`
+            INSERT INTO pix_authorizations (
+              id, link_id, customer_id, authorization_id, customer_name, customer_email, 
+              customer_cpf, customer_birthdate, value, description, frequency, 
+              first_due_date, status, payload, expiration_date
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).bind(
+            `auth_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+            linkId,
+            customerId,
+            subscription.id,
+            customerName,
+            customerEmail,
+            customerCpf,
+            customerBirthdate || null,
+            value,
+            description || 'Autorização PIX Mensal',
+            'MONTHLY',
+            firstPayment.dueDate,
+            'PENDING_AUTHORIZATION',
+            subscription.payload || null,
+            subscription.expirationDate || null
+          ).run()
+        }
+      }
+      
       // Se erro for "no column named customer_birthdate", aplicar migration automaticamente
       if (dbError.message && dbError.message.includes('no column named customer_birthdate')) {
         console.log('⚠️ Coluna customer_birthdate não existe, aplicando migration...')
@@ -8218,10 +8325,20 @@ app.get('/subscription-signup/:linkId', async (c) => {
                 <div class="bg-green-500 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
                     <i class="fas fa-check text-white text-3xl"></i>
                 </div>
-                <h2 class="text-3xl font-bold text-gray-800 mb-2">Assinatura Criada!</h2>
-                <p class="text-gray-600">Pague o PIX para ativar</p>
+                <h2 id="success-title" class="text-3xl font-bold text-gray-800 mb-2">PIX Criado!</h2>
+                <p id="success-subtitle" class="text-gray-600">Escaneie o QR Code</p>
+                <div id="authorization-alert" class="hidden bg-gradient-to-r from-purple-50 to-indigo-50 border-2 border-purple-300 rounded-lg p-4 mt-4 mx-auto max-w-md">
+                    <p class="text-sm text-purple-800 font-semibold mb-2">
+                        <i class="fas fa-shield-alt text-purple-600 mr-2"></i>
+                        PIX Automático Ativado!
+                    </p>
+                    <p class="text-xs text-purple-700">
+                        ✅ Após autorizar no seu banco, os pagamentos mensais serão <strong>automáticos</strong>
+                        <br>💳 Não precisará pagar manualmente todo mês
+                    </p>
+                </div>
                 <p class="text-sm text-indigo-600 mt-2 animate-pulse">
-                    <i class="fas fa-sync fa-spin mr-2"></i>Aguardando pagamento...
+                    <i class="fas fa-sync fa-spin mr-2"></i>Aguardando autorização...
                 </p>
             </div>
             <div class="bg-white border-2 border-indigo-300 rounded-xl p-6">
@@ -8353,9 +8470,26 @@ app.get('/subscription-signup/:linkId', async (c) => {
                 if (response.data.ok) {
                     document.getElementById('form-state').classList.add('hidden');
                     document.getElementById('success-state').classList.remove('hidden');
+                    
+                    // Verificar se é autorização PIX (débito automático)
+                    const isAuthorization = response.data.firstPayment?.pix?.isAuthorization;
+                    
                     if (response.data.firstPayment.pix) {
                         document.getElementById('qr-code-image').src = response.data.firstPayment.pix.qrCodeBase64;
                         document.getElementById('pix-payload').value = response.data.firstPayment.pix.payload;
+                    }
+                    
+                    // Atualizar mensagens conforme o tipo
+                    if (isAuthorization) {
+                        document.getElementById('success-title').textContent = '🔐 Autorização PIX Automático';
+                        document.getElementById('success-subtitle').textContent = 'Autorize no seu banco para ativar débitos automáticos';
+                        document.getElementById('authorization-alert').classList.remove('hidden');
+                    } else if (linkData?.chargeType === 'monthly') {
+                        document.getElementById('success-title').textContent = '📅 Assinatura PIX Mensal Criada!';
+                        document.getElementById('success-subtitle').textContent = 'Pague o primeiro PIX para ativar';
+                    } else {
+                        document.getElementById('success-title').textContent = '💰 PIX Único Gerado!';
+                        document.getElementById('success-subtitle').textContent = 'Escaneie o QR Code para pagar';
                     }
                     
                     // Salvar tipo de cobrança para usar depois
