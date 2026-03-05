@@ -6,7 +6,7 @@ Sistema completo de gestão de contas, subcontas, assinaturas e pagamentos integ
 
 - **Produção**: https://corretoracorporate.pages.dev
 - **Custom Domain**: https://admin.corretoracorporate.com.br
-- **Preview (última versão)**: https://b3e6cefa.corretoracorporate.pages.dev
+- **Preview (última versão)**: https://22ccf45f.corretoracorporate.pages.dev (v5.7 - Fix PIX signup)
 
 ## 📋 Funcionalidades Principais
 
@@ -227,6 +227,14 @@ npx wrangler pages deployment list
 ```
 
 ## 📝 Changelog Recente
+
+### v5.7 (2026-03-05) 🔧 FIX CRÍTICO
+- 🔴 **PROBLEMA**: Erro 400 (Bad Request) ao enviar formulário de cadastro PIX - campo `customerBirthdate` não aceito
+- ✅ **SOLUÇÃO**: Endpoint `/api/pix/subscription-signup/:linkId` agora aceita `customerBirthdate`
+- ✅ **Ajuste**: Campo de data de nascimento é opcional, mas enviado ao Asaas se fornecido
+- ✅ **Log**: Adicionado log dos dados recebidos para debug
+- 🎯 **Resultado**: Formulário de Auto-Cadastro PIX funciona 100%
+- 📦 **Deploy**: https://22ccf45f.corretoracorporate.pages.dev
 
 ### v5.6 (2026-03-05) 🎨 NOVA FUNCIONALIDADE
 - ✅ **Gerar Banner**: Botão para criar banners personalizados com QR Code nos Links DeltaPag
