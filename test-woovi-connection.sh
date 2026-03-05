@@ -8,7 +8,7 @@ echo "========================================"
 echo ""
 
 # Configuração
-WOOVI_APPID="Q2xpZW50X0lkX2Q0OTk1YmJhLWUzOTItNDdkZi1iNThkLTQxMjc0NmQ0ZTUzYjpDbGllbnRfU2VjcmV0X1pzeEYzY1hWQ0t5SEUxUU9idTZNZ3l5MWFDbE54RzNHSFNuRW1lMkszVlE9"
+WOOVI_APPID="Q2xpZW50X0lkXzI0MDE3MjFjLTAyNzktNGIzMy05OGRkLWFkMjE4NDA5YTIzYjpDbGllbnRfU2VjcmV0XzRuejI5Q3lJNmhLakFTeGtZd2l2a2l4S1dvdkUzSUZ0dHFidmVMZ0xVdkU9"
 WOOVI_BASE_URL="https://api.woovi.com/api/v1"
 
 echo "📋 Configuração:"
