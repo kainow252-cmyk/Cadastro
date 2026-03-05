@@ -7332,11 +7332,20 @@ app.get('/cadastro/:linkId', (c) => {
             <div class="max-w-3xl mx-auto">
                 <!-- Header -->
                 <div class="text-center mb-8">
-                    <div class="inline-block bg-white rounded-full p-4 shadow-lg mb-4">
-                        <i class="fas fa-building text-blue-600 text-4xl"></i>
+                    <div class="inline-block bg-white rounded-2xl p-6 shadow-xl mb-6">
+                        <img src="/static/asaas-logo.png" alt="Asaas" class="h-20 w-auto mx-auto">
                     </div>
-                    <h1 class="text-4xl font-bold text-gray-800 mb-2">Bem-vindo!</h1>
-                    <p class="text-gray-600 text-lg">Complete seu cadastro para começar</p>
+                    <h1 class="text-4xl font-bold text-gray-800 mb-3">
+                        <i class="fas fa-hand-sparkles text-blue-600 mr-2"></i>
+                        Bem-vindo!
+                    </h1>
+                    <p class="text-gray-700 text-lg font-medium mb-2">
+                        Abra sua conta Digital no Asaas e comece a gerenciar e receber suas comissões
+                    </p>
+                    <p class="text-gray-600 text-base">
+                        <i class="fas fa-check-circle text-green-600 mr-1"></i>
+                        Instantaneamente • Processo 100% digital e gratuito
+                    </p>
                 </div>
 
                 <!-- Form Card -->
