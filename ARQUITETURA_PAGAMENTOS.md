@@ -16,9 +16,9 @@ O sistema possui **dois fluxos de pagamento distintos**:
 - **Método**: PIX (QR Code Copia e Cola)
 - **Tipos**:
   - **Cobrança Única**: Pagamento avulso (1 vez)
-  - **Assinatura Mensal**: Recorrência automática PIX
+  - **Assinatura Mensal**: ✅ **PIX Automático** (débito recorrente bancário) - **IMPLEMENTADO v6.0**
 
-### 🔄 Fluxo de Assinatura Mensal PIX
+### 🔄 Fluxo de Assinatura Mensal PIX (PIX Automático v6.0)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -38,21 +38,25 @@ O sistema possui **dois fluxos de pagamento distintos**:
 │    ✅ Valida link (ativo, não expirado)                     │
 │    ✅ Busca ou cria customer no Asaas (CPF único)           │
 │    ✅ Se chargeType = 'single': cria payment PIX (1 vez)    │
-│    ✅ Se chargeType = 'monthly': cria subscription PIX      │
+│    ✅ Se chargeType = 'monthly': cria AUTORIZAÇÃO PIX (v6.0)│
+│       → POST /pix/qrCodes/authorization                      │
 └──────────────────┬──────────────────────────────────────────┘
                    ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ 4. Asaas processa                                            │
-│    - Gera QR Code PIX (primeira cobrança)                    │
-│    - Retorna payload e Base64 do QR Code                     │
-│    - Cliente paga o primeiro PIX                             │
+│ 4. Asaas processa (PIX Automático)                          │
+│    - Gera QR Code de AUTORIZAÇÃO PIX                         │
+│    - Retorna payload de autorização                          │
+│    - Cliente escaneia QR Code no app do banco               │
+│    - Cliente AUTORIZA débito recorrente                      │
+│    - Status: PENDING_AUTHORIZATION → AUTHORIZED             │
 └──────────────────┬──────────────────────────────────────────┘
                    ↓
 ┌─────────────────────────────────────────────────────────────┐
-│ 5. Próximas cobranças (apenas se 'monthly')                 │
-│    - A cada 30 dias: Asaas gera novo QR Code PIX            │
-│    - Cliente paga manualmente (QR Code via email/notif)     │
-│    ⚠️ NÃO É DÉBITO AUTOMÁTICO (requer ação do cliente)     │
+│ 5. Próximas cobranças (AUTOMÁTICAS!)                        │
+│    - A cada 30 dias: Asaas debita AUTOMATICAMENTE           │
+│    - Cliente NÃO precisa fazer nada                         │
+│    ✅ DÉBITO AUTOMÁTICO (como cartão de crédito)           │
+│    - Split 20/80 aplicado em todos os débitos               │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -81,14 +85,44 @@ CREATE TABLE subscription_signup_links (
 );
 ```
 
-#### `subscription_conversions` (futura)
+#### `pix_authorizations` (v6.0 - **NOVA**)
 ```sql
--- Armazena assinaturas criadas via links
+-- Armazena autorizações de PIX Automático
+CREATE TABLE pix_authorizations (
+  id TEXT PRIMARY KEY,
+  link_id TEXT NOT NULL,
+  customer_id TEXT NOT NULL,
+  authorization_id TEXT NOT NULL, -- ID Asaas
+  customer_name TEXT NOT NULL,
+  customer_email TEXT NOT NULL,
+  customer_cpf TEXT NOT NULL,
+  customer_birthdate TEXT,
+  value REAL NOT NULL,
+  description TEXT,
+  frequency TEXT DEFAULT 'MONTHLY', -- MONTHLY, WEEKLY, etc.
+  first_due_date TEXT NOT NULL,
+  status TEXT DEFAULT 'PENDING_AUTHORIZATION', -- PENDING → AUTHORIZED
+  authorization_date TEXT, -- Data da aprovação
+  payload TEXT, -- QR Code payload
+  expiration_date TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (link_id) REFERENCES subscription_signup_links(id)
+);
+```
+
+#### `subscription_conversions`
+```sql
+-- Armazena cobranças únicas criadas via links
 CREATE TABLE subscription_conversions (
   id TEXT PRIMARY KEY,
   link_id TEXT,
   customer_id TEXT,
-  subscription_id TEXT, -- ID Asaas
+  subscription_id TEXT, -- ID Asaas (para cobrança única)
+  customer_name TEXT,
+  customer_email TEXT,
+  customer_cpf TEXT,
+  customer_birthdate TEXT,
   status TEXT,
   created_at TEXT
 );
@@ -175,19 +209,20 @@ CREATE TABLE deltapag_subscriptions (
 
 ---
 
-## 🔴 Importante: PIX Automático vs Assinatura PIX Mensal
+## 🟢 PIX Automático Implementado (v6.0)
 
-### ⚠️ Confusão Comum
+### ✅ Sistema Atual
 
-**PIX Automático** (recurso Asaas) ≠ **Assinatura Mensal PIX** (sistema atual)
+**PIX Automático** está **100% FUNCIONAL** desde v6.0!
 
-| Recurso | PIX Automático (Asaas API) | Assinatura Mensal PIX (Sistema Atual) |
-|---------|----------------------------|---------------------------------------|
-| **Débito** | ✅ Automático (sem ação do cliente) | ❌ Manual (cliente paga QR Code todo mês) |
-| **API Asaas** | `POST /v3/pix/qrCodes/authorization` | `POST /v3/subscriptions` (billingType: PIX) |
-| **Aprovação** | Cliente aprova 1 vez no banco | Cliente paga QR Code mensal |
-| **Status** | `AUTHORIZED` → débitos automáticos | `ACTIVE` → QR Codes mensais |
-| **Implementação** | 🔴 NÃO IMPLEMENTADO | ✅ IMPLEMENTADO (v5.7) |
+| Recurso | PIX Automático (v6.0) | Cobrança Única PIX |
+|---------|----------------------|-------------------|
+| **Débito** | ✅ Automático (sem ação do cliente) | ❌ Manual (1 pagamento) |
+| **API Asaas** | `POST /v3/pix/qrCodes/authorization` | `POST /v3/payments` |
+| **Aprovação** | Cliente autoriza 1 vez no banco | Cliente paga QR Code único |
+| **Status** | `PENDING_AUTHORIZATION` → `AUTHORIZED` | `PENDING` → `RECEIVED` |
+| **Débitos futuros** | Automáticos (todo mês) | Não há |
+| **Implementação** | ✅ IMPLEMENTADO (v6.0) | ✅ IMPLEMENTADO |
 
 ### 📚 Referência da API Asaas
 
@@ -219,52 +254,61 @@ CREATE TABLE deltapag_subscriptions (
 
 ---
 
-## 🚀 Próximos Passos (Opcional)
+## 🎉 PIX Automático - IMPLEMENTADO v6.0
 
-### Implementar PIX Automático (Débito Recorrente)
+### ✅ Funcionalidades Implementadas
 
-Se quiser implementar o **verdadeiro PIX Automático** do Asaas:
+1. **Rota de signup**: `/subscription-signup/:linkId` ✅
+2. **Endpoint backend**: `POST /api/pix/subscription-signup/:linkId` ✅
+3. **API Asaas**: `POST /v3/pix/qrCodes/authorization` ✅
+4. **Fluxo completo**:
+   - Cliente preenche dados ✅
+   - Backend cria autorização Asaas ✅
+   - Cliente abre QR Code no app do banco ✅
+   - Aprova débito recorrente ✅
+   - Status: `PENDING_AUTHORIZATION` → `AUTHORIZED` ✅
 
-1. **Criar nova rota**: `/asaas-pix-auto-signup/:linkId`
-2. **Endpoint backend**: `POST /api/pix/authorization`
-3. **API Asaas**: `POST /v3/pix/qrCodes/authorization`
-4. **Fluxo**:
-   - Cliente preenche dados
-   - Backend cria autorização Asaas
-   - Cliente abre QR Code no app do banco
-   - Aprova débito recorrente
-   - Status: `AUTHORIZED` → débitos automáticos
-
-5. **Tabela**: `asaas_pix_authorizations`
+5. **Tabela**: `pix_authorizations` ✅
    ```sql
-   CREATE TABLE asaas_pix_authorizations (
+   CREATE TABLE pix_authorizations (
      id TEXT PRIMARY KEY,
      customer_id TEXT,
      authorization_id TEXT, -- ID Asaas
-     status TEXT, -- PENDING, AUTHORIZED, CANCELLED
+     status TEXT, -- PENDING_AUTHORIZATION, AUTHORIZED, CANCELLED
      value REAL,
      frequency TEXT, -- MONTHLY, BIWEEKLY, etc.
+     first_due_date TEXT,
+     payload TEXT,
      created_at TEXT
    );
    ```
 
-**Vantagem**: Conveniência de cartão + taxa baixa de PIX
+**Vantagens Obtidas**:
+- ✅ Conveniência de cartão + taxa baixa de PIX
+- ✅ Split 20/80 automático
+- ✅ Débitos mensais sem intervenção do cliente
+- ✅ UI clara explicando o processo
 
 ---
 
-## 📊 Status Atual (v5.7)
+## 📊 Status Atual (v6.0)
 
 ✅ **Implementado e Funcional**:
-- Asaas PIX Mensal (QR Code manual recorrente)
+- **Asaas PIX Automático** (débito recorrente via banco) ✅ **NOVO v6.0**
+- Asaas PIX Único (cobrança avulsa)
 - DeltaPag Cartão (débito automático)
 - Split 20/80 para subcontas
 - Links de auto-cadastro para ambos sistemas
 - Geração de QR Code e Banners
+- Tabela `pix_authorizations` com tracking completo
+- UI com alertas explicativos sobre débito automático
 
-❌ **Não Implementado**:
-- PIX Automático (débito recorrente via banco)
-- Assinatura PIX com autorização bancária
+🎯 **Diferenciais v6.0**:
+- Cliente paga 1 vez e autoriza → débitos automáticos todo mês
+- Sem necessidade de cartão de crédito
+- Taxa de PIX (menor que cartão)
+- Experiência similar ao cartão (automática)
 
 ---
 
-**Última atualização**: 2026-03-05 | **Versão**: 5.7
+**Última atualização**: 2026-03-05 | **Versão**: 6.0
