@@ -741,16 +741,33 @@ async function showQRCodeModal(linkId, linkUrl, description, value, recurrence) 
     if (typeof window.QRCode === 'undefined') {
         console.log('📦 Biblioteca QRCode não carregada, carregando dinamicamente...');
         
-        const script = document.createElement('script');
-        script.src = 'https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js';
-        document.head.appendChild(script);
-        
-        await new Promise((resolve, reject) => {
-            script.onload = resolve;
-            script.onerror = () => reject(new Error('Falha ao carregar biblioteca QRCode'));
-        });
-        
-        console.log('✅ Biblioteca QRCode carregada dinamicamente');
+        try {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js';
+            document.head.appendChild(script);
+            
+            await new Promise((resolve, reject) => {
+                script.onload = () => {
+                    console.log('✅ Script carregado com sucesso');
+                    resolve();
+                };
+                script.onerror = (error) => {
+                    console.error('❌ Erro ao carregar script:', error);
+                    reject(new Error('Falha ao carregar biblioteca QRCode'));
+                };
+                
+                // Timeout de 10 segundos
+                setTimeout(() => {
+                    reject(new Error('Timeout ao carregar biblioteca QRCode'));
+                }, 10000);
+            });
+            
+            console.log('✅ Biblioteca QRCode carregada dinamicamente');
+        } catch (error) {
+            console.error('❌ Erro no carregamento dinâmico:', error);
+            alert('Erro ao carregar biblioteca QR Code. Por favor, recarregue a página (Ctrl+Shift+R).');
+            return;
+        }
     }
     
     // Verificar novamente após carregamento

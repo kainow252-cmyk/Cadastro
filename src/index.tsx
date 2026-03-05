@@ -5840,16 +5840,20 @@ app.put('/api/deltapag/links/:linkId', authMiddleware, async (c) => {
     const linkId = c.req.param('linkId')
     const { description, value, recurrence_type, valid_until } = await c.req.json()
     
+    console.log('📝 Editando link:', { linkId, description, value, recurrence_type, valid_until })
+    
+    // Atualizar link (sem updated_at se coluna não existir)
     await c.env.DB.prepare(`
       UPDATE deltapag_signup_links 
-      SET description = ?, value = ?, recurrence_type = ?, valid_until = ?, updated_at = datetime('now')
+      SET description = ?, value = ?, recurrence_type = ?, valid_until = ?
       WHERE id = ?
     `).bind(description, value, recurrence_type, valid_until, linkId).run()
     
+    console.log('✅ Link editado com sucesso')
     return c.json({ ok: true })
   } catch (error: any) {
-    console.error('Erro ao editar link:', error)
-    return c.json({ error: error.message }, 500)
+    console.error('❌ Erro ao editar link:', error)
+    return c.json({ ok: false, error: error.message }, 500)
   }
 })
 
@@ -5858,15 +5862,18 @@ app.delete('/api/deltapag/links/:linkId', authMiddleware, async (c) => {
   try {
     const linkId = c.req.param('linkId')
     
+    console.log('🗑️ Excluindo link:', linkId)
+    
     await c.env.DB.prepare(`
       DELETE FROM deltapag_signup_links 
       WHERE id = ?
     `).bind(linkId).run()
     
+    console.log('✅ Link excluído com sucesso')
     return c.json({ ok: true })
   } catch (error: any) {
-    console.error('Erro ao excluir link:', error)
-    return c.json({ error: error.message }, 500)
+    console.error('❌ Erro ao excluir link:', error)
+    return c.json({ ok: false, error: error.message }, 500)
   }
 })
 
@@ -12179,7 +12186,7 @@ curl "https://admin.corretoracorporate.com.br/api/reports/all-accounts/refunded?
         <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
         <script src="/static/payment-links.js?v=4.2"></script>
         <script src="/static/payment-filters.js?v=4.2"></script>
-        <script src="/static/deltapag-section.js?v=5.1"></script>
+        <script src="/static/deltapag-section.js?v=5.2"></script>
         <script src="/static/reports-detailed.js?v=2.1"></script>
         <script src="/static/banner-generator.js?v=1.0"></script>
     </body>
