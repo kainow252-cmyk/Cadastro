@@ -40,6 +40,10 @@ npx wrangler d1 migrations apply corretoracorporate-db --remote
 - Sistema de login independente para subcontas
 - Alteração de senha por subconta
 - Dashboard personalizado para subcontas
+- **🔑 Chaves de API independentes** (v6.1.1 - **NOVO** ✨)
+  - Cada subconta pode ter sua própria chave de API Asaas
+  - Isolamento de permissões e segurança
+  - Gerenciamento ativado no Asaas Sandbox (05/03/2026)
 
 ### ✅ Links de Pagamento DeltaPag
 - Criação de links de pagamento recorrente (mensal, semanal, quinzenal, etc.)
