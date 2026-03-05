@@ -6,7 +6,7 @@ Sistema completo de gestão de contas, subcontas, assinaturas e pagamentos integ
 
 - **Produção**: https://corretoracorporate.pages.dev
 - **Custom Domain**: https://admin.corretoracorporate.com.br
-- **Preview (última versão)**: https://54f45fce.corretoracorporate.pages.dev (v6.1.0 - SOMENTE PIX)
+- **Preview (última versão)**: https://3e29c1a0.corretoracorporate.pages.dev (v6.1.1 - PIX Automático)
 
 ## ⚠️ PRÉ-REQUISITOS OBRIGATÓRIOS
 
@@ -58,9 +58,14 @@ npx wrangler d1 migrations apply corretoracorporate-db --remote
 - Sincronização automática com Asaas
 - Máscara de cartões por segurança
 
-### ✅ Links de Auto-Cadastro PIX (v6.0 - **PIX AUTOMÁTICO** 🚀)
+### ✅ Links de Auto-Cadastro PIX (v6.1.1 - **PIX AUTOMÁTICO** 🚀)
 - **Cobrança Única**: Pagamento PIX avulso (1 vez)
-- **Assinatura Mensal**: PIX Automático (débito recorrente no banco)
+- **Assinatura Mensal**: PIX Automático (débito recorrente no banco) ⏳
+  - ⚠️ **Status**: Aguardando ativação pelo suporte Asaas
+  - Sistema implementado e testado
+  - Endpoint `/pix/automatic/authorizations` configurado
+  - Chave PIX cadastrada no sandbox
+  - **Próximo passo**: Contatar suporte Asaas para ativar (ver ATIVAR_PIX_AUTOMATICO.md)
   - Cliente autoriza no banco ao pagar primeiro PIX
   - Débitos mensais automáticos (sem ação do cliente)
   - Split 20/80 aplicado automaticamente
@@ -252,6 +257,17 @@ npx wrangler pages deployment list
 ```
 
 ## 📝 Changelog Recente
+
+### v6.1.1 (2026-03-05) 🔧 DETECÇÃO DE PERMISSÃO + ORIENTAÇÃO
+- ✅ **NOVO**: Detecta erro `insufficient_permission` da API Asaas
+- 📞 **CONTATO**: Retorna informações de contato do suporte Asaas (WhatsApp, Email)
+- 💬 **TEMPLATE**: Fornece mensagem pronta para solicitar ativação do PIX Automático
+- 📄 **DOCUMENTAÇÃO**: Novo arquivo ATIVAR_PIX_AUTOMATICO.md com guia completo
+- 🧪 **SCRIPTS DE TESTE**: 
+  - `test-pix-automatico-sandbox.sh` - Testa autorização PIX
+  - `test-asaas-permissions.sh` - Verifica permissões da API
+- 🎯 **STATUS**: Sistema 100% implementado, aguardando ativação pelo suporte
+- 📦 **Deploy**: https://3e29c1a0.corretoracorporate.pages.dev
 
 ### v6.1.0 (2026-03-05) 🔴 BREAKING CHANGE - SOMENTE PIX
 - 🔴 **REMOVIDO**: Fallback para BOLETO
