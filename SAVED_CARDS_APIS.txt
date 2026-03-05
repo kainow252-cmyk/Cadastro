@@ -1,0 +1,292 @@
+// ============================================
+// DELTAPAG - CARTÕES SALVOS (SAVED CARDS)
+// ============================================
+
+// Salvar cartão de crédito tokenizado
+app.post('/api/deltapag/save-card', authMiddleware, async (c) => {
+  try {
+    const {
+      accountId,
+      customerId,
+      customerName,
+      customerEmail,
+      customerCpfCnpj,
+      customerPhone,
+      customerPostalCode,
+      customerAddress,
+      customerAddressNumber,
+      customerProvince,
+      cardToken,
+      cardBrand,
+      cardLastFour,
+      cardHolderName,
+      cardExpiryMonth,
+      cardExpiryYear,
+      metadata
+    } = await c.req.json()
+
+    // Validações
+    if (!accountId || !customerId || !cardToken || !cardLastFour) {
+      return c.json({ error: 'Dados obrigatórios faltando' }, 400)
+    }
+
+    const cardId = crypto.randomUUID()
+
+    await c.env.DB.prepare(`
+      INSERT INTO saved_cards (
+        id, account_id, customer_id, customer_name, customer_email,
+        customer_cpf_cnpj, customer_phone, customer_postal_code,
+        customer_address, customer_address_number, customer_province,
+        card_token, card_brand, card_last_four, card_holder_name,
+        card_expiry_month, card_expiry_year, billing_type, metadata
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CREDIT_CARD', ?)
+    `).bind(
+      cardId,
+      accountId,
+      customerId,
+      customerName,
+      customerEmail,
+      customerCpfCnpj,
+      customerPhone || null,
+      customerPostalCode || null,
+      customerAddress || null,
+      customerAddressNumber || null,
+      customerProvince || null,
+      cardToken,
+      cardBrand || null,
+      cardLastFour,
+      cardHolderName,
+      cardExpiryMonth,
+      cardExpiryYear,
+      metadata ? JSON.stringify(metadata) : null
+    ).run()
+
+    console.log('✅ Cartão salvo:', cardId)
+
+    return c.json({
+      ok: true,
+      cardId,
+      message: 'Cartão salvo com sucesso'
+    })
+  } catch (error: any) {
+    console.error('❌ Erro ao salvar cartão:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Listar cartões salvos de uma conta
+app.get('/api/deltapag/saved-cards/:accountId', authMiddleware, async (c) => {
+  try {
+    const accountId = c.req.param('accountId')
+
+    const result = await c.env.DB.prepare(`
+      SELECT 
+        id, account_id, customer_id, customer_name, customer_email,
+        customer_cpf_cnpj, customer_phone, customer_postal_code,
+        customer_address, customer_address_number, customer_province,
+        card_brand, card_last_four, card_holder_name,
+        card_expiry_month, card_expiry_year, billing_type,
+        is_active, created_at, last_used_at, metadata
+      FROM saved_cards
+      WHERE account_id = ? AND is_active = 1
+      ORDER BY created_at DESC
+    `).bind(accountId).all()
+
+    return c.json({
+      ok: true,
+      cards: result.results || []
+    })
+  } catch (error: any) {
+    console.error('❌ Erro ao listar cartões:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Listar todos os cartões salvos (admin)
+app.get('/api/admin/deltapag/saved-cards', authMiddleware, async (c) => {
+  try {
+    const result = await c.env.DB.prepare(`
+      SELECT 
+        sc.id, sc.account_id, sc.customer_id, sc.customer_name, sc.customer_email,
+        sc.customer_cpf_cnpj, sc.customer_phone, sc.card_brand, sc.card_last_four,
+        sc.card_holder_name, sc.card_expiry_month, sc.card_expiry_year,
+        sc.is_active, sc.created_at, sc.last_used_at,
+        a.name as account_name
+      FROM saved_cards sc
+      LEFT JOIN accounts a ON sc.account_id = a.id
+      WHERE sc.is_active = 1
+      ORDER BY sc.created_at DESC
+    `).all()
+
+    return c.json({
+      ok: true,
+      cards: result.results || []
+    })
+  } catch (error: any) {
+    console.error('❌ Erro ao listar cartões:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Buscar cartão por ID
+app.get('/api/deltapag/saved-card/:cardId', authMiddleware, async (c) => {
+  try {
+    const cardId = c.req.param('cardId')
+
+    const card = await c.env.DB.prepare(`
+      SELECT 
+        id, account_id, customer_id, customer_name, customer_email,
+        customer_cpf_cnpj, customer_phone, customer_postal_code,
+        customer_address, customer_address_number, customer_province,
+        card_token, card_brand, card_last_four, card_holder_name,
+        card_expiry_month, card_expiry_year, billing_type,
+        is_active, created_at, last_used_at, metadata
+      FROM saved_cards
+      WHERE id = ?
+    `).bind(cardId).first()
+
+    if (!card) {
+      return c.json({ error: 'Cartão não encontrado' }, 404)
+    }
+
+    return c.json({
+      ok: true,
+      card
+    })
+  } catch (error: any) {
+    console.error('❌ Erro ao buscar cartão:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Atualizar data de último uso do cartão
+app.patch('/api/deltapag/saved-card/:cardId/use', authMiddleware, async (c) => {
+  try {
+    const cardId = c.req.param('cardId')
+
+    await c.env.DB.prepare(`
+      UPDATE saved_cards
+      SET last_used_at = datetime('now'),
+          updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(cardId).run()
+
+    return c.json({
+      ok: true,
+      message: 'Data de uso atualizada'
+    })
+  } catch (error: any) {
+    console.error('❌ Erro ao atualizar uso do cartão:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Desativar cartão (soft delete)
+app.delete('/api/deltapag/saved-card/:cardId', authMiddleware, async (c) => {
+  try {
+    const cardId = c.req.param('cardId')
+
+    await c.env.DB.prepare(`
+      UPDATE saved_cards
+      SET is_active = 0,
+          updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(cardId).run()
+
+    console.log('🗑️ Cartão desativado:', cardId)
+
+    return c.json({
+      ok: true,
+      message: 'Cartão removido com sucesso'
+    })
+  } catch (error: any) {
+    console.error('❌ Erro ao remover cartão:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Buscar cartões por CPF/CNPJ
+app.get('/api/deltapag/saved-cards/cpf/:cpfCnpj', authMiddleware, async (c) => {
+  try {
+    const cpfCnpj = c.req.param('cpfCnpj')
+
+    const result = await c.env.DB.prepare(`
+      SELECT 
+        id, account_id, customer_id, customer_name, customer_email,
+        customer_cpf_cnpj, card_brand, card_last_four, card_holder_name,
+        card_expiry_month, card_expiry_year, is_active, created_at, last_used_at
+      FROM saved_cards
+      WHERE customer_cpf_cnpj = ? AND is_active = 1
+      ORDER BY last_used_at DESC, created_at DESC
+    `).bind(cpfCnpj).all()
+
+    return c.json({
+      ok: true,
+      cards: result.results || []
+    })
+  } catch (error: any) {
+    console.error('❌ Erro ao buscar cartões por CPF:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Buscar cartões por email
+app.get('/api/deltapag/saved-cards/email/:email', authMiddleware, async (c) => {
+  try {
+    const email = c.req.param('email')
+
+    const result = await c.env.DB.prepare(`
+      SELECT 
+        id, account_id, customer_id, customer_name, customer_email,
+        customer_cpf_cnpj, card_brand, card_last_four, card_holder_name,
+        card_expiry_month, card_expiry_year, is_active, created_at, last_used_at
+      FROM saved_cards
+      WHERE customer_email = ? AND is_active = 1
+      ORDER BY last_used_at DESC, created_at DESC
+    `).bind(email).all()
+
+    return c.json({
+      ok: true,
+      cards: result.results || []
+    })
+  } catch (error: any) {
+    console.error('❌ Erro ao buscar cartões por email:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Exportar cartões para CSV
+app.get('/api/admin/deltapag/saved-cards/export/csv', authMiddleware, async (c) => {
+  try {
+    const result = await c.env.DB.prepare(`
+      SELECT 
+        sc.id, sc.account_id, a.name as account_name,
+        sc.customer_name, sc.customer_email, sc.customer_cpf_cnpj,
+        sc.customer_phone, sc.card_brand, sc.card_last_four,
+        sc.card_holder_name, sc.card_expiry_month, sc.card_expiry_year,
+        sc.created_at, sc.last_used_at
+      FROM saved_cards sc
+      LEFT JOIN accounts a ON sc.account_id = a.id
+      WHERE sc.is_active = 1
+      ORDER BY sc.created_at DESC
+    `).all()
+
+    const cards = result.results || []
+    const csv = [
+      'ID,Conta ID,Conta Nome,Cliente Nome,Cliente Email,CPF/CNPJ,Telefone,Bandeira,Últimos 4,Nome no Cartão,Mês Exp,Ano Exp,Criado Em,Último Uso',
+      ...cards.map((c: any) => 
+        `${c.id},${c.account_id},${c.account_name},${c.customer_name},${c.customer_email},${c.customer_cpf_cnpj},${c.customer_phone || ''},${c.card_brand || ''},${c.card_last_four},${c.card_holder_name},${c.card_expiry_month},${c.card_expiry_year},${c.created_at},${c.last_used_at || ''}`
+      )
+    ].join('\n')
+
+    return new Response(csv, {
+      headers: {
+        'Content-Type': 'text/csv',
+        'Content-Disposition': 'attachment; filename="cartoes-salvos.csv"'
+      }
+    })
+  } catch (error: any) {
+    console.error('❌ Erro ao exportar cartões:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
