@@ -654,12 +654,22 @@ async function showDeltapagLinksModal() {
                             <span><i class="fas fa-users mr-1"></i>${link.uses_count || 0} cadastros</span>
                             <span><i class="fas fa-calendar-plus mr-1"></i>Criado em ${new Date(link.created_at).toLocaleDateString('pt-BR')}</span>
                         </div>
-                        ${link.status === 'ACTIVE' && !isExpired ? `
-                            <button onclick="deactivateLink('${link.id}')" 
-                                class="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition">
-                                <i class="fas fa-ban mr-1"></i>Desativar
+                        <div class="flex items-center gap-2">
+                            <button onclick="editLink('${link.id}', '${link.description.replace(/'/g, "\\'")}', '${link.value}', '${link.recurrence_type}', '${link.valid_until}')" 
+                                class="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition">
+                                <i class="fas fa-edit mr-1"></i>Editar
                             </button>
-                        ` : ''}
+                            ${link.status === 'ACTIVE' && !isExpired ? `
+                                <button onclick="deactivateLink('${link.id}')" 
+                                    class="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition">
+                                    <i class="fas fa-ban mr-1"></i>Desativar
+                                </button>
+                            ` : ''}
+                            <button onclick="deleteLink('${link.id}')" 
+                                class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition">
+                                <i class="fas fa-trash mr-1"></i>Excluir
+                            </button>
+                        </div>
                     </div>
                 </div>
             `;
@@ -727,9 +737,25 @@ async function showQRCodeModal(linkId, linkUrl, description, value, recurrence) 
     console.log('🎯 showQRCodeModal chamada:', { linkId, linkUrl, description, value, recurrence });
     currentQRData = { linkId, linkUrl, description, value, recurrence };
     
-    // Verificar se biblioteca QRCode está carregada (qrcode@1.5.3 cria window.QRCode)
+    // Verificar se biblioteca QRCode está carregada, se não, carregar dinamicamente
     if (typeof window.QRCode === 'undefined') {
-        console.error('❌ Biblioteca QRCode não carregada');
+        console.log('📦 Biblioteca QRCode não carregada, carregando dinamicamente...');
+        
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js';
+        document.head.appendChild(script);
+        
+        await new Promise((resolve, reject) => {
+            script.onload = resolve;
+            script.onerror = () => reject(new Error('Falha ao carregar biblioteca QRCode'));
+        });
+        
+        console.log('✅ Biblioteca QRCode carregada dinamicamente');
+    }
+    
+    // Verificar novamente após carregamento
+    if (typeof window.QRCode === 'undefined') {
+        console.error('❌ Biblioteca QRCode ainda não está disponível');
         console.log('🔍 Bibliotecas disponíveis:', {
             window_QRCode: typeof window.QRCode,
             window_qrcode: typeof window.qrcode
@@ -1167,11 +1193,85 @@ async function syncDeltapagCards() {
     }
 }
 
+// ==========================================
+// EDITAR E EXCLUIR LINKS
+// ==========================================
+
+async function editLink(linkId, description, value, recurrenceType, validUntil) {
+    console.log('✏️ Editando link:', { linkId, description, value, recurrenceType, validUntil });
+    
+    // Perguntar novos valores
+    const newDescription = prompt('Nova descrição:', description);
+    if (!newDescription) return;
+    
+    const newValue = prompt('Novo valor (R$):', value);
+    if (!newValue) return;
+    
+    const newValidUntil = prompt('Nova data de validade (YYYY-MM-DD):', validUntil.split('T')[0]);
+    if (!newValidUntil) return;
+    
+    const confirmEdit = confirm(`Confirmar edição do link "${description}"?`);
+    if (!confirmEdit) return;
+    
+    try {
+        const response = await axios.put(`/api/deltapag/links/${linkId}`, {
+            description: newDescription,
+            value: parseFloat(newValue),
+            recurrence_type: recurrenceType,
+            valid_until: newValidUntil
+        });
+        
+        if (response.data.ok) {
+            alert('✅ Link atualizado com sucesso!');
+            // Recarregar lista de links
+            const accountId = document.getElementById('deltapag-account-select')?.value;
+            if (accountId) {
+                showDeltapagLinksModal(accountId);
+            }
+        } else {
+            throw new Error(response.data.error || 'Erro ao atualizar link');
+        }
+    } catch (error) {
+        console.error('❌ Erro ao editar link:', error);
+        alert('Erro ao editar link: ' + error.message);
+    }
+}
+
+async function deleteLink(linkId) {
+    const confirmDelete = confirm('⚠️ Tem certeza que deseja EXCLUIR este link?\n\nEsta ação NÃO pode ser desfeita!');
+    if (!confirmDelete) return;
+    
+    const confirmAgain = confirm('⚠️ ATENÇÃO!\n\nTodos os cadastros realizados através deste link serão mantidos, mas o link será PERMANENTEMENTE removido.\n\nConfirmar exclusão?');
+    if (!confirmAgain) return;
+    
+    console.log('🗑️ Excluindo link:', linkId);
+    
+    try {
+        const response = await axios.delete(`/api/deltapag/links/${linkId}`);
+        
+        if (response.data.ok) {
+            alert('✅ Link excluído com sucesso!');
+            // Recarregar lista de links
+            const accountId = document.getElementById('deltapag-account-select')?.value;
+            if (accountId) {
+                showDeltapagLinksModal(accountId);
+            }
+        } else {
+            throw new Error(response.data.error || 'Erro ao excluir link');
+        }
+    } catch (error) {
+        console.error('❌ Erro ao excluir link:', error);
+        alert('Erro ao excluir link: ' + error.message);
+    }
+}
+
 // Expor funções globalmente para uso no HTML
 window.showQRCodeModal = showQRCodeModal;
 window.downloadQRCodeFromCanvas = downloadQRCodeFromCanvas;
 window.closeQRCodeModal = closeQRCodeModal;
 window.copyQRCodeHTML = copyQRCodeHTML;
+window.editLink = editLink;
+window.deleteLink = deleteLink;
 
 // Log de carregamento
 console.log('✅ DeltaPag Section JS carregado');
@@ -1180,4 +1280,8 @@ console.log('✅ Funções QR Code exportadas:', {
     downloadQRCodeFromCanvas: typeof window.downloadQRCodeFromCanvas,
     closeQRCodeModal: typeof window.closeQRCodeModal,
     copyQRCodeHTML: typeof window.copyQRCodeHTML
+});
+console.log('✅ Funções de gerenciamento exportadas:', {
+    editLink: typeof window.editLink,
+    deleteLink: typeof window.deleteLink
 });

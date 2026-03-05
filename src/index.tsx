@@ -5833,6 +5833,43 @@ app.patch('/api/deltapag/links/:linkId/deactivate', authMiddleware, async (c) =>
     return c.json({ error: error.message }, 500)
   }
 })
+
+// Editar link DeltaPag
+app.put('/api/deltapag/links/:linkId', authMiddleware, async (c) => {
+  try {
+    const linkId = c.req.param('linkId')
+    const { description, value, recurrence_type, valid_until } = await c.req.json()
+    
+    await c.env.DB.prepare(`
+      UPDATE deltapag_signup_links 
+      SET description = ?, value = ?, recurrence_type = ?, valid_until = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(description, value, recurrence_type, valid_until, linkId).run()
+    
+    return c.json({ ok: true })
+  } catch (error: any) {
+    console.error('Erro ao editar link:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Excluir link DeltaPag
+app.delete('/api/deltapag/links/:linkId', authMiddleware, async (c) => {
+  try {
+    const linkId = c.req.param('linkId')
+    
+    await c.env.DB.prepare(`
+      DELETE FROM deltapag_signup_links 
+      WHERE id = ?
+    `).bind(linkId).run()
+    
+    return c.json({ ok: true })
+  } catch (error: any) {
+    console.error('Erro ao excluir link:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 // ============================================
 // DELTAPAG - CARTÕES SALVOS (SAVED CARDS)
 // ============================================
@@ -12142,7 +12179,7 @@ curl "https://admin.corretoracorporate.com.br/api/reports/all-accounts/refunded?
         <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
         <script src="/static/payment-links.js?v=4.2"></script>
         <script src="/static/payment-filters.js?v=4.2"></script>
-        <script src="/static/deltapag-section.js?v=5.0"></script>
+        <script src="/static/deltapag-section.js?v=5.1"></script>
         <script src="/static/reports-detailed.js?v=2.1"></script>
         <script src="/static/banner-generator.js?v=1.0"></script>
     </body>
