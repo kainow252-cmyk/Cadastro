@@ -4636,26 +4636,66 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
       
       if (!authorizationResult.ok) {
         console.error('❌ Erro ao criar autorização PIX:', authorizationResult.data)
-        return c.json({ 
-          error: 'Erro ao criar autorização PIX Automático',
-          details: authorizationResult.data,
-          walletId: walletId,
-          value: value
-        }, 400)
-      }
-      
-      subscription = authorizationResult.data
-      
-      // A autorização PIX já retorna o QR Code para aprovação
-      // O cliente escaneia e autoriza no app do banco
-      // Após autorização, débitos são automáticos
-      
-      firstPayment = {
-        id: subscription.id,
-        value: value,
-        dueDate: firstDueDate,
-        status: 'PENDING_AUTHORIZATION',
-        invoiceUrl: subscription.invoiceUrl || null
+        console.log('⚠️ Fallback: Tentando criar subscription PIX mensal...')
+        
+        // FALLBACK: Se API de autorização falhar, usar subscription PIX mensal
+        const subscriptionData = {
+          customer: customerId,
+          billingType: 'PIX',
+          value: value,
+          nextDueDate: new Date(Date.now() + 24*60*60*1000).toISOString().split('T')[0],
+          cycle: 'MONTHLY',
+          description: description || 'Mensalidade PIX',
+          split: createNetSplit(walletId, value, 20)
+        }
+        
+        const subscriptionResult = await asaasRequest(c, '/subscriptions', 'POST', subscriptionData)
+        
+        if (!subscriptionResult.ok) {
+          return c.json({ 
+            error: 'Erro ao criar assinatura PIX',
+            details: subscriptionResult.data,
+            authorizationError: authorizationResult.data,
+            walletId: walletId,
+            value: value
+          }, 400)
+        }
+        
+        subscription = subscriptionResult.data
+        
+        // Buscar primeiro pagamento da assinatura
+        const paymentsResult = await asaasRequest(c, `/payments?subscription=${subscription.id}`)
+        
+        if (!paymentsResult.ok || !paymentsResult.data?.data?.[0]) {
+          return c.json({
+            ok: true,
+            subscription: {
+              id: subscription.id,
+              status: subscription.status,
+              value: subscription.value,
+              nextDueDate: subscription.nextDueDate
+            },
+            warning: 'Assinatura criada, aguardando primeiro pagamento',
+            usedFallback: true
+          })
+        }
+        
+        firstPayment = paymentsResult.data.data[0]
+      } else {
+        // Sucesso na criação da autorização PIX
+        subscription = authorizationResult.data
+        
+        // A autorização PIX já retorna o QR Code para aprovação
+        // O cliente escaneia e autoriza no app do banco
+        // Após autorização, débitos são automáticos
+        
+        firstPayment = {
+          id: subscription.id,
+          value: value,
+          dueDate: firstDueDate,
+          status: 'PENDING_AUTHORIZATION',
+          invoiceUrl: subscription.invoiceUrl || null
+        }
       }
     }
     
