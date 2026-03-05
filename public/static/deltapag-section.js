@@ -782,51 +782,46 @@ async function showQRCodeModal(linkId, linkUrl, description, value, recurrence) 
     modal.classList.remove('hidden');
     
     // Gerar QR Code
-    const canvas = document.getElementById('qrcode-canvas');
-    if (!canvas) {
-        console.error('❌ Canvas qrcode-canvas não encontrado');
-        alert('Erro: Canvas do QR Code não encontrado.');
+    // Limpar container anterior
+    const container = document.getElementById('qrcode-canvas-container');
+    if (!container) {
+        console.error('❌ Container qrcode-canvas-container não encontrado');
+        alert('Erro: Container do QR Code não encontrado.');
         modal.classList.add('hidden');
         return;
     }
     
-    console.log('✅ Canvas encontrado:', canvas);
-    
-    // Adicionar classe de loading ao canvas
-    canvas.style.opacity = '0.5';
-    canvas.style.filter = 'blur(5px)';
+    console.log('✅ Container encontrado:', container);
+    container.innerHTML = ''; // Limpar QR Code anterior
     
     try {
         console.log('🔄 Gerando QR Code...');
-        // Usar a API correta do qrcode.min.js (qrcode@1.5.3)
-        QRCodeLib.toCanvas(canvas, linkUrl, {
+        
+        // Usar qrcodejs - cria automaticamente o elemento
+        const qrcode = new QRCodeLib(container, {
+            text: linkUrl,
             width: 280,
-            margin: 2,
-            color: {
-                dark: '#6b21a8',  // purple-800
-                light: '#ffffff'
-            }
-        }, function(error) {
-            if (error) {
-                console.error('❌ Erro ao gerar QR Code:', error);
-                alert(`Erro ao gerar QR Code: ${error.message}`);
-                modal.classList.add('hidden');
-                return;
-            }
-            
-            console.log('✅ QR Code gerado com sucesso!');
-            
-            // Remover loading do canvas
-            canvas.style.opacity = '1';
-            canvas.style.filter = 'none';
-            
-            // Gerar preview HTML
-            const qrDataURL = canvas.toDataURL('image/png');
-            const htmlCode = generateQRCodeHTML(linkUrl, description, value, recurrence, qrDataURL);
-            document.getElementById('qr-html-preview').textContent = htmlCode;
-            
-            console.log('✅ Modal pronto para uso');
+            height: 280,
+            colorDark: '#6b21a8',  // purple-800
+            colorLight: '#ffffff',
+            correctLevel: QRCodeLib.CorrectLevel.H
         });
+        
+        console.log('✅ QR Code gerado com sucesso!');
+        
+        // Aguardar renderização e gerar preview HTML
+        setTimeout(() => {
+            const canvas = container.querySelector('canvas');
+            if (canvas) {
+                const qrDataURL = canvas.toDataURL('image/png');
+                const htmlCode = generateQRCodeHTML(linkUrl, description, value, recurrence, qrDataURL);
+                document.getElementById('qr-html-preview').textContent = htmlCode;
+                console.log('✅ Modal pronto para uso');
+            } else {
+                console.warn('⚠️ Canvas não encontrado para preview HTML');
+            }
+        }, 100);
+        
     } catch (error) {
         console.error('❌ Erro ao gerar QR Code:', error);
         alert(`Erro ao gerar QR Code: ${error.message}\n\nTente recarregar a página.`);
@@ -871,11 +866,22 @@ function downloadQRCodeFromCanvas() {
         }
     }
     
-    // PRIORIDADE 3: Procurar qrcode-canvas (modal DeltaPag) apenas se nada foi encontrado
+    // PRIORIDADE 3: Procurar canvas dentro do qrcode-canvas-container (modal DeltaPag)
+    if (!canvas) {
+        const deltapagContainer = document.getElementById('qrcode-canvas-container');
+        if (deltapagContainer) {
+            canvas = deltapagContainer.querySelector('canvas');
+            if (canvas) {
+                console.log('🔍 Canvas encontrado no qrcode-canvas-container (modal DeltaPag)');
+            }
+        }
+    }
+    
+    // FALLBACK: Procurar por ID qrcode-canvas (compatibilidade com versões antigas)
     if (!canvas) {
         canvas = document.getElementById('qrcode-canvas');
         if (canvas) {
-            console.log('🔍 Canvas encontrado: qrcode-canvas (modal DeltaPag)');
+            console.log('🔍 Canvas encontrado: qrcode-canvas (fallback)');
         }
     }
     

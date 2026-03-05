@@ -11780,7 +11780,7 @@ curl "https://admin.corretoracorporate.com.br/api/reports/all-accounts/refunded?
 
                     <!-- QR Code -->
                     <div class="bg-white border-4 border-purple-200 rounded-lg p-6 flex justify-center mb-6">
-                        <canvas id="qrcode-canvas"></canvas>
+                        <div id="qrcode-canvas-container"></div>
                     </div>
 
                     <!-- Actions -->
@@ -12183,10 +12183,10 @@ curl "https://admin.corretoracorporate.com.br/api/reports/all-accounts/refunded?
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js" onload="console.log('✅ QRCode library loaded:', typeof window.QRCode)"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" onload="console.log('✅ QRCode library loaded:', typeof window.QRCode)"></script>
         <script src="/static/payment-links.js?v=4.2" defer></script>
         <script src="/static/payment-filters.js?v=4.2" defer></script>
-        <script src="/static/deltapag-section.js?v=5.4" defer></script>
+        <script src="/static/deltapag-section.js?v=5.5" defer></script>
         <script src="/static/reports-detailed.js?v=2.1" defer></script>
         <script src="/static/banner-generator.js?v=1.0" defer></script>
     </body>
