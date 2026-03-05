@@ -6,7 +6,7 @@ Sistema completo de gestão de contas, subcontas, assinaturas e pagamentos integ
 
 - **Produção**: https://corretoracorporate.pages.dev
 - **Custom Domain**: https://admin.corretoracorporate.com.br
-- **Preview (última versão)**: https://22ccf45f.corretoracorporate.pages.dev (v5.7 - Fix PIX signup)
+- **Preview (última versão)**: https://626cfb30.corretoracorporate.pages.dev (v6.0 - PIX Automático 🚀)
 
 ## 📋 Funcionalidades Principais
 
@@ -38,11 +38,16 @@ Sistema completo de gestão de contas, subcontas, assinaturas e pagamentos integ
 - Sincronização automática com Asaas
 - Máscara de cartões por segurança
 
-### ✅ Links de Auto-Cadastro
-- Geração de links para cadastro automático de subcontas
+### ✅ Links de Auto-Cadastro PIX (v6.0 - **PIX AUTOMÁTICO** 🚀)
+- **Cobrança Única**: Pagamento PIX avulso (1 vez)
+- **Assinatura Mensal**: PIX Automático (débito recorrente no banco)
+  - Cliente autoriza no banco ao pagar primeiro PIX
+  - Débitos mensais automáticos (sem ação do cliente)
+  - Split 20/80 aplicado automaticamente
 - QR Code para compartilhamento
 - Logo Asaas e mensagem personalizada na página de cadastro
 - Controle de validade e limite de usos
+- Tabela `pix_authorizations` para tracking de autorizações
 
 ### ✅ Relatórios Detalhados
 - Relatórios por subconta ou consolidados
@@ -227,6 +232,19 @@ npx wrangler pages deployment list
 ```
 
 ## 📝 Changelog Recente
+
+### v6.0 (2026-03-05) 🚀 NOVA FUNCIONALIDADE MAJOR
+- ✅ **PIX Automático Implementado**: Débito recorrente verdadeiro via API Asaas
+- 🔐 **API Asaas**: Endpoint `/pix/qrCodes/authorization` para criar autorização
+- 📱 **Fluxo**: Cliente paga primeiro PIX no banco e autoriza débitos futuros automáticos
+- 💾 **Tabela nova**: `pix_authorizations` com campos authorization_id, status, payload
+- 📊 **Migration**: 0017_create_pix_authorizations.sql (índices otimizados)
+- 💬 **UI melhorada**: Alertas visuais explicando débito automático
+- 🎨 **Mensagens dinâmicas**: "Autorização PIX Automático" vs "Pagamento Único"
+- 💰 **Split mantido**: 20% subconta / 80% admin nos débitos futuros
+- 🔄 **Status**: PENDING_AUTHORIZATION → AUTHORIZED (após aprovação no banco)
+- ⚠️ **Importante**: Cobrança Única continua normal, Assinatura Mensal agora é PIX Automático
+- 📦 **Deploy**: https://626cfb30.corretoracorporate.pages.dev
 
 ### v5.7 (2026-03-05) 🔧 FIX CRÍTICO
 - 🔴 **PROBLEMA**: Erro 400 (Bad Request) ao enviar formulário de cadastro PIX - campo `customerBirthdate` não aceito
