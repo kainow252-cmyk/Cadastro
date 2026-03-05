@@ -727,20 +727,21 @@ async function showQRCodeModal(linkId, linkUrl, description, value, recurrence) 
     console.log('🎯 showQRCodeModal chamada:', { linkId, linkUrl, description, value, recurrence });
     currentQRData = { linkId, linkUrl, description, value, recurrence };
     
-    // Verificar se biblioteca QRCode está carregada
-    if (typeof QRCode === 'undefined') {
+    // Verificar se biblioteca QRCode está carregada (qrcode@1.5.3 usa window.QRCode maiúsculo)
+    const QRCodeLib = window.QRCode || QRCode;
+    if (typeof QRCodeLib === 'undefined') {
         console.error('❌ Biblioteca QRCode não carregada');
         console.log('🔍 Bibliotecas disponíveis:', {
             QRCode: typeof QRCode,
-            qrcode: typeof qrcode,
             window_QRCode: typeof window.QRCode,
+            qrcode: typeof qrcode,
             window_qrcode: typeof window.qrcode
         });
         alert('Erro: Biblioteca QR Code não foi carregada. Recarregue a página e tente novamente.');
         return;
     }
     
-    console.log('✅ Biblioteca QRCode encontrada');
+    console.log('✅ Biblioteca QRCode encontrada:', QRCodeLib);
     
     // Atualizar informações do link
     document.getElementById('qr-link-description').textContent = description;
@@ -768,8 +769,8 @@ async function showQRCodeModal(linkId, linkUrl, description, value, recurrence) 
     
     try {
         console.log('🔄 Gerando QR Code...');
-        // Usar a API correta do qrcode.min.js
-        QRCode.toCanvas(canvas, linkUrl, {
+        // Usar a API correta do qrcode.min.js (qrcode@1.5.3)
+        QRCodeLib.toCanvas(canvas, linkUrl, {
             width: 280,
             margin: 2,
             color: {
