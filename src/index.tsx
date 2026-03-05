@@ -12183,12 +12183,12 @@ curl "https://admin.corretoracorporate.com.br/api/reports/all-accounts/refunded?
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
-        <script src="/static/payment-links.js?v=4.2"></script>
-        <script src="/static/payment-filters.js?v=4.2"></script>
-        <script src="/static/deltapag-section.js?v=5.3"></script>
-        <script src="/static/reports-detailed.js?v=2.1"></script>
-        <script src="/static/banner-generator.js?v=1.0"></script>
+        <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js" onload="console.log('✅ QRCode library loaded:', typeof window.QRCode)"></script>
+        <script src="/static/payment-links.js?v=4.2" defer></script>
+        <script src="/static/payment-filters.js?v=4.2" defer></script>
+        <script src="/static/deltapag-section.js?v=5.4" defer></script>
+        <script src="/static/reports-detailed.js?v=2.1" defer></script>
+        <script src="/static/banner-generator.js?v=1.0" defer></script>
     </body>
     </html>
   `)
