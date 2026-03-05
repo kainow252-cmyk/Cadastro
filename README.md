@@ -6,7 +6,16 @@ Sistema completo de gestão de contas, subcontas, assinaturas e pagamentos integ
 
 - **Produção**: https://corretoracorporate.pages.dev
 - **Custom Domain**: https://admin.corretoracorporate.com.br
-- **Preview (última versão)**: https://6d2f5197.corretoracorporate.pages.dev (v6.0.1 - PIX Automático + Fallback)
+- **Preview (última versão)**: https://27ce7e8a.corretoracorporate.pages.dev (v6.0.3 - PIX Automático CORRETO)
+
+## ⚠️ IMPORTANTE: Aplicar Migration
+
+**ANTES de usar o sistema, execute**:
+```bash
+npx wrangler d1 migrations apply corretoracorporate-db --remote
+```
+
+Isso criará a tabela `pix_authorizations` necessária para PIX Automático.
 
 ## 📋 Funcionalidades Principais
 
