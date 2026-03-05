@@ -12186,9 +12186,9 @@ curl "https://admin.corretoracorporate.com.br/api/reports/all-accounts/refunded?
         <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" onload="console.log('✅ QRCode library loaded:', typeof window.QRCode)"></script>
         <script src="/static/payment-links.js?v=4.2" defer></script>
         <script src="/static/payment-filters.js?v=4.2" defer></script>
-        <script src="/static/deltapag-section.js?v=5.5" defer></script>
+        <script src="/static/deltapag-section.js?v=5.6" defer></script>
         <script src="/static/reports-detailed.js?v=2.1" defer></script>
-        <script src="/static/banner-generator.js?v=1.0" defer></script>
+        <script src="/static/banner-generator.js?v=1.1" defer></script>
     </body>
     </html>
   `)

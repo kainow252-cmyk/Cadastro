@@ -1,6 +1,7 @@
 // Gerar Banner de Propaganda com QR Code
 let currentBannerAccountId = null;
 let currentBannerLink = null;
+let useProvidedLink = false; // Flag para usar link fornecido em vez de gerar novo
 
 // Abrir modal de banner
 function openBannerModal(accountId, accountName) {
@@ -109,8 +110,15 @@ async function updateBannerPreview() {
     
     const gradient = gradients[color] || gradients.purple;
     
-    // Gerar link atualizado
-    const link = generateBannerLink();
+    // Usar link fornecido ou gerar novo
+    let link;
+    if (useProvidedLink && document.getElementById('banner-link').value) {
+        link = document.getElementById('banner-link').value;
+        console.log('🔗 Usando link fornecido:', link);
+    } else {
+        link = generateBannerLink();
+        console.log('🔗 Link gerado automaticamente:', link);
+    }
     let qrCodeDataUrl = '';
     
     console.log('🔗 Link gerado para QR Code:', link);
@@ -186,8 +194,13 @@ async function downloadBanner() {
     const color = document.getElementById('banner-color').value;
     const buttonText = document.getElementById('banner-button-text').value || 'Cadastre-se Agora';
     
-    // Gerar link atualizado
-    const link = generateBannerLink();
+    // Usar link fornecido ou gerar novo
+    let link;
+    if (useProvidedLink && document.getElementById('banner-link').value) {
+        link = document.getElementById('banner-link').value;
+    } else {
+        link = generateBannerLink();
+    }
     
     // Criar canvas
     const canvas = document.createElement('canvas');
@@ -410,3 +423,10 @@ if (!CanvasRenderingContext2D.prototype.roundRect) {
         return this;
     };
 }
+
+// Expor variáveis e funções globalmente
+window.useProvidedLink = useProvidedLink;
+window.updateBannerPreview = updateBannerPreview;
+window.openBannerModal = openBannerModal;
+window.closeBannerModal = closeBannerModal;
+window.generateAndShowBanner = generateAndShowBanner;

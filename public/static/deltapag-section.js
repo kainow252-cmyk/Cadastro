@@ -642,11 +642,18 @@ async function showDeltapagLinksModal() {
                                 <i class="fas fa-copy mr-1"></i>Copiar
                             </button>
                         </div>
-                        <button onclick="showQRCodeModal('${link.id}', '${linkUrl}', '${link.description.replace(/'/g, "\\'")}', '${parseFloat(link.value).toFixed(2)}', '${recurrenceMap[link.recurrence_type] || link.recurrence_type}')" 
-                            class="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition flex items-center justify-center gap-2">
-                            <i class="fas fa-qrcode"></i>
-                            Gerar QR Code
-                        </button>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button onclick="showQRCodeModal('${link.id}', '${linkUrl}', '${link.description.replace(/'/g, "\\'")}', '${parseFloat(link.value).toFixed(2)}', '${recurrenceMap[link.recurrence_type] || link.recurrence_type}')" 
+                                class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition flex items-center justify-center gap-2">
+                                <i class="fas fa-qrcode"></i>
+                                QR Code
+                            </button>
+                            <button onclick="openBannerGeneratorForLink('${link.id}', '${linkUrl}', '${link.description.replace(/'/g, "\\'")}', '${parseFloat(link.value).toFixed(2)}', '${recurrenceMap[link.recurrence_type] || link.recurrence_type}')" 
+                                class="px-4 py-2 bg-gradient-to-r from-pink-600 to-purple-600 text-white rounded-lg hover:from-pink-700 hover:to-purple-700 transition flex items-center justify-center gap-2">
+                                <i class="fas fa-image"></i>
+                                Banner
+                            </button>
+                        </div>
                     </div>
                     
                     <div class="flex items-center justify-between text-sm">
@@ -1276,6 +1283,52 @@ async function deleteLink(linkId) {
     }
 }
 
+// ==========================================
+// BANNER GENERATOR PARA LINKS
+// ==========================================
+
+async function openBannerGeneratorForLink(linkId, linkUrl, description, value, recurrence) {
+    console.log('🎨 Abrindo gerador de banner para link DeltaPag:', { linkId, linkUrl, description, value, recurrence });
+    
+    // Fechar modal de links
+    document.getElementById('deltapag-links-modal').classList.add('hidden');
+    
+    // Abrir modal de banner
+    const bannerModal = document.getElementById('banner-modal');
+    if (!bannerModal) {
+        alert('Modal de banner não encontrado. Verifique se banner-generator.js está carregado.');
+        return;
+    }
+    
+    // Ativar flag para usar link fornecido
+    if (typeof window.useProvidedLink !== 'undefined') {
+        window.useProvidedLink = true;
+    }
+    
+    bannerModal.style.display = '';
+    bannerModal.classList.remove('hidden');
+    
+    // Preencher campos do banner
+    document.getElementById('banner-title').value = description || 'Assine Agora!';
+    document.getElementById('banner-description').value = `Assinatura ${recurrence}`;
+    document.getElementById('banner-value').value = value;
+    document.getElementById('banner-link').value = linkUrl;
+    
+    // Tipo de cobrança (mensal por padrão)
+    const typeSelect = document.getElementById('banner-type');
+    if (typeSelect) {
+        typeSelect.value = 'monthly';
+    }
+    
+    // Resetar estado do modal
+    document.getElementById('generate-banner-container').classList.remove('hidden');
+    document.getElementById('banner-preview-container').classList.add('hidden');
+    document.getElementById('banner-actions').classList.add('hidden');
+    
+    console.log('✅ Modal de banner aberto e campos preenchidos');
+    console.log('🔗 Link DeltaPag:', linkUrl);
+}
+
 // Expor funções globalmente para uso no HTML
 window.showQRCodeModal = showQRCodeModal;
 window.downloadQRCodeFromCanvas = downloadQRCodeFromCanvas;
@@ -1283,6 +1336,7 @@ window.closeQRCodeModal = closeQRCodeModal;
 window.copyQRCodeHTML = copyQRCodeHTML;
 window.editLink = editLink;
 window.deleteLink = deleteLink;
+window.openBannerGeneratorForLink = openBannerGeneratorForLink;
 
 // Log de carregamento
 console.log('✅ DeltaPag Section JS carregado');
