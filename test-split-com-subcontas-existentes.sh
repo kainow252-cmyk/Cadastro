@@ -13,11 +13,11 @@ echo ""
 API_KEY='$aact_hmlg_000MzkwODA2MWY2OGM3MWRlMDU2NWM3MzJlNzZmNGZhZGY6OmRiZjA4YTExLTIwY2MtNDM4OS04MDU5LTcyMmM0NTZhZmY1NTo6JGFhY2hfOGM2MTBiYTQtOTcyNi00OTQ5LThjYTUtZDA1OTRlZTVhODE5'
 API_URL='https://sandbox.asaas.com/api/v3'
 
-# WalletIds das subcontas (vistas na screenshot)
-# Formato: wallet:xxx...
+# WalletIds CORRETOS das subcontas (obtidos do painel Asaas)
 WALLET_IDS=(
-  "03b6c751c3704c48a0b63c9c28fb7c57"  # Subconta 1 - Gelci jose da silva
-  "f1da7b039896c95c91b6fcb8aa14d4e1"  # Subconta 2 - RUTHYELI GOMES COSTA SILVA
+  "553fbb67-5370-4ea2-9f04-c5bece015bc7"  # Subconta 1 - Gelci jose da silva
+  "f1da7be9-a5fc-4295-82e0-a90ae3d99248"  # Subconta 2 - RUTHYELI GOMES COSTA SILVA
+  "cb64c741-2c86-4466-ad31-7ba58cd698c0"  # Subconta 3 - Gelci jose da silva (2)
 )
 
 echo "1️⃣ Validando conta principal..."
@@ -43,7 +43,7 @@ echo ""
 
 # Testar split com cada subconta
 COBRANCAS_CRIADAS=0
-VALORES=(80.00 120.00)
+VALORES=(80.00 120.00 150.00)
 
 for i in "${!WALLET_IDS[@]}"; do
   WALLET_ID="${WALLET_IDS[$i]}"
