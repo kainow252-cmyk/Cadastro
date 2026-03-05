@@ -727,20 +727,18 @@ async function showQRCodeModal(linkId, linkUrl, description, value, recurrence) 
     console.log('🎯 showQRCodeModal chamada:', { linkId, linkUrl, description, value, recurrence });
     currentQRData = { linkId, linkUrl, description, value, recurrence };
     
-    // Verificar se biblioteca QRCode está carregada (qrcode@1.5.3 usa window.QRCode maiúsculo)
-    const QRCodeLib = window.QRCode || QRCode;
-    if (typeof QRCodeLib === 'undefined') {
+    // Verificar se biblioteca QRCode está carregada (qrcode@1.5.3 cria window.QRCode)
+    if (typeof window.QRCode === 'undefined') {
         console.error('❌ Biblioteca QRCode não carregada');
         console.log('🔍 Bibliotecas disponíveis:', {
-            QRCode: typeof QRCode,
             window_QRCode: typeof window.QRCode,
-            qrcode: typeof qrcode,
             window_qrcode: typeof window.qrcode
         });
-        alert('Erro: Biblioteca QR Code não foi carregada. Recarregue a página e tente novamente.');
+        alert('Erro: Biblioteca QR Code não foi carregada. Recarregue a página (Ctrl+Shift+R) e tente novamente.');
         return;
     }
     
+    const QRCodeLib = window.QRCode;
     console.log('✅ Biblioteca QRCode encontrada:', QRCodeLib);
     
     // Atualizar informações do link
