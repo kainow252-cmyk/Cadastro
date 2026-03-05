@@ -4670,38 +4670,22 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
         
         if (!subscriptionResult.ok) {
           console.error('❌ Erro ao criar pagamento PIX:', subscriptionResult.data)
-          console.log('⚠️ Fallback 2: Tentando criar cobrança BOLETO...')
           
-          // FALLBACK 2: Se PIX falhar, usar BOLETO (sempre disponível)
-          const boletoData = {
-            customer: customerId,
-            billingType: 'BOLETO',
-            value: value,
-            dueDate: new Date(Date.now() + 7*24*60*60*1000).toISOString().split('T')[0],
-            description: description || 'Pagamento - Primeira parcela mensal',
-            split: createNetSplit(walletId, value, 20)
-          }
-          
-          const boletoResult = await asaasRequest(c, '/payments', 'POST', boletoData)
-          
-          if (!boletoResult.ok) {
-            return c.json({ 
-              error: 'Erro ao criar cobrança',
-              details: boletoResult.data,
-              pixError: subscriptionResult.data,
-              authorizationError: authorizationResult.data,
-              message: 'PIX não disponível nesta conta. Configure uma chave PIX no Asaas para usar este método.'
-            }, 400)
-          }
-          
-          // Boleto criado com sucesso
-          firstPayment = boletoResult.data
-          subscription = { 
-            id: firstPayment.id,
-            status: 'ACTIVE',
-            value: value,
-            usedBoleto: true
-          }
+          // Retornar erro explicando que PIX não está disponível
+          return c.json({ 
+            error: 'PIX não está disponível nesta conta Asaas',
+            details: subscriptionResult.data,
+            authorizationError: authorizationResult.data,
+            solution: 'Configure uma chave PIX no painel Asaas: Configurações → PIX → Cadastrar Chave',
+            steps: [
+              '1. Acesse https://www.asaas.com (ou sandbox)',
+              '2. Menu → Configurações → PIX',
+              '3. Cadastrar Nova Chave PIX',
+              '4. Escolha: CPF, Email, Celular ou Aleatória',
+              '5. Verifique a chave (email/SMS)',
+              '6. Tente novamente'
+            ]
+          }, 400)
         } else {
           // Pagamento PIX criado com sucesso (fallback)
           firstPayment = subscriptionResult.data
@@ -4915,19 +4899,23 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
         value: subscription.value,
         cycle: subscription.cycle,
         nextDueDate: subscription.nextDueDate,
-        description: subscription.description
+        description: subscription.description,
+        usedBoleto: subscription.usedBoleto || false
       } : null,
       firstPayment: {
         id: firstPayment.id,
         status: firstPayment.status,
         dueDate: firstPayment.dueDate,
         invoiceUrl: firstPayment.invoiceUrl,
+        bankSlipUrl: firstPayment.bankSlipUrl || null,
+        billingType: firstPayment.billingType || (pixData ? 'PIX' : 'BOLETO'),
         pix: pixData
       },
       splitConfig: {
         subAccount: 20,
         mainAccount: 80
-      }
+      },
+      message: pixData ? 'PIX gerado com sucesso' : 'PIX não disponível. Cobrança via boleto criada.'
     })
     
   } catch (error: any) {
