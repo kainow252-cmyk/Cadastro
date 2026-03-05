@@ -4503,14 +4503,21 @@ app.get('/api/pix/subscription-signup/:linkId', async (c) => {
 // Cliente completa auto-cadastro e cria assinatura (público)
 app.post('/api/pix/subscription-signup/:linkId', async (c) => {
   try {
+    console.log('🚀 POST /api/pix/subscription-signup iniciado')
     const linkId = c.req.param('linkId')
+    console.log('📝 LinkId:', linkId)
+    
     const body = await c.req.json()
     const { customerName, customerEmail, customerCpf, customerBirthdate } = body
     
     console.log('📥 Dados recebidos:', JSON.stringify(body, null, 2))
     
     if (!customerName || !customerEmail || !customerCpf) {
-      return c.json({ error: 'Nome, email e CPF são obrigatórios' }, 400)
+      console.error('❌ Validação falhou: campos obrigatórios ausentes')
+      return c.json({ 
+        error: 'Nome, email e CPF são obrigatórios',
+        received: { customerName, customerEmail, customerCpf }
+      }, 400)
     }
     
     // Buscar link
@@ -4638,49 +4645,64 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
         console.error('❌ Erro ao criar autorização PIX:', authorizationResult.data)
         console.log('⚠️ Fallback: Tentando criar subscription PIX mensal...')
         
-        // FALLBACK: Se API de autorização falhar, usar subscription PIX mensal
-        const subscriptionData = {
+        // FALLBACK: Se API de autorização falhar, criar pagamento PIX único
+        // Nota: Asaas não permite PIX em subscriptions, então criamos pagamento avulso
+        const paymentData = {
           customer: customerId,
           billingType: 'PIX',
           value: value,
-          nextDueDate: new Date(Date.now() + 24*60*60*1000).toISOString().split('T')[0],
-          cycle: 'MONTHLY',
-          description: description || 'Mensalidade PIX',
+          dueDate: new Date(Date.now() + 7*24*60*60*1000).toISOString().split('T')[0],
+          description: description || 'Pagamento PIX - Primeira parcela mensal',
           split: createNetSplit(walletId, value, 20)
         }
         
-        const subscriptionResult = await asaasRequest(c, '/subscriptions', 'POST', subscriptionData)
+        console.log('📤 Criando pagamento PIX (fallback):', JSON.stringify(paymentData, null, 2))
+        
+        const subscriptionResult = await asaasRequest(c, '/payments', 'POST', paymentData)
         
         if (!subscriptionResult.ok) {
-          return c.json({ 
-            error: 'Erro ao criar assinatura PIX',
-            details: subscriptionResult.data,
-            authorizationError: authorizationResult.data,
-            walletId: walletId,
+          console.error('❌ Erro ao criar pagamento PIX:', subscriptionResult.data)
+          console.log('⚠️ Fallback 2: Tentando criar cobrança BOLETO...')
+          
+          // FALLBACK 2: Se PIX falhar, usar BOLETO (sempre disponível)
+          const boletoData = {
+            customer: customerId,
+            billingType: 'BOLETO',
+            value: value,
+            dueDate: new Date(Date.now() + 7*24*60*60*1000).toISOString().split('T')[0],
+            description: description || 'Pagamento - Primeira parcela mensal',
+            split: createNetSplit(walletId, value, 20)
+          }
+          
+          const boletoResult = await asaasRequest(c, '/payments', 'POST', boletoData)
+          
+          if (!boletoResult.ok) {
+            return c.json({ 
+              error: 'Erro ao criar cobrança',
+              details: boletoResult.data,
+              pixError: subscriptionResult.data,
+              authorizationError: authorizationResult.data,
+              message: 'PIX não disponível nesta conta. Configure uma chave PIX no Asaas para usar este método.'
+            }, 400)
+          }
+          
+          // Boleto criado com sucesso
+          firstPayment = boletoResult.data
+          subscription = { 
+            id: firstPayment.id,
+            status: 'ACTIVE',
+            value: value,
+            usedBoleto: true
+          }
+        } else {
+          // Pagamento PIX criado com sucesso (fallback)
+          firstPayment = subscriptionResult.data
+          subscription = { 
+            id: firstPayment.id,
+            status: 'ACTIVE',
             value: value
-          }, 400)
+          }
         }
-        
-        subscription = subscriptionResult.data
-        
-        // Buscar primeiro pagamento da assinatura
-        const paymentsResult = await asaasRequest(c, `/payments?subscription=${subscription.id}`)
-        
-        if (!paymentsResult.ok || !paymentsResult.data?.data?.[0]) {
-          return c.json({
-            ok: true,
-            subscription: {
-              id: subscription.id,
-              status: subscription.status,
-              value: subscription.value,
-              nextDueDate: subscription.nextDueDate
-            },
-            warning: 'Assinatura criada, aguardando primeiro pagamento',
-            usedFallback: true
-          })
-        }
-        
-        firstPayment = paymentsResult.data.data[0]
       } else {
         // Sucesso na criação da autorização PIX
         subscription = authorizationResult.data
@@ -4901,8 +4923,13 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
     })
     
   } catch (error: any) {
-    console.error('Erro no auto-cadastro:', error)
-    return c.json({ error: error.message }, 500)
+    console.error('❌ Erro no auto-cadastro:', error)
+    console.error('📍 Stack trace:', error.stack)
+    return c.json({ 
+      error: error.message || 'Erro interno no servidor',
+      details: error.toString(),
+      stack: error.stack
+    }, 500)
   }
 })
 
