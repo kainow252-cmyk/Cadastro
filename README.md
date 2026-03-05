@@ -6,7 +6,7 @@ Sistema completo de gestão de contas, subcontas, assinaturas e pagamentos integ
 
 - **Produção**: https://corretoracorporate.pages.dev
 - **Custom Domain**: https://admin.corretoracorporate.com.br
-- **Preview (última versão)**: https://478e666b.corretoracorporate.pages.dev
+- **Preview (última versão)**: https://b3e6cefa.corretoracorporate.pages.dev
 
 ## 📋 Funcionalidades Principais
 
@@ -24,11 +24,13 @@ Sistema completo de gestão de contas, subcontas, assinaturas e pagamentos integ
 ### ✅ Links de Pagamento DeltaPag
 - Criação de links de pagamento recorrente (mensal, semanal, quinzenal, etc.)
 - Geração de QR Code para links (v5.5 - **CORRIGIDO**)
+- **Gerar Banner**: Banner personalizado com QR Code embutido (v5.6 - **NOVO** 🎨)
 - **Editar links**: descrição, valor, data de validade
 - **Excluir links**: com confirmação dupla
 - **Desativar links**: pausar temporariamente
 - Filtros por status, recorrência e período
 - Download de QR Code em PNG (280×280px)
+- Download de Banner em PNG (1080×1080px) para redes sociais
 
 ### ✅ Assinaturas DeltaPag
 - Listagem de assinaturas ativas/canceladas
@@ -226,6 +228,13 @@ npx wrangler pages deployment list
 
 ## 📝 Changelog Recente
 
+### v5.6 (2026-03-05) 🎨 NOVA FUNCIONALIDADE
+- ✅ **Gerar Banner**: Botão para criar banners personalizados com QR Code nos Links DeltaPag
+- ✅ **Banner personalizado**: Gradientes coloridos, QR Code embutido, 1080×1080px
+- ✅ **Integração**: banner-generator.js v1.1 com flag useProvidedLink
+- ✅ **Compartilhamento**: WhatsApp, Email, Telegram, Download PNG
+- 🎯 **Uso**: Links DeltaPag → Card → Botão "Banner" → Gerar → Baixar
+
 ### v5.5 (2026-03-05) ⭐ CORREÇÃO CRÍTICA
 - 🔴 **PROBLEMA IDENTIFICADO**: URL CDN do QRCode retornava 404 - `https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js`
 - ✅ **SOLUÇÃO**: Trocado para `https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js` (CDNJS)
@@ -269,8 +278,29 @@ Propriedade privada - Todos os direitos reservados.
 ---
 
 **Última atualização**: 2026-03-05  
-**Versão**: 5.5 ⭐  
+**Versão**: 5.6 🎨  
 **Status**: ✅ Produção - Sistema 100% operacional
+
+---
+
+## 🎨 Nova Funcionalidade v5.6
+
+**Gerar Banner para Links DeltaPag**  
+Crie banners personalizados com QR Code embutido em segundos!
+
+**Como usar:**
+1. Links DeltaPag → Visualizar Links
+2. Card do link → Clicar "Banner" (botão rosa/roxo)
+3. Gerar Banner → Baixar PNG (1080×1080px)
+
+**Recursos:**
+- 🎨 5 gradientes de cores profissionais
+- 📱 Formato quadrado para redes sociais
+- 🔲 QR Code integrado automaticamente
+- 📥 Download em alta qualidade
+- 📲 Compartilhamento direto (WhatsApp, Email, Telegram)
+
+Para detalhes completos, veja: [BANNER_DELTAPAG_v5.6.md](./BANNER_DELTAPAG_v5.6.md)
 
 ---
 
@@ -280,4 +310,4 @@ Propriedade privada - Todos os direitos reservados.
 **Solução**: Migrado para CDNJS + ajuste de API  
 **Resultado**: QR Code DeltaPag funcionando perfeitamente
 
-Para detalhes completos, veja: [RESUMO_CORRECOES_2026-03-05.md](./RESUMO_CORRECOES_2026-03-05.md)
+Para detalhes, veja: [RESUMO_CORRECOES_2026-03-05.md](./RESUMO_CORRECOES_2026-03-05.md)
