@@ -3470,16 +3470,20 @@ app.get('/api/admin/ses-status', async (c) => {
   })
 })
 
-// Webhook do Asaas para notificações de pagamento
+// Webhook do Asaas para notificações de pagamento e transferências
 app.post('/api/webhooks/asaas', async (c) => {
   try {
     const webhook = await c.req.json()
-    console.log('Webhook recebido:', webhook)
+    console.log('📩 Webhook recebido:', {
+      type: webhook.type || webhook.event,
+      timestamp: new Date().toISOString()
+    })
     
-    // Verificar tipo de evento
+    const db = c.env.DB
+    
+    // Processar eventos de PAGAMENTO
     if (webhook.event === 'PAYMENT_RECEIVED' || webhook.event === 'PAYMENT_CONFIRMED') {
       const payment = webhook.payment
-      const db = c.env.DB
       
       // Atualizar status do pagamento no banco D1
       await db.prepare(`
@@ -3492,18 +3496,63 @@ app.post('/api/webhooks/asaas', async (c) => {
         payment.id
       ).run()
       
-      console.log(`Pagamento ${payment.id} confirmado via webhook`)
+      console.log(`✅ Pagamento ${payment.id} confirmado via webhook`)
       
       return c.json({ 
         ok: true, 
-        message: 'Webhook processado',
+        message: 'Webhook de pagamento processado',
         paymentId: payment.id
       })
     }
     
+    // Processar eventos de TRANSFERÊNCIA
+    if (webhook.type === 'TRANSFER') {
+      const transfer = webhook.transfer
+      
+      console.log('💸 Evento de transferência:', {
+        id: transfer.id,
+        value: transfer.value,
+        status: transfer.status,
+        operationType: transfer.operationType,
+        dateCreated: transfer.dateCreated
+      })
+      
+      // Salvar/atualizar transferência no banco D1
+      try {
+        await db.prepare(`
+          INSERT OR REPLACE INTO transfers 
+          (id, value, net_value, transfer_fee, status, operation_type, date_created, effective_date, can_be_cancelled)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          transfer.id,
+          transfer.value,
+          transfer.netValue,
+          transfer.transferFee || 0,
+          transfer.status,
+          transfer.operationType,
+          transfer.dateCreated,
+          transfer.effectiveDate || null,
+          transfer.canBeCancelled ? 1 : 0
+        ).run()
+        
+        console.log(`✅ Transferência ${transfer.id} salva no banco`)
+      } catch (dbError: any) {
+        // Se a tabela não existir, apenas logar e continuar
+        console.log('⚠️ Aviso ao salvar transferência no DB:', dbError.message)
+      }
+      
+      return c.json({ 
+        ok: true, 
+        message: 'Webhook de transferência processado',
+        transferId: transfer.id,
+        status: transfer.status
+      })
+    }
+    
+    console.log('ℹ️ Evento ignorado:', webhook.type || webhook.event)
     return c.json({ ok: true, message: 'Evento ignorado' })
   } catch (error: any) {
-    console.error('Erro ao processar webhook:', error)
+    console.error('❌ Erro ao processar webhook:', error)
     return c.json({ ok: false, error: error.message }, 500)
   }
 })
@@ -3618,6 +3667,215 @@ app.post('/api/admin/sync-transactions', async (c) => {
     }, 500)
   }
 })
+
+// ===== ENDPOINTS DE SAQUES/TRANSFERÊNCIAS =====
+
+// Listar todos os saques/transferências
+app.get('/api/transfers', async (c) => {
+  try {
+    const { limit = '20', offset = '0', status } = c.req.query()
+    
+    let url = `/transfers?limit=${limit}&offset=${offset}`
+    if (status) {
+      url += `&status=${status}`
+    }
+    
+    const result = await asaasRequest(c, url)
+    
+    if (result.ok && result.data) {
+      return c.json({
+        ok: true,
+        transfers: result.data.data || [],
+        totalCount: result.data.totalCount || 0,
+        hasMore: result.data.hasMore || false
+      })
+    }
+    
+    return c.json({ 
+      ok: false, 
+      error: 'Erro ao buscar transferências' 
+    }, 500)
+  } catch (error: any) {
+    console.error('Erro ao listar transferências:', error)
+    return c.json({ ok: false, error: error.message }, 500)
+  }
+})
+
+// Consultar saque específico
+app.get('/api/transfers/:id', async (c) => {
+  try {
+    const transferId = c.req.param('id')
+    const result = await asaasRequest(c, `/transfers/${transferId}`)
+    
+    if (result.ok && result.data) {
+      return c.json({
+        ok: true,
+        transfer: result.data
+      })
+    }
+    
+    return c.json({ 
+      ok: false, 
+      error: 'Transferência não encontrada' 
+    }, 404)
+  } catch (error: any) {
+    console.error('Erro ao consultar transferência:', error)
+    return c.json({ ok: false, error: error.message }, 500)
+  }
+})
+
+// Criar novo saque/transferência
+app.post('/api/transfers', async (c) => {
+  try {
+    const body = await c.req.json()
+    
+    // Validações básicas
+    if (!body.value || body.value <= 0) {
+      return c.json({ 
+        ok: false, 
+        error: 'Valor inválido' 
+      }, 400)
+    }
+    
+    if (!body.bankAccount) {
+      return c.json({ 
+        ok: false, 
+        error: 'Dados bancários não informados' 
+      }, 400)
+    }
+    
+    // Validar dados bancários obrigatórios
+    const { bankAccount } = body
+    if (!bankAccount.bank?.code || !bankAccount.ownerName || !bankAccount.cpfCnpj) {
+      return c.json({
+        ok: false,
+        error: 'Dados bancários incompletos (código do banco, nome do titular e CPF/CNPJ são obrigatórios)'
+      }, 400)
+    }
+    
+    // Para transferência via PIX, chave PIX é obrigatória
+    // Para TED/DOC, agência e conta são obrigatórias
+    if (bankAccount.pixAddressKey) {
+      // Transferência via PIX
+      console.log('Transferência via PIX para chave:', bankAccount.pixAddressKey)
+    } else if (bankAccount.agency && bankAccount.account) {
+      // Transferência via TED/DOC
+      console.log('Transferência via TED/DOC para conta:', bankAccount.account)
+    } else {
+      return c.json({
+        ok: false,
+        error: 'Informe chave PIX ou dados bancários (agência e conta)'
+      }, 400)
+    }
+    
+    console.log('Criando transferência:', {
+      value: body.value,
+      operationType: bankAccount.pixAddressKey ? 'PIX' : 'TED',
+      destination: bankAccount.pixAddressKey || bankAccount.account
+    })
+    
+    const result = await asaasRequest(c, '/transfers', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    })
+    
+    if (result.ok && result.data) {
+      console.log('✅ Transferência criada:', result.data.id)
+      
+      return c.json({
+        ok: true,
+        transfer: result.data,
+        message: 'Transferência criada com sucesso'
+      })
+    }
+    
+    // Se houver erro da API Asaas
+    if (result.data?.errors) {
+      return c.json({
+        ok: false,
+        error: 'Erro ao criar transferência',
+        details: result.data.errors
+      }, 400)
+    }
+    
+    return c.json({ 
+      ok: false, 
+      error: 'Erro ao criar transferência' 
+    }, 500)
+  } catch (error: any) {
+    console.error('Erro ao criar transferência:', error)
+    return c.json({ 
+      ok: false, 
+      error: error.message,
+      stack: error.stack
+    }, 500)
+  }
+})
+
+// Cancelar saque/transferência
+app.delete('/api/transfers/:id', async (c) => {
+  try {
+    const transferId = c.req.param('id')
+    
+    console.log('Cancelando transferência:', transferId)
+    
+    const result = await asaasRequest(c, `/transfers/${transferId}`, {
+      method: 'DELETE'
+    })
+    
+    if (result.ok) {
+      console.log('✅ Transferência cancelada:', transferId)
+      
+      return c.json({
+        ok: true,
+        message: 'Transferência cancelada com sucesso',
+        transferId
+      })
+    }
+    
+    // Se houver erro da API Asaas
+    if (result.data?.errors) {
+      return c.json({
+        ok: false,
+        error: 'Erro ao cancelar transferência',
+        details: result.data.errors
+      }, 400)
+    }
+    
+    return c.json({ 
+      ok: false, 
+      error: 'Erro ao cancelar transferência' 
+    }, 500)
+  } catch (error: any) {
+    console.error('Erro ao cancelar transferência:', error)
+    return c.json({ ok: false, error: error.message }, 500)
+  }
+})
+
+// Consultar saldo disponível para saque
+app.get('/api/balance', async (c) => {
+  try {
+    const result = await asaasRequest(c, '/finance/balance')
+    
+    if (result.ok && result.data) {
+      return c.json({
+        ok: true,
+        balance: result.data.balance || 0,
+        availableForWithdrawal: result.data.balance || 0
+      })
+    }
+    
+    return c.json({ 
+      ok: false, 
+      error: 'Erro ao consultar saldo' 
+    }, 500)
+  } catch (error: any) {
+    console.error('Erro ao consultar saldo:', error)
+    return c.json({ ok: false, error: error.message }, 500)
+  }
+})
+
+// ===== FIM DOS ENDPOINTS DE SAQUES =====
 
 // Listar subcontas
 app.get('/api/accounts', async (c) => {
