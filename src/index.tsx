@@ -3519,6 +3519,33 @@ app.post('/api/webhooks/asaas', async (c) => {
       
       // Salvar/atualizar transferência no banco D1
       try {
+        // Primeiro, tentar criar a tabela se não existir
+        try {
+          await db.prepare(`
+            CREATE TABLE IF NOT EXISTS transfers (
+              id TEXT PRIMARY KEY,
+              value REAL NOT NULL,
+              net_value REAL NOT NULL,
+              transfer_fee REAL DEFAULT 0,
+              status TEXT NOT NULL,
+              operation_type TEXT,
+              date_created TEXT NOT NULL,
+              effective_date TEXT,
+              confirmed_date TEXT,
+              schedule_date TEXT,
+              can_be_cancelled INTEGER DEFAULT 0,
+              fail_reason TEXT,
+              description TEXT,
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+          `).run()
+          console.log('✅ Tabela transfers verificada/criada')
+        } catch (createError: any) {
+          console.log('ℹ️ Tabela transfers já existe ou erro ao criar:', createError.message)
+        }
+        
+        // Inserir/atualizar registro
         await db.prepare(`
           INSERT OR REPLACE INTO transfers 
           (id, value, net_value, transfer_fee, status, operation_type, date_created, effective_date, can_be_cancelled)
@@ -3537,15 +3564,18 @@ app.post('/api/webhooks/asaas', async (c) => {
         
         console.log(`✅ Transferência ${transfer.id} salva no banco`)
       } catch (dbError: any) {
-        // Se a tabela não existir, apenas logar e continuar
-        console.log('⚠️ Aviso ao salvar transferência no DB:', dbError.message)
+        // Se falhar, apenas logar mas não bloquear o webhook
+        console.log('⚠️ Erro ao salvar transferência no DB:', dbError.message)
+        console.log('📊 Dados da transferência foram recebidos corretamente, apenas não puderam ser salvos no DB')
       }
       
       return c.json({ 
         ok: true, 
-        message: 'Webhook de transferência processado',
+        message: 'Webhook de transferência processado com sucesso',
         transferId: transfer.id,
-        status: transfer.status
+        status: transfer.status,
+        value: transfer.value,
+        operationType: transfer.operationType
       })
     }
     
