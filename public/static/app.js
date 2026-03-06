@@ -114,9 +114,21 @@ async function loadAccounts() {
     try {
         const response = await axios.get('/api/accounts');
         
+        // 🔍 DEBUG: Mostrar resposta completa da API
+        console.log('🔍 DEBUG - Resposta da API /api/accounts:', response.data);
+        console.log('📊 DEBUG - Estrutura:', {
+            hasAccounts: !!response.data?.accounts,
+            accountsLength: response.data?.accounts?.length,
+            totalCount: response.data?.totalCount,
+            debug: response.data?.debug,
+            allKeys: Object.keys(response.data || {})
+        });
+        
         // Nova estrutura de resposta: {accounts: [...], totalCount: N}
         if (response.data && response.data.accounts) {
             const accounts = response.data.accounts || [];
+            
+            console.log('✅ DEBUG - Accounts array:', accounts);
             
             // Salvar accounts globalmente para filtros
             saveAccountsData(accounts);
