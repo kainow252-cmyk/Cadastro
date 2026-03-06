@@ -4606,7 +4606,7 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
       
       const paymentData = {
         customer: customerId,
-        billingType: 'BOLETO', // Temporário: usar BOLETO até PIX ser liberado
+        billingType: 'UNDEFINED', // Cliente escolhe: PIX, Boleto ou Cartão
         value: value,
         dueDate: new Date(Date.now() + 7*24*60*60*1000).toISOString().split('T')[0], // 7 dias
         description: description || 'Pagamento Único',
