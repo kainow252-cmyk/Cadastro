@@ -96,7 +96,8 @@ app.use('/api/*', async (c, next) => {
     '/api/subaccount-logout',
     '/api/public/signup',
     '/api/proxy/payments',
-    '/api/debug/env'
+    '/api/debug/env',
+    '/api/debug/asaas'
   ]
   
   // Public routes with exact match
@@ -9427,6 +9428,59 @@ app.get('/subaccount-dashboard', (c) => {
     </body>
     </html>
   `)
+})
+
+// Debug route - testar conexão Asaas
+app.get('/api/debug/asaas', async (c) => {
+  try {
+    const apiKey = c.env.ASAAS_API_KEY
+    const apiUrl = c.env.ASAAS_API_URL
+    
+    // Teste 1: Verificar variáveis
+    const envCheck = {
+      hasApiKey: !!apiKey,
+      apiKeyPrefix: apiKey ? apiKey.substring(0, 15) + '...' : 'MISSING',
+      apiKeyLength: apiKey ? apiKey.length : 0,
+      apiUrl: apiUrl || 'MISSING'
+    }
+    
+    // Teste 2: Chamar API diretamente
+    const response = await fetch(`${apiUrl}/accounts?limit=5`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'access_token': apiKey,
+        'User-Agent': 'AsaasManager/1.0'
+      }
+    })
+    
+    const text = await response.text()
+    let data
+    try {
+      data = JSON.parse(text)
+    } catch (e) {
+      data = { raw: text }
+    }
+    
+    return c.json({
+      timestamp: new Date().toISOString(),
+      environment: envCheck,
+      apiResponse: {
+        status: response.status,
+        ok: response.ok,
+        statusText: response.statusText,
+        totalCount: data?.totalCount || 0,
+        accountsCount: data?.data?.length || 0,
+        firstAccount: data?.data?.[0]?.name || null,
+        fullResponse: data
+      }
+    })
+  } catch (error: any) {
+    return c.json({
+      error: error.message,
+      stack: error.stack
+    }, 500)
+  }
 })
 
 // Homepage
