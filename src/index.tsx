@@ -3621,8 +3621,8 @@ app.post('/api/admin/sync-transactions', async (c) => {
 // Listar subcontas
 app.get('/api/accounts', async (c) => {
   try {
-    console.log('Buscando contas...')
-    const result = await asaasRequest(c, '/accounts')
+    console.log('Buscando subcontas...')
+    const result = await asaasRequest(c, '/subaccounts')
     console.log('Resultado da API:', {
       ok: result.ok,
       status: result.status,
@@ -3652,7 +3652,7 @@ app.get('/api/accounts', async (c) => {
 app.post('/api/accounts', async (c) => {
   try {
     const body = await c.req.json()
-    const result = await asaasRequest(c, '/accounts', 'POST', body)
+    const result = await asaasRequest(c, '/subaccounts', 'POST', body)
     
     // Se a conta foi criada com sucesso, enviar email de boas-vindas
     if (result.ok && result.data && result.data.id) {
@@ -3676,7 +3676,7 @@ app.post('/api/accounts', async (c) => {
 app.get('/api/accounts/:id', async (c) => {
   try {
     const id = c.req.param('id')
-    const result = await asaasRequest(c, `/accounts/${id}`)
+    const result = await asaasRequest(c, `/subaccounts/${id}`)
     return c.json(result)
   } catch (error: any) {
     return c.json({ error: error.message }, 500)
