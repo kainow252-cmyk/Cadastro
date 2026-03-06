@@ -4606,7 +4606,7 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
       
       const paymentData = {
         customer: customerId,
-        billingType: 'PIX',
+        billingType: 'BOLETO', // Temporário: usar BOLETO até PIX ser liberado
         value: value,
         dueDate: new Date(Date.now() + 7*24*60*60*1000).toISOString().split('T')[0], // 7 dias
         description: description || 'Pagamento Único',
@@ -4624,12 +4624,18 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
       })
       
       if (!paymentResult.ok) {
-        console.error('❌ Erro ao criar pagamento:', paymentResult.data)
+        console.error('❌ Erro ao criar pagamento:', {
+          status: paymentResult.status,
+          data: paymentResult.data,
+          fullResponse: paymentResult
+        })
         return c.json({ 
           error: 'Erro ao criar pagamento',
           details: paymentResult.data,
           walletId: walletId,
-          value: value
+          value: value,
+          status: paymentResult.status,
+          fullError: paymentResult
         }, 400)
       }
       
@@ -4780,7 +4786,16 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
       }
     } else {
       // Cobrança única: buscar QR Code do pagamento
+      console.log('🔍 Buscando QR Code PIX para pagamento:', firstPayment.id)
       const qrCodeResult = await asaasRequest(c, `/payments/${firstPayment.id}/pixQrCode`)
+      
+      console.log('📥 QR Code Result:', {
+        ok: qrCodeResult.ok,
+        status: qrCodeResult.status,
+        hasData: !!qrCodeResult.data,
+        hasPayload: !!qrCodeResult.data?.payload,
+        data: qrCodeResult.data
+      })
       
       if (qrCodeResult.ok && qrCodeResult.data) {
         const asaasPayload = qrCodeResult.data.payload
@@ -4802,7 +4817,17 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
             expirationDate: firstPayment.dueDate,
             isAuthorization: false
           }
+          
+          console.log('✅ QR Code gerado com sucesso!')
+        } else {
+          console.error('❌ Erro: não encontrou posição 5802 no payload')
         }
+      } else {
+        console.error('❌ Erro ao buscar QR Code:', {
+          ok: qrCodeResult.ok,
+          status: qrCodeResult.status,
+          data: qrCodeResult.data
+        })
       }
     }
     
@@ -4939,7 +4964,7 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
       UPDATE subscription_signup_links SET uses_count = uses_count + 1 WHERE id = ?
     `).bind(linkId).run()
     
-    return c.json({
+    const responseData = {
       ok: true,
       chargeType: chargeType,
       subscription: subscription ? {
@@ -4965,7 +4990,17 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
         mainAccount: 80
       },
       message: pixData ? 'PIX gerado com sucesso' : 'PIX não disponível. Cobrança via boleto criada.'
+    }
+    
+    console.log('📤 Retornando resposta:', {
+      hasPixData: !!pixData,
+      hasPayload: !!pixData?.payload,
+      hasQrCodeBase64: !!pixData?.qrCodeBase64,
+      paymentId: firstPayment.id,
+      message: responseData.message
     })
+    
+    return c.json(responseData)
     
   } catch (error: any) {
     console.error('❌ Erro no auto-cadastro:', error)
