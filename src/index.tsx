@@ -4606,7 +4606,7 @@ app.post('/api/pix/subscription-signup/:linkId', async (c) => {
       
       const paymentData = {
         customer: customerId,
-        billingType: 'UNDEFINED', // Cliente escolhe: PIX, Boleto ou Cartão
+        billingType: 'PIX', // ✅ PIX LIBERADO! QR Code direto
         value: value,
         dueDate: new Date(Date.now() + 7*24*60*60*1000).toISOString().split('T')[0], // 7 dias
         description: description || 'Pagamento Único',
