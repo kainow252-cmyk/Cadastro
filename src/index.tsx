@@ -3656,7 +3656,12 @@ app.get('/api/accounts', async (c) => {
         status: result.status,
         ok: result.ok,
         hasData: !!result.data,
-        dataKeys: result.data ? Object.keys(result.data) : []
+        dataKeys: result.data ? Object.keys(result.data) : [],
+        endpoint: '/accounts?limit=100',
+        version: 'v2.0-fix-accounts',
+        timestamp: new Date().toISOString(),
+        rawTotalCount: result.data?.totalCount,
+        rawDataLength: result.data?.data?.length
       }
     })
   } catch (error: any) {
