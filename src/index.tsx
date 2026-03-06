@@ -3621,17 +3621,24 @@ app.post('/api/admin/sync-transactions', async (c) => {
 // Listar subcontas
 app.get('/api/accounts', async (c) => {
   try {
-    console.log('Buscando subcontas...')
+    console.log('🔍 Buscando subcontas...')
+    console.log('📌 Endpoint: /subaccounts')
+    console.log('📌 API URL:', c.env.ASAAS_API_URL)
+    
     const result = await asaasRequest(c, '/subaccounts')
-    console.log('Resultado da API:', {
+    
+    console.log('📊 Resultado da API:', {
       ok: result.ok,
       status: result.status,
       totalCount: result.data?.totalCount,
-      hasData: !!result.data?.data
+      hasData: !!result.data?.data,
+      dataKeys: result.data ? Object.keys(result.data) : [],
+      fullResponse: JSON.stringify(result.data).substring(0, 500)
     })
     
     // Transformar resposta para formato esperado pelo frontend
     if (result.ok && result.data && result.data.data) {
+      console.log('✅ Retornando', result.data.data.length, 'subcontas')
       return c.json({ 
         success: true,
         accounts: result.data.data,
@@ -3640,10 +3647,20 @@ app.get('/api/accounts', async (c) => {
     }
     
     // Se não houver dados, retornar vazio
-    console.log('Retornando array vazio')
-    return c.json({ success: true, accounts: [], totalCount: 0 })
+    console.log('⚠️ Retornando array vazio - data:', result.data)
+    return c.json({ 
+      success: true, 
+      accounts: [], 
+      totalCount: 0,
+      debug: {
+        status: result.status,
+        ok: result.ok,
+        hasData: !!result.data,
+        dataKeys: result.data ? Object.keys(result.data) : []
+      }
+    })
   } catch (error: any) {
-    console.error('Erro ao buscar contas:', error)
+    console.error('❌ Erro ao buscar subcontas:', error)
     return c.json({ error: error.message }, 500)
   }
 })
