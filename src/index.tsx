@@ -8981,7 +8981,9 @@ app.get('/subscription-signup/:linkId', async (c) => {
                     }
                     
                     // Salvar tipo de cobrança para usar depois
-                    window.chargeType = response.data.chargeType || 'monthly';
+                    window.chargeType = response.data.chargeType || 'single';
+                    console.log('📝 Tipo de cobrança recebido do backend:', response.data.chargeType);
+                    console.log('💾 Tipo de cobrança salvo em window.chargeType:', window.chargeType);
                     
                     // Iniciar verificação de pagamento
                     window.paymentId = response.data.firstPayment.id;
@@ -9029,8 +9031,11 @@ app.get('/subscription-signup/:linkId', async (c) => {
             createConfetti();
             
             // Atualizar conteúdo dinâmico baseado no tipo de cobrança
-            const chargeType = window.chargeType || 'monthly';
+            // Usar o chargeType da resposta do servidor, default 'single' se não definido
+            const chargeType = window.chargeType || 'single';
             const stepsContent = document.getElementById('payment-steps-content');
+            
+            console.log('🔍 showPaymentConfirmed - chargeType:', chargeType);
             
             if (chargeType === 'single') {
                 // Mensagem para pagamento único
