@@ -3482,25 +3482,78 @@ app.post('/api/webhooks/asaas', async (c) => {
     const db = c.env.DB
     
     // Processar eventos de PAGAMENTO
-    if (webhook.event === 'PAYMENT_RECEIVED' || webhook.event === 'PAYMENT_CONFIRMED') {
+    const paymentEvents = [
+      'PAYMENT_RECEIVED',
+      'PAYMENT_CONFIRMED', 
+      'PAYMENT_RECEIVED_IN_CASH',
+      'PAYMENT_APPROVED_BY_RISK_ANALYSIS'
+    ]
+    
+    if (paymentEvents.includes(webhook.event)) {
       const payment = webhook.payment
       
-      // Atualizar status do pagamento no banco D1
-      await db.prepare(`
-        UPDATE transactions 
-        SET status = ?, payment_date = ? 
-        WHERE id = ?
-      `).bind(
-        'RECEIVED',
-        payment.paymentDate || new Date().toISOString().split('T')[0],
-        payment.id
-      ).run()
+      console.log(`💰 Evento de pagamento: ${webhook.event}`, {
+        id: payment.id,
+        status: payment.status,
+        value: payment.value,
+        billingType: payment.billingType
+      })
       
-      console.log(`✅ Pagamento ${payment.id} confirmado via webhook`)
+      // Atualizar status do pagamento no banco D1
+      try {
+        await db.prepare(`
+          UPDATE transactions 
+          SET status = ?, payment_date = ? 
+          WHERE id = ?
+        `).bind(
+          'RECEIVED',
+          payment.paymentDate || new Date().toISOString().split('T')[0],
+          payment.id
+        ).run()
+        
+        console.log(`✅ Pagamento ${payment.id} confirmado via webhook no banco D1`)
+      } catch (dbError: any) {
+        console.log('⚠️ Erro ao atualizar pagamento no banco:', dbError.message)
+        // Não bloquear o webhook se o DB falhar
+      }
       
       return c.json({ 
         ok: true, 
         message: 'Webhook de pagamento processado',
+        event: webhook.event,
+        paymentId: payment.id,
+        status: payment.status
+      })
+    }
+    
+    // Processar eventos de pagamento com problemas
+    if (webhook.event === 'PAYMENT_OVERDUE' || webhook.event === 'PAYMENT_DELETED') {
+      const payment = webhook.payment
+      
+      console.log(`⚠️ Evento de pagamento: ${webhook.event}`, {
+        id: payment.id,
+        status: payment.status
+      })
+      
+      try {
+        await db.prepare(`
+          UPDATE transactions 
+          SET status = ? 
+          WHERE id = ?
+        `).bind(
+          webhook.event === 'PAYMENT_OVERDUE' ? 'OVERDUE' : 'DELETED',
+          payment.id
+        ).run()
+        
+        console.log(`✅ Pagamento ${payment.id} atualizado: ${webhook.event}`)
+      } catch (dbError: any) {
+        console.log('⚠️ Erro ao atualizar pagamento:', dbError.message)
+      }
+      
+      return c.json({ 
+        ok: true, 
+        message: 'Evento de pagamento processado',
+        event: webhook.event,
         paymentId: payment.id
       })
     }
