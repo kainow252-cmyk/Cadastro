@@ -792,6 +792,207 @@ app.get('/api/banners/:accountId/:bannerId', async (c) => {
   }
 })
 
+// ============================================
+// 🎰 API: LOTERIA FEDERAL
+// ============================================
+
+// API: Consultar bilhete pelo ID do pagamento
+app.get('/api/lottery/ticket/:paymentId', async (c) => {
+  try {
+    const paymentId = c.req.param('paymentId')
+    
+    const ticket = await c.env.DB.prepare(`
+      SELECT * FROM lottery_tickets WHERE payment_id = ?
+    `).bind(paymentId).first()
+    
+    if (!ticket) {
+      return c.json({ error: 'Bilhete não encontrado' }, 404)
+    }
+    
+    return c.json({ 
+      ok: true, 
+      ticket: {
+        id: ticket.id,
+        paymentId: ticket.payment_id,
+        customerName: ticket.customer_name,
+        customerEmail: ticket.customer_email,
+        ticketNumber: ticket.ticket_number,
+        drawDate: ticket.draw_date,
+        drawNumber: ticket.draw_number,
+        status: ticket.status,
+        prizeType: ticket.prize_type,
+        prizeValue: ticket.prize_value,
+        checkedAt: ticket.checked_at,
+        createdAt: ticket.created_at
+      }
+    })
+  } catch (error: any) {
+    console.error('Erro ao buscar bilhete:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// API: Verificar se o bilhete ganhou (consulta API da Caixa)
+app.post('/api/lottery/check/:paymentId', async (c) => {
+  try {
+    const paymentId = c.req.param('paymentId')
+    
+    // Buscar bilhete no banco
+    const ticket = await c.env.DB.prepare(`
+      SELECT * FROM lottery_tickets WHERE payment_id = ?
+    `).bind(paymentId).first()
+    
+    if (!ticket) {
+      return c.json({ error: 'Bilhete não encontrado' }, 404)
+    }
+    
+    const ticketNumber = ticket.ticket_number as string
+    const drawDate = new Date(ticket.draw_date as string)
+    
+    // Verificar se o sorteio já aconteceu
+    const today = new Date()
+    if (drawDate > today) {
+      return c.json({ 
+        ok: true,
+        status: 'PENDING',
+        message: `Sorteio será realizado em ${drawDate.toLocaleDateString('pt-BR')}`,
+        ticket: {
+          ticketNumber,
+          drawDate: ticket.draw_date
+        }
+      })
+    }
+    
+    // Buscar resultado do sorteio na API da Caixa
+    // https://loteriascaixa-api.herokuapp.com/api/federal/latest
+    console.log(`🔍 Consultando resultado da Loteria Federal...`)
+    
+    try {
+      const response = await fetch('https://loteriascaixa-api.herokuapp.com/api/federal/latest')
+      const result = await response.json()
+      
+      console.log('📊 Resultado da API:', {
+        concurso: result.concurso,
+        data: result.data,
+        premios: result.premiacoes?.length || 0
+      })
+      
+      if (!result.premiacoes || result.premiacoes.length === 0) {
+        return c.json({ 
+          error: 'Resultado ainda não disponível',
+          drawDate: ticket.draw_date
+        }, 404)
+      }
+      
+      // Verificar apenas o 1º PRÊMIO
+      const firstPrize = result.premiacoes[0]
+      const winningNumber = firstPrize.numero.toString().padStart(6, '0')
+      const prizeValue = parseFloat(firstPrize.valor_premio.replace(/\./g, '').replace(',', '.'))
+      
+      console.log(`🎫 Bilhete: ${ticketNumber}`)
+      console.log(`🏆 1º Prêmio: ${winningNumber}`)
+      
+      const isWinner = ticketNumber === winningNumber
+      
+      // Atualizar status no banco
+      await c.env.DB.prepare(`
+        UPDATE lottery_tickets 
+        SET 
+          status = ?, 
+          draw_number = ?,
+          prize_type = ?,
+          prize_value = ?,
+          checked_at = datetime('now')
+        WHERE payment_id = ?
+      `).bind(
+        isWinner ? 'WINNER' : 'LOSER',
+        result.concurso,
+        isWinner ? '1ST' : null,
+        isWinner ? prizeValue : null,
+        paymentId
+      ).run()
+      
+      if (isWinner) {
+        console.log(`🎉 GANHADOR! Bilhete ${ticketNumber} ganhou R$ ${prizeValue.toFixed(2)}`)
+        
+        return c.json({
+          ok: true,
+          status: 'WINNER',
+          message: '🎉 PARABÉNS! VOCÊ GANHOU O 1º PRÊMIO!',
+          ticket: {
+            ticketNumber,
+            drawDate: result.data,
+            drawNumber: result.concurso
+          },
+          prize: {
+            type: '1º Prêmio',
+            value: prizeValue,
+            formattedValue: `R$ ${prizeValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+          }
+        })
+      } else {
+        console.log(`❌ Não ganhou. Número sorteado: ${winningNumber}`)
+        
+        return c.json({
+          ok: true,
+          status: 'LOSER',
+          message: 'Não foi dessa vez. Tente novamente!',
+          ticket: {
+            ticketNumber,
+            drawDate: result.data,
+            drawNumber: result.concurso
+          },
+          winningNumber: {
+            firstPrize: winningNumber
+          }
+        })
+      }
+      
+    } catch (apiError: any) {
+      console.error('❌ Erro ao consultar API da Caixa:', apiError)
+      return c.json({ 
+        error: 'Erro ao consultar resultado do sorteio',
+        details: apiError.message 
+      }, 500)
+    }
+    
+  } catch (error: any) {
+    console.error('Erro ao verificar bilhete:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// API: Listar todos os bilhetes de um cliente (por email)
+app.get('/api/lottery/tickets/email/:email', async (c) => {
+  try {
+    const email = c.req.param('email')
+    
+    const tickets = await c.env.DB.prepare(`
+      SELECT * FROM lottery_tickets 
+      WHERE customer_email = ?
+      ORDER BY created_at DESC
+    `).bind(email).all()
+    
+    return c.json({ 
+      ok: true, 
+      tickets: tickets.results.map((t: any) => ({
+        id: t.id,
+        paymentId: t.payment_id,
+        ticketNumber: t.ticket_number,
+        drawDate: t.draw_date,
+        drawNumber: t.draw_number,
+        status: t.status,
+        prizeType: t.prize_type,
+        prizeValue: t.prize_value,
+        createdAt: t.created_at
+      }))
+    })
+  } catch (error: any) {
+    console.error('Erro ao listar bilhetes:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
 // Relatório de subconta
 app.get('/api/reports/:accountId', async (c) => {
   try {
@@ -3512,6 +3713,96 @@ app.post('/api/webhooks/asaas', async (c) => {
         ).run()
         
         console.log(`✅ Pagamento ${payment.id} confirmado via webhook no banco D1`)
+        
+        // 🎰 GERAR BILHETE DA LOTERIA FEDERAL
+        try {
+          // Gerar número de 6 dígitos aleatório (000000-999999)
+          const ticketNumber = Math.floor(Math.random() * 1000000).toString().padStart(6, '0')
+          
+          // Calcular próxima quarta-feira (sorteio da Loteria Federal)
+          const today = new Date()
+          const dayOfWeek = today.getDay() // 0 = domingo, 3 = quarta
+          let daysUntilWednesday = (3 - dayOfWeek + 7) % 7
+          if (daysUntilWednesday === 0) daysUntilWednesday = 7 // Se hoje é quarta, próxima quarta
+          
+          const drawDate = new Date(today)
+          drawDate.setDate(today.getDate() + daysUntilWednesday)
+          const drawDateStr = drawDate.toISOString().split('T')[0]
+          
+          console.log(`🎫 Gerando bilhete da Loteria Federal: ${ticketNumber}`)
+          console.log(`📅 Data do sorteio: ${drawDateStr}`)
+          
+          // Buscar dados do cliente (se existir no banco)
+          let customerName = 'Cliente'
+          let customerEmail = ''
+          let customerCpf = null
+          
+          const transaction = await db.prepare(`
+            SELECT account_id FROM transactions WHERE id = ?
+          `).bind(payment.id).first()
+          
+          if (transaction) {
+            const conversion = await db.prepare(`
+              SELECT customer_name, customer_email, customer_cpf 
+              FROM subscription_conversions 
+              WHERE subscription_id = ? OR customer_id IN (
+                SELECT customer_id FROM subscription_conversions LIMIT 1
+              )
+              LIMIT 1
+            `).bind(payment.id).first()
+            
+            if (conversion) {
+              customerName = conversion.customer_name as string
+              customerEmail = conversion.customer_email as string
+              customerCpf = conversion.customer_cpf as string || null
+            }
+          }
+          
+          // Criar tabela se não existir
+          await db.prepare(`
+            CREATE TABLE IF NOT EXISTS lottery_tickets (
+              id TEXT PRIMARY KEY,
+              payment_id TEXT NOT NULL,
+              customer_name TEXT NOT NULL,
+              customer_email TEXT NOT NULL,
+              customer_cpf TEXT,
+              ticket_number TEXT NOT NULL,
+              draw_date TEXT NOT NULL,
+              draw_number INTEGER,
+              status TEXT DEFAULT 'PENDING',
+              prize_type TEXT,
+              prize_value REAL,
+              checked_at TEXT,
+              created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+              updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+          `).run()
+          
+          // Salvar bilhete no banco
+          const ticketId = `ticket_${Date.now()}_${Math.random().toString(36).substring(7)}`
+          await db.prepare(`
+            INSERT INTO lottery_tickets (
+              id, payment_id, customer_name, customer_email, customer_cpf,
+              ticket_number, draw_date, status
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')
+          `).bind(
+            ticketId,
+            payment.id,
+            customerName,
+            customerEmail || 'sem-email@example.com',
+            customerCpf,
+            ticketNumber,
+            drawDateStr
+          ).run()
+          
+          console.log(`✅ Bilhete ${ticketNumber} gerado e salvo no banco`)
+          console.log(`🎫 Ticket ID: ${ticketId}`)
+        } catch (lotteryError: any) {
+          console.log('⚠️ Erro ao gerar bilhete da loteria:', lotteryError.message)
+          // Não bloquear o webhook se falhar
+        }
+        
       } catch (dbError: any) {
         console.log('⚠️ Erro ao atualizar pagamento no banco:', dbError.message)
         // Não bloquear o webhook se o DB falhar
@@ -8875,6 +9166,66 @@ app.get('/subscription-signup/:linkId', async (c) => {
                 </div>
             </div>
             
+            <!-- 🎰 BILHETE DA LOTERIA FEDERAL -->
+            <div id="lottery-ticket-section" class="bg-gradient-to-r from-yellow-50 via-amber-50 to-yellow-50 border-4 border-yellow-400 rounded-2xl p-6 mb-6 shadow-2xl animate-bounce-in">
+                <div class="text-center mb-4">
+                    <div class="inline-block bg-gradient-to-r from-yellow-400 to-amber-500 px-6 py-3 rounded-full shadow-lg mb-3">
+                        <h3 class="text-2xl font-black text-white flex items-center justify-center gap-2">
+                            <i class="fas fa-ticket-alt animate-pulse"></i>
+                            BILHETE DA LOTERIA FEDERAL
+                            <i class="fas fa-star animate-spin" style="animation: spin 2s linear infinite;"></i>
+                        </h3>
+                    </div>
+                    <p class="text-sm text-amber-800 font-semibold">
+                        🎁 VOCÊ CONCORRE AO 1º PRÊMIO DE R$ 500.000,00!
+                    </p>
+                </div>
+                
+                <div class="bg-white rounded-xl p-6 border-2 border-amber-300 shadow-inner">
+                    <div class="flex justify-between items-center mb-4 pb-4 border-b-2 border-dashed border-amber-300">
+                        <div>
+                            <p class="text-xs text-gray-600 mb-1">SEU BILHETE:</p>
+                            <p id="lottery-ticket-number" class="text-4xl font-black text-amber-600 tracking-wider font-mono">
+                                <i class="fas fa-spinner fa-spin text-2xl"></i>
+                            </p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-xs text-gray-600 mb-1">DATA DO SORTEIO:</p>
+                            <p id="lottery-draw-date" class="text-lg font-bold text-gray-800">
+                                Carregando...
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-4 mb-4">
+                        <p class="text-sm text-center text-gray-700">
+                            <i class="fas fa-calendar-check text-green-600 mr-2"></i>
+                            O resultado do sorteio estará disponível após a data acima
+                        </p>
+                    </div>
+                    
+                    <button 
+                        id="check-lottery-btn" 
+                        onclick="checkLotteryResult()"
+                        disabled
+                        class="w-full bg-gradient-to-r from-amber-500 to-yellow-500 text-white font-bold py-4 rounded-xl shadow-lg hover:from-amber-600 hover:to-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-lg"
+                    >
+                        <i class="fas fa-search"></i>
+                        <span id="check-lottery-text">Aguardando sorteio...</span>
+                    </button>
+                    
+                    <div id="lottery-result" class="hidden mt-4"></div>
+                </div>
+                
+                <div class="mt-4 bg-amber-100 border border-amber-300 rounded-lg p-3">
+                    <p class="text-xs text-amber-900 text-center">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        <strong>Como funciona:</strong> Conferimos automaticamente apenas o <strong>1º PRÊMIO</strong> da Loteria Federal. 
+                        Se o seu número for sorteado, você ganha R$ 500.000,00! 🏆
+                    </p>
+                </div>
+            </div>
+            
             <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
                 <p class="text-sm text-gray-700">
                     <i class="fas fa-envelope text-blue-500 mr-2"></i>
@@ -9091,6 +9442,148 @@ app.get('/subscription-signup/:linkId', async (c) => {
             
             // Scroll suave para o topo
             window.scrollTo({ top: 0, behavior: 'smooth' });
+            
+            // 🎰 Carregar bilhete da loteria
+            loadLotteryTicket();
+        }
+        
+        // 🎰 Função para carregar o bilhete da loteria
+        async function loadLotteryTicket() {
+            try {
+                console.log('🎫 Carregando bilhete da loteria para pagamento:', window.paymentId);
+                
+                const response = await axios.get('/api/lottery/ticket/' + window.paymentId);
+                
+                if (response.data.ok && response.data.ticket) {
+                    const ticket = response.data.ticket;
+                    
+                    console.log('✅ Bilhete carregado:', ticket);
+                    
+                    // Exibir número do bilhete
+                    document.getElementById('lottery-ticket-number').textContent = ticket.ticketNumber;
+                    
+                    // Formatar e exibir data do sorteio
+                    const drawDate = new Date(ticket.drawDate);
+                    document.getElementById('lottery-draw-date').textContent = 
+                        drawDate.toLocaleDateString('pt-BR', { 
+                            day: '2-digit', 
+                            month: '2-digit', 
+                            year: 'numeric' 
+                        });
+                    
+                    // Verificar se o sorteio já passou
+                    const today = new Date();
+                    if (drawDate <= today) {
+                        // Habilitar botão de verificação
+                        document.getElementById('check-lottery-btn').disabled = false;
+                        document.getElementById('check-lottery-text').textContent = 'Verificar Resultado';
+                    } else {
+                        // Desabilitar botão até a data do sorteio
+                        const daysUntilDraw = Math.ceil((drawDate - today) / (1000 * 60 * 60 * 24));
+                        document.getElementById('check-lottery-text').textContent = 
+                            'Sorteio em ' + daysUntilDraw + ' dia' + (daysUntilDraw > 1 ? 's' : '');
+                    }
+                } else {
+                    console.log('⚠️ Bilhete não encontrado ainda, tentando novamente em 5s...');
+                    // Tentar novamente após 5 segundos (pode ser que o webhook ainda não processou)
+                    setTimeout(loadLotteryTicket, 5000);
+                }
+            } catch (error) {
+                console.error('❌ Erro ao carregar bilhete:', error);
+                document.getElementById('lottery-ticket-number').textContent = 'Erro ao carregar';
+            }
+        }
+        
+        // 🎰 Função para verificar resultado do sorteio
+        async function checkLotteryResult() {
+            const btn = document.getElementById('check-lottery-btn');
+            const resultDiv = document.getElementById('lottery-result');
+            
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Consultando...';
+            
+            try {
+                const response = await axios.post('/api/lottery/check/' + window.paymentId);
+                
+                if (response.data.ok) {
+                    resultDiv.classList.remove('hidden');
+                    
+                    if (response.data.status === 'WINNER') {
+                        // 🏆 GANHOU!
+                        playSuccessSound();
+                        createConfetti();
+                        
+                        resultDiv.innerHTML = 
+                            '<div class="bg-gradient-to-r from-green-400 to-emerald-500 rounded-xl p-6 text-center animate-bounce shadow-2xl">' +
+                                '<div class="text-6xl mb-3">🏆</div>' +
+                                '<h3 class="text-3xl font-black text-white mb-2">' + response.data.message + '</h3>' +
+                                '<div class="bg-white rounded-lg p-4 mb-3">' +
+                                    '<p class="text-2xl font-bold text-green-600 mb-1">' +
+                                        response.data.prize.formattedValue +
+                                    '</p>' +
+                                    '<p class="text-sm text-gray-600">' + response.data.prize.type + '</p>' +
+                                '</div>' +
+                                '<p class="text-white text-sm">' +
+                                    '<i class="fas fa-calendar mr-2"></i>' +
+                                    'Concurso ' + response.data.ticket.drawNumber + ' - ' + new Date(response.data.ticket.drawDate).toLocaleDateString('pt-BR') +
+                                '</p>' +
+                            '</div>';
+                        
+                        btn.innerHTML = '<i class="fas fa-trophy mr-2"></i> VOCÊ GANHOU!';
+                        btn.className = 'w-full bg-gradient-to-r from-green-500 to-emerald-500 text-white font-bold py-4 rounded-xl shadow-lg';
+                        
+                    } else if (response.data.status === 'LOSER') {
+                        // ❌ Não ganhou
+                        resultDiv.innerHTML = 
+                            '<div class="bg-gradient-to-r from-gray-100 to-gray-200 rounded-xl p-6 text-center">' +
+                                '<div class="text-4xl mb-3">😔</div>' +
+                                '<h3 class="text-xl font-bold text-gray-800 mb-2">' + response.data.message + '</h3>' +
+                                '<div class="bg-white rounded-lg p-3 mb-2">' +
+                                    '<p class="text-sm text-gray-600 mb-1">Número sorteado (1º Prêmio):</p>' +
+                                    '<p class="text-2xl font-bold text-amber-600 font-mono">' +
+                                        response.data.winningNumber.firstPrize +
+                                    '</p>' +
+                                '</div>' +
+                                '<p class="text-gray-600 text-sm">' +
+                                    '<i class="fas fa-calendar mr-2"></i>' +
+                                    'Concurso ' + response.data.ticket.drawNumber + ' - ' + new Date(response.data.ticket.drawDate).toLocaleDateString('pt-BR') +
+                                '</p>' +
+                            '</div>';
+                        
+                        btn.innerHTML = '<i class="fas fa-check mr-2"></i> Conferido';
+                        btn.className = 'w-full bg-gray-400 text-white font-bold py-4 rounded-xl';
+                        
+                    } else if (response.data.status === 'PENDING') {
+                        // ⏳ Sorteio ainda não aconteceu
+                        resultDiv.innerHTML = 
+                            '<div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">' +
+                                '<i class="fas fa-clock text-blue-500 text-3xl mb-2"></i>' +
+                                '<p class="text-gray-700">' + response.data.message + '</p>' +
+                            '</div>';
+                        btn.innerHTML = '<i class="fas fa-clock mr-2"></i> Aguardando sorteio';
+                        btn.disabled = true;
+                    }
+                } else {
+                    resultDiv.classList.remove('hidden');
+                    resultDiv.innerHTML = 
+                        '<div class="bg-red-50 border border-red-200 rounded-lg p-4 text-center">' +
+                            '<i class="fas fa-exclamation-triangle text-red-500 text-2xl mb-2"></i>' +
+                            '<p class="text-red-700 text-sm">' + (response.data.error || 'Erro ao verificar resultado') + '</p>' +
+                        '</div>';
+                    btn.innerHTML = '<i class="fas fa-search mr-2"></i> Tentar Novamente';
+                    btn.disabled = false;
+                }
+            } catch (error) {
+                console.error('Erro:', error);
+                resultDiv.classList.remove('hidden');
+                resultDiv.innerHTML = 
+                    '<div class="bg-red-50 border border-red-200 rounded-lg p-4 text-center">' +
+                        '<i class="fas fa-exclamation-triangle text-red-500 text-2xl mb-2"></i>' +
+                        '<p class="text-red-700 text-sm">Erro ao consultar resultado. Tente novamente.</p>' +
+                    '</div>';
+                btn.innerHTML = '<i class="fas fa-search mr-2"></i> Tentar Novamente';
+                btn.disabled = false;
+            }
         }
         
         function playSuccessSound() {
