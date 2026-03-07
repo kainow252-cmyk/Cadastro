@@ -819,6 +819,9 @@ app.get('/api/lottery/ticket/:paymentId', async (c) => {
         ticketNumber: ticket.ticket_number,
         drawDate: ticket.draw_date,
         drawNumber: ticket.draw_number,
+        drawDescription: ticket.draw_description || 'Loteria Federal',
+        prizeDescription: ticket.prize_description || '1º Prêmio - R$ 500.000,00',
+        isCustomLottery: ticket.is_custom_lottery === 1,
         status: ticket.status,
         prizeType: ticket.prize_type,
         prizeValue: ticket.prize_value,
@@ -3716,30 +3719,75 @@ app.post('/api/webhooks/asaas', async (c) => {
         
         // 🎰 GERAR BILHETE DA LOTERIA FEDERAL
         try {
+          // Buscar configurações do link de pagamento
+          const transaction = await db.prepare(`
+            SELECT account_id FROM transactions WHERE id = ?
+          `).bind(payment.id).first()
+          
+          // Buscar configurações de sorteio do link (se existir)
+          let lotteryEnabled = true
+          let customDrawDate = null
+          let drawDescription = 'Loteria Federal'
+          let prizeDescription = '1º Prêmio - R$ 500.000,00'
+          
+          if (transaction) {
+            const linkConfig = await db.prepare(`
+              SELECT lottery_enabled, lottery_draw_date, lottery_description, lottery_prize_description
+              FROM subscription_signup_links
+              WHERE account_id = ?
+              LIMIT 1
+            `).bind(transaction.account_id).first()
+            
+            if (linkConfig) {
+              lotteryEnabled = linkConfig.lottery_enabled !== 0
+              customDrawDate = linkConfig.lottery_draw_date as string | null
+              drawDescription = (linkConfig.lottery_description as string) || drawDescription
+              prizeDescription = (linkConfig.lottery_prize_description as string) || prizeDescription
+              
+              console.log('🎲 Configurações de sorteio encontradas:', {
+                enabled: lotteryEnabled,
+                customDate: customDrawDate,
+                description: drawDescription,
+                prize: prizeDescription
+              })
+            }
+          }
+          
+          // Se sorteio desabilitado, pular geração
+          if (!lotteryEnabled) {
+            console.log('⏭️ Sorteio desabilitado para este link, pulando geração de bilhete')
+            throw new Error('Lottery disabled')
+          }
+          
           // Gerar número de 6 dígitos aleatório (000000-999999)
           const ticketNumber = Math.floor(Math.random() * 1000000).toString().padStart(6, '0')
           
-          // Calcular próxima quarta-feira (sorteio da Loteria Federal)
-          const today = new Date()
-          const dayOfWeek = today.getDay() // 0 = domingo, 3 = quarta
-          let daysUntilWednesday = (3 - dayOfWeek + 7) % 7
-          if (daysUntilWednesday === 0) daysUntilWednesday = 7 // Se hoje é quarta, próxima quarta
+          // Usar data personalizada ou calcular próxima quarta-feira
+          let drawDateStr: string
+          if (customDrawDate) {
+            drawDateStr = customDrawDate
+            console.log(`📅 Usando data personalizada do sorteio: ${drawDateStr}`)
+          } else {
+            // Calcular próxima quarta-feira (sorteio da Loteria Federal)
+            const today = new Date()
+            const dayOfWeek = today.getDay() // 0 = domingo, 3 = quarta
+            let daysUntilWednesday = (3 - dayOfWeek + 7) % 7
+            if (daysUntilWednesday === 0) daysUntilWednesday = 7 // Se hoje é quarta, próxima quarta
+            
+            const drawDate = new Date(today)
+            drawDate.setDate(today.getDate() + daysUntilWednesday)
+            drawDateStr = drawDate.toISOString().split('T')[0]
+            console.log(`📅 Calculada próxima quarta-feira: ${drawDateStr}`)
+          }
           
-          const drawDate = new Date(today)
-          drawDate.setDate(today.getDate() + daysUntilWednesday)
-          const drawDateStr = drawDate.toISOString().split('T')[0]
-          
-          console.log(`🎫 Gerando bilhete da Loteria Federal: ${ticketNumber}`)
-          console.log(`📅 Data do sorteio: ${drawDateStr}`)
+          console.log(`🎫 Gerando bilhete: ${ticketNumber}`)
+          console.log(`🎁 Concorre a: ${drawDescription}`)
+          console.log(`🏆 Prêmio: ${prizeDescription}`)
           
           // Buscar dados do cliente (se existir no banco)
           let customerName = 'Cliente'
           let customerEmail = ''
           let customerCpf = null
-          
-          const transaction = await db.prepare(`
-            SELECT account_id FROM transactions WHERE id = ?
-          `).bind(payment.id).first()
           
           if (transaction) {
             const conversion = await db.prepare(`
@@ -3778,23 +3826,59 @@ app.post('/api/webhooks/asaas', async (c) => {
             )
           `).run()
           
-          // Salvar bilhete no banco
+          // Salvar bilhete no banco com configurações personalizadas
           const ticketId = `ticket_${Date.now()}_${Math.random().toString(36).substring(7)}`
-          await db.prepare(`
-            INSERT INTO lottery_tickets (
-              id, payment_id, customer_name, customer_email, customer_cpf,
-              ticket_number, draw_date, status
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')
-          `).bind(
-            ticketId,
-            payment.id,
-            customerName,
-            customerEmail || 'sem-email@example.com',
-            customerCpf,
-            ticketNumber,
-            drawDateStr
-          ).run()
+          
+          try {
+            await db.prepare(`
+              INSERT INTO lottery_tickets (
+                id, payment_id, customer_name, customer_email, customer_cpf,
+                ticket_number, draw_date, draw_description, prize_description,
+                custom_draw_date, is_custom_lottery, status
+              )
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
+            `).bind(
+              ticketId,
+              payment.id,
+              customerName,
+              customerEmail || 'sem-email@example.com',
+              customerCpf,
+              ticketNumber,
+              drawDateStr,
+              drawDescription,
+              prizeDescription,
+              customDrawDate || null,
+              customDrawDate ? 1 : 0
+            ).run()
+          } catch (insertError: any) {
+            // Se erro de coluna não existe, tentar criar as colunas
+            if (insertError.message && insertError.message.includes('no column named')) {
+              console.log('⚠️ Colunas personalizadas não existem, criando...')
+              await db.prepare(`ALTER TABLE lottery_tickets ADD COLUMN draw_description TEXT`).run().catch(() => {})
+              await db.prepare(`ALTER TABLE lottery_tickets ADD COLUMN prize_description TEXT DEFAULT '1º Prêmio - R$ 500.000,00'`).run().catch(() => {})
+              await db.prepare(`ALTER TABLE lottery_tickets ADD COLUMN custom_draw_date TEXT`).run().catch(() => {})
+              await db.prepare(`ALTER TABLE lottery_tickets ADD COLUMN is_custom_lottery INTEGER DEFAULT 0`).run().catch(() => {})
+              
+              // Tentar novamente com insert básico
+              await db.prepare(`
+                INSERT INTO lottery_tickets (
+                  id, payment_id, customer_name, customer_email, customer_cpf,
+                  ticket_number, draw_date, status
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')
+              `).bind(
+                ticketId,
+                payment.id,
+                customerName,
+                customerEmail || 'sem-email@example.com',
+                customerCpf,
+                ticketNumber,
+                drawDateStr
+              ).run()
+            } else {
+              throw insertError
+            }
+          }
           
           console.log(`✅ Bilhete ${ticketNumber} gerado e salvo no banco`)
           console.log(`🎫 Ticket ID: ${ticketId}`)
@@ -9176,7 +9260,7 @@ app.get('/subscription-signup/:linkId', async (c) => {
                             <i class="fas fa-star animate-spin" style="animation: spin 2s linear infinite;"></i>
                         </h3>
                     </div>
-                    <p class="text-sm text-amber-800 font-semibold">
+                    <p id="lottery-prize-description" class="text-sm text-amber-800 font-semibold">
                         🎁 VOCÊ CONCORRE AO 1º PRÊMIO DE R$ 500.000,00!
                     </p>
                 </div>
@@ -9218,7 +9302,7 @@ app.get('/subscription-signup/:linkId', async (c) => {
                 </div>
                 
                 <div class="mt-4 bg-amber-100 border border-amber-300 rounded-lg p-3">
-                    <p class="text-xs text-amber-900 text-center">
+                    <p id="lottery-how-it-works" class="text-xs text-amber-900 text-center">
                         <i class="fas fa-info-circle mr-1"></i>
                         <strong>Como funciona:</strong> Conferimos automaticamente apenas o <strong>1º PRÊMIO</strong> da Loteria Federal. 
                         Se o seu número for sorteado, você ganha R$ 500.000,00! 🏆
@@ -9470,6 +9554,21 @@ app.get('/subscription-signup/:linkId', async (c) => {
                             month: '2-digit', 
                             year: 'numeric' 
                         });
+                    
+                    // Atualizar descrição do prêmio personalizado
+                    if (ticket.prizeDescription) {
+                        document.getElementById('lottery-prize-description').textContent = 
+                            '🎁 ' + ticket.prizeDescription.toUpperCase() + '!';
+                    }
+                    
+                    // Atualizar descrição do sorteio (se personalizado)
+                    if (ticket.drawDescription) {
+                        const howItWorks = document.getElementById('lottery-how-it-works');
+                        howItWorks.innerHTML = 
+                            '<i class="fas fa-info-circle mr-1"></i>' +
+                            '<strong>O que será sorteado:</strong> ' + ticket.drawDescription + ' ' +
+                            '<strong>(' + (ticket.prizeDescription || '1º Prêmio - R$ 500.000,00') + ')</strong>';
+                    }
                     
                     // Verificar se o sorteio já passou
                     const today = new Date();
@@ -11828,6 +11927,81 @@ curl "https://admin.corretoracorporate.com.br/api/reports/all-accounts/refunded?
                                 <label for="paylink-notification" class="ml-2 text-sm text-gray-700">
                                     Ativar notificações (Email/SMS) - R$ 0,85 por cobrança
                                 </label>
+                            </div>
+                        </div>
+
+                        <!-- 🎰 Configuração do Sorteio -->
+                        <div class="bg-gradient-to-r from-yellow-50 to-amber-50 border-2 border-yellow-300 rounded-xl p-6 mt-6">
+                            <div class="flex items-center gap-3 mb-4">
+                                <div class="w-12 h-12 bg-gradient-to-r from-yellow-400 to-amber-500 rounded-full flex items-center justify-center">
+                                    <i class="fas fa-ticket-alt text-white text-xl"></i>
+                                </div>
+                                <div>
+                                    <h4 class="text-lg font-bold text-gray-800">🎰 Configuração do Sorteio</h4>
+                                    <p class="text-sm text-gray-600">Configure o bilhete da loteria que será gerado após o pagamento</p>
+                                </div>
+                            </div>
+
+                            <div class="space-y-4">
+                                <!-- Ativar/Desativar Sorteio -->
+                                <div class="flex items-center bg-white rounded-lg p-4 border border-yellow-200">
+                                    <input type="checkbox" id="paylink-lottery-enabled" checked
+                                        class="w-5 h-5 text-yellow-600 border-gray-300 rounded focus:ring-yellow-500">
+                                    <label for="paylink-lottery-enabled" class="ml-3 text-sm font-semibold text-gray-700">
+                                        ✅ Gerar bilhete da loteria automaticamente após pagamento
+                                    </label>
+                                </div>
+
+                                <div id="lottery-config-fields" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <!-- Data do Sorteio -->
+                                    <div>
+                                        <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                            <i class="fas fa-calendar-alt mr-1 text-yellow-600"></i>Data do Sorteio
+                                        </label>
+                                        <input type="date" id="paylink-lottery-draw-date"
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500">
+                                        <p class="text-xs text-gray-500 mt-1">
+                                            💡 Se deixar vazio, será calculada automaticamente a próxima quarta-feira
+                                        </p>
+                                    </div>
+
+                                    <!-- O que será sorteado -->
+                                    <div>
+                                        <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                            <i class="fas fa-gift mr-1 text-yellow-600"></i>O que será sorteado?
+                                        </label>
+                                        <input type="text" id="paylink-lottery-description"
+                                            placeholder="Ex: Loteria Federal, iPhone 15 Pro, R$ 10.000,00"
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500">
+                                        <p class="text-xs text-gray-500 mt-1">
+                                            💡 Descrição do que o cliente concorre
+                                        </p>
+                                    </div>
+
+                                    <!-- Descrição do Prêmio -->
+                                    <div class="md:col-span-2">
+                                        <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                            <i class="fas fa-trophy mr-1 text-yellow-600"></i>Descrição do Prêmio
+                                        </label>
+                                        <input type="text" id="paylink-lottery-prize"
+                                            placeholder="Ex: 1º Prêmio - R$ 500.000,00"
+                                            value="1º Prêmio - R$ 500.000,00"
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500">
+                                        <p class="text-xs text-gray-500 mt-1">
+                                            💡 Texto que aparecerá no bilhete mostrando o prêmio
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <!-- Preview do Bilhete -->
+                                <div class="bg-white border-2 border-dashed border-yellow-300 rounded-lg p-4">
+                                    <p class="text-xs font-semibold text-gray-600 mb-2">📋 Preview do bilhete:</p>
+                                    <div class="text-sm text-gray-700 space-y-1">
+                                        <p><strong>📅 Data do sorteio:</strong> <span id="lottery-preview-date">Próxima quarta-feira</span></p>
+                                        <p><strong>🎁 Concorre a:</strong> <span id="lottery-preview-desc">Loteria Federal</span></p>
+                                        <p><strong>🏆 Prêmio:</strong> <span id="lottery-preview-prize">1º Prêmio - R$ 500.000,00</span></p>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 

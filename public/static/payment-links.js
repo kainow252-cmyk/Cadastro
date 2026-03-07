@@ -502,3 +502,58 @@ function generateQRCodeHTML(linkUrl, linkName, linkValue) {
         }
     });
 }
+
+// ===== CONFIGURAÇÃO DO SORTEIO =====
+document.addEventListener('DOMContentLoaded', () => {
+    const lotteryEnabled = document.getElementById('paylink-lottery-enabled');
+    const lotteryFields = document.getElementById('lottery-config-fields');
+    const lotteryDrawDate = document.getElementById('paylink-lottery-draw-date');
+    const lotteryDescription = document.getElementById('paylink-lottery-description');
+    const lotteryPrize = document.getElementById('paylink-lottery-prize');
+    
+    // Preview elements
+    const previewDate = document.getElementById('lottery-preview-date');
+    const previewDesc = document.getElementById('lottery-preview-desc');
+    const previewPrize = document.getElementById('lottery-preview-prize');
+    
+    // Ativar/Desativar campos do sorteio
+    if (lotteryEnabled && lotteryFields) {
+        lotteryEnabled.addEventListener('change', () => {
+            if (lotteryEnabled.checked) {
+                lotteryFields.style.display = 'grid';
+            } else {
+                lotteryFields.style.display = 'none';
+            }
+        });
+    }
+    
+    // Atualizar preview da data
+    if (lotteryDrawDate && previewDate) {
+        lotteryDrawDate.addEventListener('change', () => {
+            if (lotteryDrawDate.value) {
+                const date = new Date(lotteryDrawDate.value + 'T00:00:00');
+                previewDate.textContent = date.toLocaleDateString('pt-BR', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric'
+                });
+            } else {
+                previewDate.textContent = 'Próxima quarta-feira';
+            }
+        });
+    }
+    
+    // Atualizar preview da descrição
+    if (lotteryDescription && previewDesc) {
+        lotteryDescription.addEventListener('input', () => {
+            previewDesc.textContent = lotteryDescription.value || 'Loteria Federal';
+        });
+    }
+    
+    // Atualizar preview do prêmio
+    if (lotteryPrize && previewPrize) {
+        lotteryPrize.addEventListener('input', () => {
+            previewPrize.textContent = lotteryPrize.value || '1º Prêmio - R$ 500.000,00';
+        });
+    }
+});
