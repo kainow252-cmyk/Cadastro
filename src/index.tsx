@@ -15110,8 +15110,28 @@ app.post('/api/banners/save', async (c) => {
       createdAt: new Date().toISOString()
     }
     
-    // Salvar em KV (se disponível) ou retornar sucesso
-    // Por enquanto apenas log, depois pode implementar KV storage
+    // Salvar no banco D1
+    await c.env.DB.prepare(`
+      INSERT INTO banners (
+        id, account_id, link_url, banner_image_base64,
+        title, description, value, promo, button_text,
+        color, charge_type, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `).bind(
+      banner.id,
+      banner.accountId,
+      banner.linkUrl,
+      banner.bannerImage,
+      banner.title,
+      banner.description,
+      banner.value,
+      banner.promo,
+      banner.buttonText,
+      banner.color,
+      banner.chargeType
+    ).run()
+    
+    console.log('Banner salvo no banco:', banner.id)
     console.log('Banner salvo:', banner.id)
     
     return c.json({ ok: true, banner })
@@ -15124,9 +15144,37 @@ app.post('/api/banners/save', async (c) => {
 // Listar banners
 app.get('/api/banners/list', async (c) => {
   try {
-    // Por enquanto retornar array vazio
-    // Depois implementar com KV storage
-    return c.json({ ok: true, banners: [] })
+    const accountId = c.req.query('accountId')
+    
+    if (!accountId) {
+      return c.json({ ok: false, error: 'accountId é obrigatório' }, 400)
+    }
+    
+    const result = await c.env.DB.prepare(`
+      SELECT 
+        id,
+        account_id as accountId,
+        link_url as linkUrl,
+        banner_image_base64 as bannerImage,
+        title,
+        description,
+        value,
+        promo,
+        button_text as buttonText,
+        color,
+        charge_type as chargeType,
+        created_at as createdAt
+      FROM banners
+      WHERE account_id = ?
+      ORDER BY created_at DESC
+    `).bind(accountId).all()
+    
+    console.log(`Banners encontrados para ${accountId}:`, result.results?.length || 0)
+    
+    return c.json({ 
+      ok: true, 
+      banners: result.results || []
+    })
   } catch (error) {
     console.error('Erro ao listar banners:', error)
     return c.json({ ok: false, error: error.message }, 500)
