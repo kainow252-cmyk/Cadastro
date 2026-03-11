@@ -11566,7 +11566,7 @@ app.get('/subaccount-dashboard', (c) => {
             </div>
 
             <!-- Banner List -->
-            <div id="banners-grid" class="hidden grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div id="banners-grid" class="hidden flex flex-col gap-3">
                 <!-- Banners serão inseridos aqui -->
             </div>
 
@@ -11604,7 +11604,6 @@ app.get('/subaccount-dashboard', (c) => {
             function loadBanners() {
                 const accountId = currentSubaccount.id
                 
-                // Buscar banners da API
                 fetch('/api/banners/list?accountId=' + accountId)
                     .then(response => response.json())
                     .then(data => {
@@ -11619,30 +11618,44 @@ app.get('/subaccount-dashboard', (c) => {
                         const grid = document.getElementById('banners-grid')
                         grid.classList.remove('hidden')
                         
+                        // LISTA COMPACTA
                         grid.innerHTML = banners.map(banner => \`
-                            <div class="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition cursor-pointer"
-                                 onclick="viewBannerDetails('\${accountId}', '\${banner.id}')">
-                                <!-- Preview -->
-                                <div class="h-48 \${getGradientClass(banner.color)} p-4 flex items-center justify-center">
-                                    <div class="text-center text-white">
-                                        <div class="text-2xl font-bold mb-2">\${banner.title || 'Sem título'}</div>
-                                        <div class="text-4xl font-bold">R$ \${parseFloat(banner.value || 0).toFixed(2).replace('.', ',')}</div>
-                                        \${banner.chargeType === 'monthly' ? '<div class="text-sm mt-1">/mês</div>' : ''}
+                            <div class="bg-white border-l-4 border-\${banner.color || 'purple'}-500 rounded-lg shadow hover:shadow-md transition cursor-pointer p-4"
+                                 onclick="openBannerModal('\${accountId}', '\${banner.id}', \${JSON.stringify(banner).replace(/"/g, '&quot;')})">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center gap-4 flex-1">
+                                        <!-- Miniatura -->
+                                        <div class="w-16 h-16 bg-gradient-to-br from-\${banner.color || 'purple'}-400 to-\${banner.color || 'purple'}-600 rounded-lg flex items-center justify-center">
+                                            <i class="fas fa-image text-white text-2xl"></i>
+                                        </div>
+                                        
+                                        <!-- Info -->
+                                        <div class="flex-1">
+                                            <h3 class="font-bold text-gray-800 mb-1">\${banner.title || 'Sem título'}</h3>
+                                            <p class="text-sm text-gray-600 mb-2">\${banner.description || 'Sem descrição'}</p>
+                                            <div class="flex items-center gap-3 text-xs text-gray-500">
+                                                <span class="flex items-center gap-1">
+                                                    <i class="fas fa-money-bill-wave"></i>
+                                                    R$ \${parseFloat(banner.value || 0).toFixed(2).replace('.', ',')}
+                                                </span>
+                                                <span class="flex items-center gap-1">
+                                                    \${banner.chargeType === 'monthly' 
+                                                        ? '<i class="fas fa-sync-alt"></i> Mensal'
+                                                        : '<i class="fas fa-check-circle"></i> Único'}
+                                                </span>
+                                                <span class="flex items-center gap-1">
+                                                    <i class="far fa-calendar"></i>
+                                                    \${new Date(banner.createdAt).toLocaleDateString('pt-BR')}
+                                                </span>
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
-                                
-                                <!-- Info -->
-                                <div class="p-4">
-                                    <div class="flex items-center gap-2 mb-2">
-                                        \${banner.chargeType === 'monthly' 
-                                            ? '<span class="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full font-semibold">🔄 MENSAL</span>'
-                                            : '<span class="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full font-semibold">💳 ÚNICO</span>'}
-                                    </div>
-                                    <p class="text-gray-600 text-sm mb-2">\${banner.description || 'Sem descrição'}</p>
-                                    <p class="text-xs text-gray-500">
-                                        <i class="far fa-calendar mr-1"></i>
-                                        \${new Date(banner.createdAt).toLocaleDateString('pt-BR')}
-                                    </p>
+                                    
+                                    <!-- Botão Ver Detalhes -->
+                                    <button class="px-4 py-2 bg-\${banner.color || 'purple'}-600 text-white rounded-lg hover:bg-\${banner.color || 'purple'}-700 transition">
+                                        <i class="fas fa-eye mr-2"></i>
+                                        Ver Detalhes
+                                    </button>
                                 </div>
                             </div>
                         \`).join('')
@@ -11652,6 +11665,109 @@ app.get('/subaccount-dashboard', (c) => {
                         document.getElementById('loading').classList.add('hidden')
                         document.getElementById('empty-state').classList.remove('hidden')
                     })
+            }
+            
+            // Modal com detalhes do banner
+            function openBannerModal(accountId, bannerId, bannerData) {
+                const banner = typeof bannerData === 'string' ? JSON.parse(bannerData.replace(/&quot;/g, '"')) : bannerData
+                
+                const modal = document.createElement('div')
+                modal.id = 'banner-modal'
+                modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4'
+                
+                modal.innerHTML = \`
+                    <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                        <!-- Header -->
+                        <div class="bg-gradient-to-r from-\${banner.color || 'purple'}-600 to-\${banner.color || 'purple'}-700 p-6 text-white">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <h2 class="text-2xl font-bold mb-2">\${banner.title || 'Banner Personalizado'}</h2>
+                                    <p class="text-\${banner.color || 'purple'}-100">\${new Date(banner.createdAt).toLocaleDateString('pt-BR', { 
+                                        day: '2-digit', 
+                                        month: '2-digit', 
+                                        year: 'numeric',
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                    })}</p>
+                                </div>
+                                <button onclick="closeBannerModal()" class="text-white hover:text-gray-200 transition">
+                                    <i class="fas fa-times text-2xl"></i>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Banner Preview -->
+                        <div class="p-6 bg-gray-50">
+                            <div class="bg-gradient-to-br from-\${banner.color || 'purple'}-400 to-\${banner.color || 'purple'}-600 rounded-xl p-8 text-center text-white">
+                                <h3 class="text-3xl font-bold mb-4">\${banner.title || 'Banner Personalizado'}</h3>
+                                <div class="text-5xl font-bold mb-2">R$ \${parseFloat(banner.value || 0).toFixed(2).replace('.', ',')}</div>
+                                \${banner.chargeType === 'monthly' ? '<div class="text-xl">/mês</div>' : '<div class="text-xl">Pagamento Único</div>'}
+                                <p class="mt-4 text-lg">\${banner.description || ''}</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Informações -->
+                        <div class="p-6 border-t">
+                            <h3 class="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                <i class="fas fa-link text-\${banner.color || 'purple'}-600"></i>
+                                Link de Pagamento
+                            </h3>
+                            <div class="bg-gray-50 p-4 rounded-lg mb-6">
+                                <p class="text-sm text-gray-600 break-all">\${banner.linkUrl || window.location.origin + '/subscription-signup/' + bannerId}</p>
+                            </div>
+                            
+                            <!-- Ações -->
+                            <div class="grid grid-cols-2 gap-4">
+                                <button onclick="shareBanner('\${banner.linkUrl}')" 
+                                        class="flex items-center justify-center gap-2 px-6 py-3 bg-\${banner.color || 'purple'}-600 text-white rounded-lg hover:bg-\${banner.color || 'purple'}-700 transition">
+                                    <i class="fas fa-share-alt"></i>
+                                    Compartilhar
+                                </button>
+                                
+                                <button onclick="downloadBanner('\${banner.id}', '\${banner.bannerImage || ''}')" 
+                                        class="flex items-center justify-center gap-2 px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition">
+                                    <i class="fas fa-download"></i>
+                                    Baixar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                \`
+                
+                document.body.appendChild(modal)
+                
+                // Fechar ao clicar fora
+                modal.addEventListener('click', (e) => {
+                    if (e.target === modal) closeBannerModal()
+                })
+            }
+            
+            function closeBannerModal() {
+                const modal = document.getElementById('banner-modal')
+                if (modal) modal.remove()
+            }
+            
+            function shareBanner(linkUrl) {
+                if (navigator.share) {
+                    navigator.share({
+                        title: 'Link de Pagamento',
+                        url: linkUrl
+                    })
+                } else {
+                    navigator.clipboard.writeText(linkUrl)
+                    alert('Link copiado para área de transferência!')
+                }
+            }
+            
+            function downloadBanner(bannerId, bannerImage) {
+                if (bannerImage) {
+                    const link = document.createElement('a')
+                    link.href = bannerImage
+                    link.download = 'banner-' + bannerId + '.png'
+                    link.click()
+                } else {
+                    alert('Imagem do banner não disponível')
+                }
             }
 
             // Mostrar modal de alteração de senha
