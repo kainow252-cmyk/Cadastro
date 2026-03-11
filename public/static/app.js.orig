@@ -5782,8 +5782,7 @@ async function downloadPromoBanner() {
             qrCodeBase64,
             chargeType,
             fontSize,
-            createdAt: new Date().toISOString(),
-            bannerImageBase64: bannerDataUrl
+            createdAt: new Date().toISOString()
         };
         
         saveBanner(accountId, bannerData);

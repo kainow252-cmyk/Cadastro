@@ -15149,6 +15149,30 @@ app.post('/api/banners/save', async (c) => {
 })
 
 // Listar banners
+
+// Deletar banner
+app.delete('/api/banners/:bannerId', async (c) => {
+  try {
+    const { bannerId } = c.req.param()
+    
+    if (!bannerId) {
+      return c.json({ ok: false, error: 'bannerId é obrigatório' }, 400)
+    }
+    
+    // Deletar do banco D1
+    await c.env.DB.prepare(`
+      DELETE FROM banners WHERE id = ?
+    `).bind(bannerId).run()
+    
+    console.log('Banner deletado:', bannerId)
+    
+    return c.json({ ok: true, message: 'Banner deletado com sucesso' })
+  } catch (error) {
+    console.error('Erro ao deletar banner:', error)
+    return c.json({ ok: false, error: error.message }, 500)
+  }
+})
+
 app.get('/api/banners/list', async (c) => {
   try {
     const accountId = c.req.query('accountId')
