@@ -2735,7 +2735,7 @@ function displayAccounts(accounts) {
                                     ${walletHtml}
                                 </div>
                                 <div class="flex items-center gap-4 mt-0.5 text-xs text-gray-500">
-                                    <span class="truncate"><i class="fas fa-envelope mr-1"></i>${account.email}</span>
+                                    <span class="truncate"><i class="fas fa-envelope mr-1"></i>${account.email || 'Email não disponível'}</span>
                                     <span><i class="fas fa-id-card mr-1"></i>${account.cpfCnpj}</span>
                                     <span class="hidden md:inline"><i class="fas fa-calendar mr-1"></i>${dateCreated}</span>
                                 </div>
@@ -2891,7 +2891,7 @@ function renderRecentActivity(recentAccounts) {
     }
     
     container.innerHTML = recentAccounts.map(account => {
-        const date = account.dateCreated ? new Date(account.dateCreated).toLocaleDateString('pt-BR', {
+        const date = (account.createdAt || account.dateCreated) ? new Date(account.createdAt || account.dateCreated).toLocaleDateString('pt-BR', {
             day: '2-digit',
             month: 'short',
             hour: '2-digit',
@@ -3084,11 +3084,11 @@ function displayReport(data) {
                         <i class="fas fa-user mr-1"></i>${account.name}
                     </p>
                     <p class="text-orange-100 text-sm mt-1">
-                        <i class="fas fa-envelope mr-1"></i>${account.email} | 
-                        <i class="fas fa-id-card ml-2 mr-1"></i>${account.cpfCnpj}
+                        <i class="fas fa-envelope mr-1"></i>${account.email || 'Email não disponível'} | 
+                        <i class="fas fa-id-card ml-2 mr-1"></i>${account.cpfCnpj || account.person?.cpfCnpj || 'CPF/CNPJ não disponível'}
                     </p>
                     <p class="text-orange-100 text-sm mt-1">
-                        <i class="fas fa-wallet mr-1"></i>Wallet: ${account.walletId?.substring(0, 8)}...
+                        <i class="fas fa-wallet mr-1"></i>Wallet: ${account.walletId ? account.walletId.substring(0, 8) + '...' : 'Wallet ID não disponível'}
                     </p>
                 </div>
                 <div class="text-right">
