@@ -1,25 +1,72 @@
-# Node modules (372MB - não precisa carregar)
-node_modules/
+# 🚫 Ignorar carregamento no Genspark para melhorar performance
 
-# Build output (rebuilda automaticamente)
+# ============================================
+# DEPENDÊNCIAS (372 MB)
+# ============================================
+node_modules/
+package-lock.json
+
+# ============================================
+# ARQUIVOS BUILD E CACHE
+# ============================================
 dist/
 .wrangler/
-
-# Cache e temporários
 .cache/
+.vite/
+.turbo/
+
+# ============================================
+# ARQUIVOS GRANDES DO BACKEND (CAUSA LENTIDÃO!)
+# ============================================
+# Backend principal (16.041 linhas, 677 KB)
+src/index.tsx
+
+# ============================================
+# ARQUIVOS GRANDES DO FRONTEND
+# ============================================
+# Frontend principal (7.996 linhas, 350 KB)
+public/static/app.js
+public/static/deltapag-section.js
+
+# ============================================
+# LOGS E TEMPORÁRIOS
+# ============================================
 *.log
 *.temp
 *.tmp
-
-# Git
-.git/objects/
-
-# Backups locais
 *.backup
 *.bak
+.DS_Store
+Thumbs.db
 
-# Database local (auto-gerado)
+# ============================================
+# GIT OBJECTS (já estão versionados)
+# ============================================
+.git/objects/
+.git/logs/
+
+# ============================================
+# DOCUMENTAÇÃO AUTO-GERADA
+# ============================================
+RELATORIO-TESTES.md
+
+# ============================================
+# ARQUIVOS DE TESTE E DEBUG
+# ============================================
+test-*.sh
+*.test.js
+*.spec.ts
+
+# ============================================
+# BANCO DE DADOS LOCAL
+# ============================================
+*.db
+*.sqlite
+*.sqlite3
 .wrangler/state/
 
-# Docs auto-gerados
-RELATORIO-TESTES.md
+# ============================================
+# AMBIENTE LOCAL
+# ============================================
+.env
+.dev.vars
