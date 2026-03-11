@@ -11600,48 +11600,55 @@ app.get('/subaccount-dashboard', (c) => {
 
             function loadBanners() {
                 const accountId = currentSubaccount.id
-                const bannersKey = \`banners_\${accountId}\`
                 
-                // Buscar banners do localStorage
-                const banners = JSON.parse(localStorage.getItem(bannersKey) || '[]')
-                
-                document.getElementById('loading').classList.add('hidden')
-                
-                if (banners.length === 0) {
-                    document.getElementById('empty-state').classList.remove('hidden')
-                    return
-                }
-                
-                const grid = document.getElementById('banners-grid')
-                grid.classList.remove('hidden')
-                
-                grid.innerHTML = banners.map(banner => \`
-                    <div class="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition cursor-pointer"
-                         onclick="viewBannerDetails('\${accountId}', '\${banner.id}')">
-                        <!-- Preview -->
-                        <div class="h-48 \${getGradientClass(banner.color)} p-4 flex items-center justify-center">
-                            <div class="text-center text-white">
-                                <div class="text-2xl font-bold mb-2">\${banner.title}</div>
-                                <div class="text-4xl font-bold">R$ \${parseFloat(banner.value).toFixed(2).replace('.', ',')}</div>
-                                \${banner.chargeType === 'monthly' ? '<div class="text-sm mt-1">/mês</div>' : ''}
-                            </div>
-                        </div>
+                // Buscar banners da API
+                fetch('/api/banners/list?accountId=' + accountId)
+                    .then(response => response.json())
+                    .then(data => {
+                        document.getElementById('loading').classList.add('hidden')
                         
-                        <!-- Info -->
-                        <div class="p-4">
-                            <div class="flex items-center gap-2 mb-2">
-                                \${banner.chargeType === 'monthly' 
-                                    ? '<span class="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full font-semibold">🔄 MENSAL</span>'
-                                    : '<span class="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full font-semibold">💳 ÚNICO</span>'}
+                        if (!data.ok || !data.banners || data.banners.length === 0) {
+                            document.getElementById('empty-state').classList.remove('hidden')
+                            return
+                        }
+                        
+                        const banners = data.banners
+                        const grid = document.getElementById('banners-grid')
+                        grid.classList.remove('hidden')
+                        
+                        grid.innerHTML = banners.map(banner => \`
+                            <div class="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition cursor-pointer"
+                                 onclick="viewBannerDetails('\${accountId}', '\${banner.id}')">
+                                <!-- Preview -->
+                                <div class="h-48 \${getGradientClass(banner.color)} p-4 flex items-center justify-center">
+                                    <div class="text-center text-white">
+                                        <div class="text-2xl font-bold mb-2">\${banner.title || 'Sem título'}</div>
+                                        <div class="text-4xl font-bold">R$ \${parseFloat(banner.value || 0).toFixed(2).replace('.', ',')}</div>
+                                        \${banner.chargeType === 'monthly' ? '<div class="text-sm mt-1">/mês</div>' : ''}
+                                    </div>
+                                </div>
+                                
+                                <!-- Info -->
+                                <div class="p-4">
+                                    <div class="flex items-center gap-2 mb-2">
+                                        \${banner.chargeType === 'monthly' 
+                                            ? '<span class="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full font-semibold">🔄 MENSAL</span>'
+                                            : '<span class="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full font-semibold">💳 ÚNICO</span>'}
+                                    </div>
+                                    <p class="text-gray-600 text-sm mb-2">\${banner.description || 'Sem descrição'}</p>
+                                    <p class="text-xs text-gray-500">
+                                        <i class="far fa-calendar mr-1"></i>
+                                        \${new Date(banner.createdAt).toLocaleDateString('pt-BR')}
+                                    </p>
+                                </div>
                             </div>
-                            <p class="text-gray-600 text-sm mb-2">\${banner.description}</p>
-                            <p class="text-xs text-gray-500">
-                                <i class="far fa-calendar mr-1"></i>
-                                \${new Date(banner.createdAt).toLocaleDateString('pt-BR')}
-                            </p>
-                        </div>
-                    </div>
-                \`).join('')
+                        \`).join('')
+                    })
+                    .catch(error => {
+                        console.error('Erro ao carregar banners:', error)
+                        document.getElementById('loading').classList.add('hidden')
+                        document.getElementById('empty-state').classList.remove('hidden')
+                    })
             }
 
             // Mostrar modal de alteração de senha
