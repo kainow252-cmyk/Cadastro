@@ -940,6 +940,7 @@ app.post('/api/banners', async (c) => {
   try {
     const body = await c.req.json()
     const { accountId, linkUrl, qrCodeBase64, bannerImageBase64, title, description, value, promo, buttonText, color, chargeType, isCustomBanner } = body
+    console.log("📥 Salvando banner:", { accountId, linkUrl, title, description, value, chargeType })
     
     if (!accountId || !linkUrl) {
       return c.json({ error: 'accountId e linkUrl são obrigatórios' }, 400)
@@ -967,6 +968,7 @@ app.post('/api/banners', async (c) => {
     ).run()
     
     return c.json({ ok: true, bannerId })
+    console.log("✅ Banner salvo com ID:", bannerId, "para accountId:", accountId)
   } catch (error: any) {
     console.error('Erro ao salvar banner:', error)
     return c.json({ error: error.message }, 500)
@@ -15199,6 +15201,7 @@ app.get('/api/banners/list', async (c) => {
       WHERE account_id = ?
       ORDER BY created_at DESC
     `).bind(accountId).all()
+    console.log("📊 Banners retornados:", result.results?.map(b => ({ id: b.id, accountId: b.accountId, title: b.title })))
     
     console.log(`Banners encontrados para ${accountId}:`, result.results?.length || 0)
     
