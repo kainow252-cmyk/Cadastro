@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste - Botão Link com Iframe</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+</head>
+<body class="bg-gray-100 p-4">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-2xl font-bold text-gray-800 mb-6">
+            <i class="fas fa-vial mr-2 text-blue-600"></i>
+            Teste do Botão Link com Iframe
+        </h1>
+        
+        <!-- Simulação da seção Subcontas -->
+        <div class="bg-white rounded-lg shadow">
+            <div class="p-3 border-b border-gray-200">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-sm font-bold text-gray-800">
+                        <i class="fas fa-users mr-1 text-blue-600"></i>
+                        Subcontas
+                    </h2>
+                    <div class="flex gap-2">
+                        <button onclick="testOpenLinkIframe()" class="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-2 py-1 rounded-lg hover:from-purple-600 hover:to-pink-600 font-semibold shadow-md transition text-xs">
+                            <i class="fas fa-link mr-1"></i>Link
+                        </button>
+                        <button onclick="alert('Função Atualizar')" class="bg-blue-600 text-white px-2 py-1 rounded-lg hover:bg-blue-700 font-semibold text-xs">
+                            <i class="fas fa-sync-alt mr-1"></i>Atualizar
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Área do iframe (oculto por padrão) -->
+            <div id="link-iframe-container" class="hidden border-t border-gray-200">
+                <div class="bg-gradient-to-r from-purple-50 to-pink-50 p-4">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="text-sm font-bold text-gray-800">
+                            <i class="fas fa-link mr-2 text-purple-600"></i>
+                            Link de Cadastro de Subconta
+                        </h3>
+                        <button onclick="closeLinkIframe()" class="text-gray-500 hover:text-gray-700 font-bold text-lg px-2">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div id="link-iframe-content" class="bg-white rounded-lg shadow-lg p-4">
+                        <p class="text-center text-gray-500">
+                            <i class="fas fa-spinner fa-spin mr-2"></i>
+                            Gerando link...
+                        </p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Lista simulada de subcontas -->
+            <div class="p-6">
+                <div class="space-y-2">
+                    <div class="border border-gray-200 rounded-lg p-3">
+                        <p class="font-semibold">Franklin Silva</p>
+                        <p class="text-xs text-gray-600">✅ Aprovado</p>
+                    </div>
+                    <div class="border border-gray-200 rounded-lg p-3">
+                        <p class="font-semibold">Saulo Santos</p>
+                        <p class="text-xs text-gray-600">✅ Aprovado</p>
+                    </div>
+                    <div class="border border-gray-200 rounded-lg p-3">
+                        <p class="font-semibold">Tanar Costa</p>
+                        <p class="text-xs text-gray-600">✅ Aprovado</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Logs -->
+        <div class="mt-6 bg-gray-900 text-green-400 rounded-lg p-4 font-mono text-xs">
+            <div id="console-logs">
+                <p>📋 Console de Logs:</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Função de log
+        function addLog(msg) {
+            const logs = document.getElementById('console-logs');
+            const now = new Date().toLocaleTimeString('pt-BR');
+            logs.innerHTML += `\n[${now}] ${msg}`;
+            console.log(msg);
+        }
+
+        // Função de teste (simula geração de link)
+        async function testOpenLinkIframe() {
+            addLog('🔵 openLinkModal v15.0 - IFRAME MODE');
+            
+            const container = document.getElementById('link-iframe-container');
+            const content = document.getElementById('link-iframe-content');
+            
+            if (!container || !content) {
+                addLog('❌ Iframe container não encontrado');
+                alert('❌ Iframe container não encontrado');
+                return;
+            }
+            
+            // Mostrar container
+            container.classList.remove('hidden');
+            content.innerHTML = '<p class="text-center text-gray-500"><i class="fas fa-spinner fa-spin mr-2"></i>Gerando link...</p>';
+            addLog('✅ Container mostrado');
+            
+            // Scroll até o iframe
+            container.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            addLog('📜 Scroll até iframe');
+            
+            // Simular delay da API (2 segundos)
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            // Simular link gerado
+            const fakeUrl = 'https://ef5c0259.corretoracorporate.pages.dev/cadastro/test-12345';
+            addLog('✅ Link gerado (simulado): ' + fakeUrl);
+            
+            // Preencher conteúdo
+            content.innerHTML = `
+                <div class="space-y-4">
+                    <!-- Link gerado -->
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-700 mb-2">
+                            <i class="fas fa-link mr-1"></i>Link Gerado
+                        </label>
+                        <div class="flex gap-2">
+                            <input type="text" id="generated-link-iframe" value="${fakeUrl}" readonly
+                                class="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg bg-gray-50">
+                            <button onclick="copyLinkFromIframe()" 
+                                class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-semibold">
+                                <i class="fas fa-copy mr-1"></i>Copiar
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Info -->
+                    <div class="flex items-center gap-4 text-xs text-gray-600">
+                        <span><i class="fas fa-calendar mr-1"></i>Expira: 08/04/2026</span>
+                        <span><i class="fas fa-infinity mr-1"></i>Usos ilimitados</span>
+                    </div>
+                    
+                    <!-- QR Code -->
+                    <div class="bg-gray-50 rounded-lg p-4 text-center">
+                        <p class="text-xs font-semibold text-gray-700 mb-3">
+                            <i class="fas fa-qrcode mr-1"></i>QR Code
+                        </p>
+                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(fakeUrl)}" 
+                            class="w-48 h-48 mx-auto border-2 border-gray-300 rounded-lg">
+                    </div>
+                    
+                    <!-- Botões de compartilhamento -->
+                    <div class="flex flex-wrap gap-2 justify-center">
+                        <button onclick="shareWhatsAppIframe()" 
+                            class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 text-sm font-semibold">
+                            <i class="fab fa-whatsapp mr-1"></i>WhatsApp
+                        </button>
+                        <button onclick="shareEmailIframe()" 
+                            class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-semibold">
+                            <i class="fas fa-envelope mr-1"></i>Email
+                        </button>
+                        <button onclick="shareTelegramIframe()" 
+                            class="bg-blue-400 text-white px-4 py-2 rounded-lg hover:bg-blue-500 text-sm font-semibold">
+                            <i class="fab fa-telegram mr-1"></i>Telegram
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            window.currentLinkUrl = fakeUrl;
+            addLog('✅ Iframe preenchido com sucesso!');
+        }
+
+        // Fechar iframe
+        function closeLinkIframe() {
+            const container = document.getElementById('link-iframe-container');
+            if (container) {
+                container.classList.add('hidden');
+                addLog('✅ Iframe fechado');
+            }
+        }
+
+        // Copiar link
+        function copyLinkFromIframe() {
+            const input = document.getElementById('generated-link-iframe');
+            if (input) {
+                input.select();
+                document.execCommand('copy');
+                alert('✅ Link copiado!');
+                addLog('✅ Link copiado: ' + input.value);
+            }
+        }
+
+        // Compartilhar WhatsApp
+        function shareWhatsAppIframe() {
+            const url = window.currentLinkUrl;
+            if (!url) return;
+            const msg = encodeURIComponent(`🎉 Convite: ${url}`);
+            window.open(`https://wa.me/?text=${msg}`, '_blank');
+            addLog('📱 Compartilhado via WhatsApp');
+        }
+
+        // Compartilhar Email
+        function shareEmailIframe() {
+            const url = window.currentLinkUrl;
+            if (!url) return;
+            const subject = encodeURIComponent('Convite');
+            const body = encodeURIComponent(`Link: ${url}`);
+            window.location.href = `mailto:?subject=${subject}&body=${body}`;
+            addLog('📧 Compartilhado via Email');
+        }
+
+        // Compartilhar Telegram
+        function shareTelegramIframe() {
+            const url = window.currentLinkUrl;
+            if (!url) return;
+            window.open(`https://t.me/share/url?url=${url}`, '_blank');
+            addLog('✈️ Compartilhado via Telegram');
+        }
+
+        addLog('✅ Página de teste carregada - v15.0');
+        addLog('👉 Clique no botão "Link" roxo para testar!');
+    </script>
+</body>
+</html>

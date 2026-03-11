@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste - Botão Link + QR Code</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100 p-8">
+    <div class="max-w-4xl mx-auto bg-white rounded-lg shadow-lg p-6">
+        <h1 class="text-2xl font-bold mb-4">🧪 Teste do Botão Link (v15.2)</h1>
+        
+        <button onclick="testOpenLink()" class="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 font-semibold">
+            <i class="fas fa-link mr-2"></i>Testar Link
+        </button>
+        
+        <div id="link-iframe-container" class="hidden mt-6 border-t border-gray-200">
+            <div class="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-lg">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="text-sm font-bold text-gray-800">
+                        <i class="fas fa-link mr-2 text-purple-600"></i>
+                        Link de Cadastro
+                    </h3>
+                    <button onclick="closeTest()" class="text-gray-500 hover:text-gray-700 font-bold text-lg">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div id="link-iframe-content" class="bg-white rounded-lg shadow p-4">
+                    <p class="text-center text-gray-500">
+                        <i class="fas fa-spinner fa-spin mr-2"></i>
+                        Gerando link...
+                    </p>
+                </div>
+            </div>
+        </div>
+        
+        <div id="console-log" class="mt-6 bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-xs max-h-96 overflow-y-auto">
+            <p>📋 Console logs aparecerão aqui...</p>
+        </div>
+    </div>
+    
+    <script>
+        const log = (msg) => {
+            const el = document.getElementById('console-log');
+            el.innerHTML += `<br>${msg}`;
+            el.scrollTop = el.scrollHeight;
+            console.log(msg);
+        };
+        
+        window.currentTestLink = '';
+        
+        function testOpenLink() {
+            log('🔵 testOpenLink CHAMADO');
+            
+            const container = document.getElementById('link-iframe-container');
+            const content = document.getElementById('link-iframe-content');
+            
+            if (!container || !content) {
+                log('❌ Elementos não encontrados!');
+                alert('❌ Elementos não encontrados!');
+                return;
+            }
+            
+            log('✅ Container encontrado, mostrando...');
+            container.classList.remove('hidden');
+            
+            // Simular geração de link após 2 segundos
+            setTimeout(() => {
+                const testUrl = 'https://432a4170.corretoracorporate.pages.dev/cadastro/test-12345';
+                window.currentTestLink = testUrl;
+                
+                log('✅ Link simulado gerado: ' + testUrl);
+                
+                const expiresText = new Date(Date.now() + 30*24*60*60*1000).toLocaleDateString('pt-BR');
+                
+                content.innerHTML = `
+                    <div class="space-y-4">
+                        <!-- Link -->
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-700 mb-2">
+                                <i class="fas fa-link mr-1"></i>Link Gerado
+                            </label>
+                            <div class="flex gap-2">
+                                <input type="text" id="test-link-input" value="${testUrl}" readonly
+                                    class="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg bg-gray-50">
+                                <button onclick="copyTestLink()" 
+                                    class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-semibold">
+                                    <i class="fas fa-copy mr-1"></i>Copiar
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Info -->
+                        <div class="flex items-center gap-4 text-xs text-gray-600">
+                            <span><i class="fas fa-calendar mr-1"></i>Expira: ${expiresText}</span>
+                            <span><i class="fas fa-infinity mr-1"></i>Usos ilimitados</span>
+                        </div>
+                        
+                        <!-- QR Code -->
+                        <div class="bg-gray-50 rounded-lg p-4 text-center">
+                            <p class="text-xs font-semibold text-gray-700 mb-3">
+                                <i class="fas fa-qrcode mr-1"></i>QR Code
+                            </p>
+                            <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(testUrl)}" 
+                                class="w-48 h-48 mx-auto border-2 border-gray-300 rounded-lg">
+                        </div>
+                        
+                        <!-- Botões -->
+                        <div class="flex flex-wrap gap-2 justify-center">
+                            <button onclick="shareWhatsAppTest()" 
+                                class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 text-sm font-semibold">
+                                <i class="fab fa-whatsapp mr-1"></i>WhatsApp
+                            </button>
+                            <button onclick="shareEmailTest()" 
+                                class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-semibold">
+                                <i class="fas fa-envelope mr-1"></i>Email
+                            </button>
+                            <button onclick="shareTelegramTest()" 
+                                class="bg-blue-400 text-white px-4 py-2 rounded-lg hover:bg-blue-500 text-sm font-semibold">
+                                <i class="fab fa-telegram mr-1"></i>Telegram
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                log('✅ Conteúdo renderizado com sucesso!');
+            }, 2000);
+        }
+        
+        function closeTest() {
+            log('🔴 Fechando container...');
+            document.getElementById('link-iframe-container').classList.add('hidden');
+        }
+        
+        function copyTestLink() {
+            const input = document.getElementById('test-link-input');
+            if (input) {
+                input.select();
+                document.execCommand('copy');
+                log('✅ Link copiado: ' + input.value);
+                alert('✅ Link copiado!');
+            }
+        }
+        
+        function shareWhatsAppTest() {
+            const url = window.currentTestLink;
+            log('📱 Compartilhando via WhatsApp: ' + url);
+            if (!url) { alert('Link não disponível'); return; }
+            const msg = encodeURIComponent(`🎉 Convite para cadastro: ${url}`);
+            window.open(`https://wa.me/?text=${msg}`, '_blank');
+        }
+        
+        function shareEmailTest() {
+            const url = window.currentTestLink;
+            log('📧 Compartilhando via Email: ' + url);
+            if (!url) { alert('Link não disponível'); return; }
+            const subject = encodeURIComponent('Convite para Cadastro');
+            const body = encodeURIComponent(`Olá!\\n\\nVocê foi convidado para criar sua conta.\\n\\nClique no link:\\n${url}`);
+            window.location.href = `mailto:?subject=${subject}&body=${body}`;
+        }
+        
+        function shareTelegramTest() {
+            const url = window.currentTestLink;
+            log('💬 Compartilhando via Telegram: ' + url);
+            if (!url) { alert('Link não disponível'); return; }
+            const msg = encodeURIComponent(`🎉 Convite: ${url}`);
+            window.open(`https://t.me/share/url?url=${url}&text=${msg}`, '_blank');
+        }
+        
+        log('✅ Página de teste carregada!');
+    </script>
+</body>
+</html>

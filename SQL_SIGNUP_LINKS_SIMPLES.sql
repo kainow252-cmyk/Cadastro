@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS signup_links (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, url TEXT NOT NULL, expires_at DATETIME NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, created_by TEXT NOT NULL, max_uses INTEGER, uses_count INTEGER DEFAULT 0, notes TEXT, active INTEGER DEFAULT 1, qr_code TEXT);

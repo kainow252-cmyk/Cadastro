@@ -1,0 +1,25 @@
+# Node modules (372MB - não precisa carregar)
+node_modules/
+
+# Build output (rebuilda automaticamente)
+dist/
+.wrangler/
+
+# Cache e temporários
+.cache/
+*.log
+*.temp
+*.tmp
+
+# Git
+.git/objects/
+
+# Backups locais
+*.backup
+*.bak
+
+# Database local (auto-gerado)
+.wrangler/state/
+
+# Docs auto-gerados
+RELATORIO-TESTES.md

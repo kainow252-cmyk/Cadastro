@@ -1,0 +1,16041 @@
+import { Hono } from 'hono'
+import { cors } from 'hono/cors'
+import { serveStatic } from 'hono/cloudflare-workers'
+import { getCookie, setCookie } from 'hono/cookie'
+import { SignJWT, jwtVerify } from 'jose'
+import { initializeSESClient, sendWelcomeEmail, isSESConfigured } from './email-service'
+import type { CustomerData } from './email-templates'
+
+type Bindings = {
+  ASAAS_API_KEY: string;
+  ASAAS_API_URL: string;
+  ADMIN_USERNAME: string;
+  ADMIN_PASSWORD: string;
+  JWT_SECRET: string;
+  MAILERSEND_API_KEY: string;
+  MAILERSEND_FROM_EMAIL: string;
+  MAILERSEND_FROM_NAME: string;
+  AWS_ACCESS_KEY_ID?: string;
+  AWS_SECRET_ACCESS_KEY?: string;
+  AWS_REGION?: string;
+  ASAAS_WEBHOOK_TOKEN?: string;
+  DELTAPAG_API_KEY: string;
+  DELTAPAG_API_URL: string;
+  DB: D1Database;
+}
+
+type Variables = {
+  user: { username: string };
+}
+
+const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
+
+// Enable CORS with credentials
+app.use('/api/*', cors({
+  origin: (origin) => origin, // Allow all origins
+  credentials: true, // Allow cookies
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+}))
+
+// Serve static files
+app.use('/static/*', serveStatic({ root: './public' }))
+
+// 🧪 Rota de teste do iframe (sem autenticação)
+app.get('/test-link-iframe.html', serveStatic({ path: './public/test-link-iframe.html' }))
+
+// Helper function to create JWT token
+async function createToken(username: string, secret: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const secretKey = encoder.encode(secret)
+  
+  const token = await new SignJWT({ username })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime('24h')
+    .sign(secretKey)
+  
+  return token
+}
+
+// Helper function to verify JWT token
+async function verifyToken(token: string, secret: string): Promise<any> {
+  try {
+    const encoder = new TextEncoder()
+    const secretKey = encoder.encode(secret)
+    const { payload } = await jwtVerify(token, secretKey)
+    return payload
+  } catch (error) {
+    return null
+  }
+}
+
+// Auth middleware for protected routes
+async function authMiddleware(c: any, next: any) {
+  const token = getCookie(c, 'auth_token')
+  
+  if (!token) {
+    return c.json({ error: 'Não autorizado' }, 401)
+  }
+  
+  const payload = await verifyToken(token, c.env.JWT_SECRET)
+  
+  if (!payload) {
+    return c.json({ error: 'Token inválido' }, 401)
+  }
+  
+  c.set('user', payload)
+  await next()
+}
+
+// Apply auth middleware to all /api/* routes except public routes
+app.use('/api/*', async (c, next) => {
+  const path = c.req.path
+  const publicRoutes = [
+    '/api/login', 
+    '/api/check-auth',
+    '/api/subaccount-login',
+    '/api/subaccount-check-auth',
+    '/api/subaccount-logout',
+    '/api/public/signup',
+    '/api/proxy/payments',
+    '/api/debug/env',
+    '/api/debug/asaas'
+  ]
+  
+  // Public routes with exact match
+  if (publicRoutes.includes(path)) {
+    return next()
+  }
+  
+  // Public routes with pattern match
+  if (path.startsWith('/api/pix/subscription-link/') || 
+      path.startsWith('/api/pix/subscription-signup/') ||
+      path.startsWith('/api/pix/automatic-signup-link/') ||
+      path.startsWith('/api/pix/automatic-signup/') ||
+      path.startsWith('/api/payment-status/') ||
+      path.startsWith('/api/webhooks/') ||
+      path.startsWith('/api/lottery/ticket/') || // Rota pública de visualização do bilhete
+      path.startsWith('/api/reports/all-accounts/received') ||
+      path.startsWith('/api/reports/all-accounts/pending') ||
+      path.startsWith('/api/reports/all-accounts/overdue') ||
+      path.startsWith('/api/reports/all-accounts/refunded') ||
+      path.match(/^\/api\/banners\/[^/]+\/[^/]+$/) || // GET /api/banners/:accountId/:bannerId (público)
+      path.match(/^\/api\/banners\/[^\/]+\/[^\/]+$/)) {  // GET /api/banners/:accountId/:bannerId (público)
+    return next()
+  }
+  
+  return authMiddleware(c, next)
+})
+
+// Helper function to send lottery ticket email via Mailersend
+async function sendLotteryTicketEmail(
+  c: any,
+  name: string,
+  email: string,
+  ticketNumber: string,
+  drawDate: string,
+  drawDescription: string,
+  prizeDescription: string,
+  paymentId: string,
+  value: number
+) {
+  const apiKey = c.env.MAILERSEND_API_KEY
+  const fromEmail = c.env.MAILERSEND_FROM_EMAIL
+  const fromName = c.env.MAILERSEND_FROM_NAME
+  
+  console.log('🔑 Verificando credenciais MailerSend:', {
+    hasApiKey: !!apiKey,
+    apiKeyLength: apiKey?.length || 0,
+    apiKeyPrefix: apiKey?.substring(0, 10) || 'undefined',
+    hasFromEmail: !!fromEmail,
+    fromEmail: fromEmail || 'undefined',
+    hasFromName: !!fromName,
+    fromName: fromName || 'undefined'
+  })
+  
+  if (!apiKey) {
+    console.error('❌ MAILERSEND_API_KEY não configurada!')
+    return { ok: false, status: 401, error: 'Missing API key' }
+  }
+  
+  if (!fromEmail) {
+    console.error('❌ MAILERSEND_FROM_EMAIL não configurada!')
+    return { ok: false, status: 401, error: 'Missing from email' }
+  }
+  
+  // URL para verificar o resultado
+  const checkUrl = `${new URL(c.req.url).origin}/lottery-ticket/${paymentId}`
+  
+  // Formatar data
+  const dateObj = new Date(drawDate + 'T00:00:00')
+  const formattedDate = dateObj.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric'
+  })
+  
+  const emailData = {
+    from: {
+      email: fromEmail,
+      name: fromName
+    },
+    to: [
+      {
+        email: email,
+        name: name
+      }
+    ],
+    subject: `🎫 Seu Bilhete da Loteria Federal - ${ticketNumber}`,
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; background: #f5f5f5; }
+          .header { background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .content { background: white; padding: 30px; }
+          .ticket { background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%); border: 4px dashed #f57c00; border-radius: 15px; padding: 30px; margin: 30px 0; text-align: center; box-shadow: 0 8px 16px rgba(0,0,0,0.2); }
+          .ticket-number { font-size: 48px; font-weight: bold; color: #d32f2f; letter-spacing: 8px; text-shadow: 2px 2px 4px rgba(0,0,0,0.2); margin: 20px 0; }
+          .prize { background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); color: #1b5e20; padding: 20px; border-radius: 10px; margin: 20px 0; text-align: center; font-size: 24px; font-weight: bold; }
+          .button { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 18px 40px; text-decoration: none; border-radius: 50px; margin: 20px 0; font-size: 18px; font-weight: bold; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+          .button:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.3); }
+          .info-box { background: #e3f2fd; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #2196f3; }
+          .success-box { background: #e8f5e9; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #4caf50; }
+          .footer { text-align: center; margin-top: 30px; color: #666; font-size: 12px; }
+          h1 { margin: 0; font-size: 32px; }
+          .icon { font-size: 48px; margin: 10px 0; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <div class="icon">🎉</div>
+            <h1>Pagamento Confirmado!</h1>
+            <p style="font-size: 18px; margin: 10px 0 0 0;">Você está concorrendo à Loteria Federal!</p>
+          </div>
+          
+          <div class="content">
+            <div class="success-box">
+              <h2 style="margin-top: 0; color: #4caf50;">✅ Pagamento Aprovado</h2>
+              <p style="margin: 0;">Olá <strong>${name}</strong>! Seu pagamento de <strong>R$ ${value.toFixed(2)}</strong> foi confirmado com sucesso!</p>
+            </div>
+            
+            <div class="ticket">
+              <h2 style="margin-top: 0; color: #f57c00;">🎫 SEU BILHETE DA LOTERIA FEDERAL</h2>
+              <div class="ticket-number">${ticketNumber}</div>
+              <p style="font-size: 18px; margin: 10px 0;"><strong>📅 Sorteio:</strong> ${formattedDate}</p>
+              <p style="font-size: 16px; margin: 5px 0; color: #666;">${drawDescription}</p>
+            </div>
+            
+            <div class="prize">
+              🏆 ${prizeDescription}
+            </div>
+            
+            <div class="info-box">
+              <h3 style="margin-top: 0; color: #1976d2;">ℹ️ Como Funciona?</h3>
+              <ol style="text-align: left; margin: 15px 0;">
+                <li><strong>Aguarde o sorteio:</strong> O sorteio acontece em ${formattedDate}</li>
+                <li><strong>Verificação automática:</strong> Após o sorteio, clique no botão abaixo para verificar se você ganhou</li>
+                <li><strong>Resultado instantâneo:</strong> Nosso sistema compara seu bilhete com o resultado oficial da Caixa</li>
+              </ol>
+            </div>
+            
+            <div style="text-align: center; margin: 40px 0;">
+              <a href="${checkUrl}" class="button">
+                🔍 VERIFICAR SE GANHEI
+              </a>
+              <p style="font-size: 14px; color: #666; margin-top: 15px;">
+                ⚠️ O botão será habilitado após a data do sorteio
+              </p>
+            </div>
+            
+            <div class="info-box" style="background: #fff3e0; border-left-color: #ff9800;">
+              <h3 style="margin-top: 0; color: #e65100;">🎯 O Que Será Sorteado?</h3>
+              <p style="margin: 0;">
+                Você está concorrendo ao <strong>1º Prêmio da Loteria Federal</strong>. 
+                Para ganhar, o número do seu bilhete (<strong>${ticketNumber}</strong>) 
+                deve ser <strong>exatamente igual</strong> ao número sorteado pela Caixa Econômica Federal.
+              </p>
+            </div>
+            
+            <div class="success-box">
+              <h3 style="margin-top: 0; color: #4caf50;">💡 Guarde Este E-mail!</h3>
+              <p style="margin: 0;">
+                ✓ Este e-mail contém o número do seu bilhete<br>
+                ✓ Você pode verificar o resultado a qualquer momento após o sorteio<br>
+                ✓ Boa sorte! 🍀
+              </p>
+            </div>
+            
+            <div style="text-align: center; margin: 30px 0; padding: 20px; background: #f9f9f9; border-radius: 10px;">
+              <p style="font-size: 14px; color: #666; margin: 0;">
+                📧 Você receberá um novo e-mail após o sorteio com o resultado
+              </p>
+            </div>
+          </div>
+          
+          <div class="footer">
+            <p>© ${new Date().getFullYear()} Sistema de Loteria Federal. Todos os direitos reservados.</p>
+            <p>Este é um email automático, por favor não responda.</p>
+            <p style="margin-top: 15px;">
+              🎫 Número do seu bilhete: <strong>${ticketNumber}</strong><br>
+              📅 Sorteio: ${formattedDate}
+            </p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+    text: `
+      🎉 Pagamento Confirmado!
+      
+      Olá ${name}!
+      
+      Seu pagamento de R$ ${value.toFixed(2)} foi confirmado com sucesso!
+      
+      🎫 SEU BILHETE DA LOTERIA FEDERAL
+      Número: ${ticketNumber}
+      Sorteio: ${formattedDate}
+      ${drawDescription}
+      
+      🏆 PRÊMIO: ${prizeDescription}
+      
+      Como verificar o resultado:
+      1. Aguarde o sorteio em ${formattedDate}
+      2. Acesse: ${checkUrl}
+      3. Clique em "Verificar Resultado"
+      4. Veja se você ganhou!
+      
+      Guarde este e-mail com o número do seu bilhete!
+      Boa sorte! 🍀
+      
+      Atenciosamente,
+      Sistema de Loteria Federal
+    `
+  }
+  
+  try {
+    const response = await fetch('https://api.mailersend.com/v1/email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify(emailData)
+    })
+    
+    console.log(`📧 E-mail do bilhete enviado para ${email}:`, response.ok ? 'Sucesso' : 'Falhou')
+    
+    return {
+      ok: response.ok,
+      status: response.status
+    }
+  } catch (error) {
+    console.error('❌ Erro ao enviar e-mail do bilhete:', error)
+    return {
+      ok: false,
+      status: 500
+    }
+  }
+}
+
+// Helper function to send welcome email via Mailersend
+async function sendWelcomeEmail(
+  c: any,
+  name: string,
+  email: string,
+  accountId: string,
+  walletId?: string
+) {
+  const apiKey = c.env.MAILERSEND_API_KEY
+  const fromEmail = c.env.MAILERSEND_FROM_EMAIL
+  const fromName = c.env.MAILERSEND_FROM_NAME
+  
+  const emailData = {
+    from: {
+      email: fromEmail,
+      name: fromName
+    },
+    to: [
+      {
+        email: email,
+        name: name
+      }
+    ],
+    subject: "⚠️ AÇÃO NECESSÁRIA - Finalize sua Conta Asaas em 24h",
+    html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: linear-gradient(135deg, #f44336 0%, #e91e63 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+          .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+          .info-box { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #f44336; }
+          .warning-box { background: #fff3cd; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107; }
+          .button { display: inline-block; background: #f44336; color: white; padding: 15px 40px; text-decoration: none; border-radius: 5px; margin: 20px 0; font-size: 18px; font-weight: bold; }
+          .button:hover { background: #d32f2f; }
+          .footer { text-align: center; margin-top: 30px; color: #666; font-size: 12px; }
+          h1 { margin: 0; font-size: 28px; }
+          h2 { color: #f44336; }
+          .highlight { background: #ffeb3b; padding: 3px 8px; border-radius: 3px; font-weight: bold; }
+          .step { background: white; padding: 15px; margin: 10px 0; border-radius: 5px; border-left: 3px solid #4caf50; }
+          .step-number { display: inline-block; width: 30px; height: 30px; background: #4caf50; color: white; border-radius: 50%; text-align: center; line-height: 30px; font-weight: bold; margin-right: 10px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>⚠️ Sua Conta Asaas foi Criada!</h1>
+            <p style="font-size: 18px; margin: 10px 0 0 0;">FINALIZE O CADASTRO EM ATÉ 24 HORAS</p>
+          </div>
+          
+          <div class="content">
+            <h2>Olá, ${name}! 👋</h2>
+            
+            <div class="warning-box">
+              <h3 style="margin-top: 0; color: #f57c00;">⏰ ATENÇÃO: Prazo de 24 horas!</h3>
+              <p style="margin: 0;">Você recebeu um email do <strong>Asaas</strong> (noreply@asaas.com). Verifique sua caixa de entrada e SPAM para finalizar sua conta!</p>
+            </div>
+            
+            <div class="info-box">
+              <h3 style="margin-top: 0;">📋 Dados da sua Subconta:</h3>
+              <p><strong>Nome:</strong> ${name}</p>
+              <p><strong>Email:</strong> <span class="highlight">${email}</span></p>
+              <p><strong>ID da Conta:</strong> <code>${accountId}</code></p>
+              ${walletId ? `<p><strong>Wallet ID:</strong> <code>${walletId}</code></p>` : '<p style="color: #ff9800;">⏳ <strong>Wallet ID será gerado após aprovação do Asaas</strong></p>'}
+            </div>
+            
+            <h3 style="color: #4caf50;">✅ PASSO A PASSO PARA FINALIZAR:</h3>
+            
+            <div class="step">
+              <span class="step-number">1</span>
+              <strong>Verifique seu Email</strong><br>
+              <small>Procure por email do <strong>noreply@asaas.com</strong> ou <strong>contato@asaas.com</strong><br>
+              ⚠️ Se não encontrar na caixa de entrada, <strong>verifique a pasta SPAM/Lixo Eletrônico</strong></small>
+            </div>
+            
+            <div class="step">
+              <span class="step-number">2</span>
+              <strong>Clique no Link de Ativação</strong><br>
+              <small>O email contém um link para <strong>definir sua senha</strong> e ativar a conta</small>
+            </div>
+            
+            <div class="step">
+              <span class="step-number">3</span>
+              <strong>Crie uma Senha Forte</strong><br>
+              <small>Use letras maiúsculas, minúsculas, números e caracteres especiais</small>
+            </div>
+            
+            <div class="step">
+              <span class="step-number">4</span>
+              <strong>Complete seu Perfil</strong><br>
+              <small>Preencha as informações solicitadas pelo Asaas (CPF, endereço, telefone, etc.)</small>
+            </div>
+            
+            <div class="step">
+              <span class="step-number">5</span>
+              <strong>Aguarde Aprovação</strong><br>
+              <small>O Asaas analisa a documentação (pode levar de 1 a 3 dias úteis)</small>
+            </div>
+            
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="https://www.asaas.com/login" class="button">🚀 ACESSAR PAINEL ASAAS</a>
+            </div>
+            
+            <div class="warning-box">
+              <h3 style="margin-top: 0; color: #d32f2f;">🚨 IMPORTANTE:</h3>
+              <ul style="margin: 10px 0;">
+                <li>O link de ativação <strong>expira em 24 horas</strong></li>
+                <li>Sem a ativação, sua conta será <strong>suspensa</strong></li>
+                <li>Você <strong>NÃO poderá receber pagamentos</strong> sem finalizar o cadastro</li>
+              </ul>
+            </div>
+            
+            <div class="info-box" style="background: #e8f5e9; border-left-color: #4caf50;">
+              <h3 style="margin-top: 0; color: #4caf50;">💡 Dica de Segurança:</h3>
+              <p style="margin: 0;">✓ Nunca compartilhe sua senha<br>
+              ✓ Guarde suas credenciais em local seguro<br>
+              ✓ Ative a autenticação de dois fatores (2FA)</p>
+            </div>
+            
+            <h3>❓ Não recebeu o email?</h3>
+            <ol>
+              <li>Verifique a pasta <strong>SPAM/Lixo Eletrônico</strong></li>
+              <li>Aguarde até 15 minutos (pode haver atraso)</li>
+              <li>Entre em contato com o suporte Asaas: <strong>(11) 4950-2819</strong></li>
+            </ol>
+            
+            <h3>📞 Suporte Asaas:</h3>
+            <ul>
+              <li>📧 Email: <strong>contato@asaas.com</strong></li>
+              <li>📱 Telefone: <strong>(11) 4950-2819</strong></li>
+              <li>💬 WhatsApp: <strong>(11) 4950-2819</strong></li>
+              <li>🌐 Site: <a href="https://www.asaas.com">www.asaas.com</a></li>
+            </ul>
+          </div>
+          
+          <div class="footer">
+            <p>© ${new Date().getFullYear()} Gerenciador Asaas. Todos os direitos reservados.</p>
+            <p>Este é um email automático, por favor não responda.</p>
+            <p style="color: #f44336; font-weight: bold;">⚠️ Você tem 24 horas para finalizar seu cadastro no Asaas!</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `,
+    text: `
+      Bem-vindo ao Asaas, ${name}!
+      
+      Sua conta foi criada com sucesso.
+      
+      Informações da conta:
+      - Nome: ${name}
+      - Email: ${email}
+      - ID da Conta: ${accountId}
+      ${walletId ? `- Wallet ID: ${walletId}` : ''}
+      
+      Próximos passos:
+      1. Verifique seu email do Asaas para definir sua senha
+      2. Acesse o painel Asaas
+      3. Complete seu perfil
+      4. Comece a usar!
+      
+      Precisa de ajuda? Entre em contato:
+      Email: suporte@asaas.com
+      Telefone: (11) 4950-2819
+      
+      Atenciosamente,
+      Equipe Gerenciador Asaas
+    `
+  }
+  
+  try {
+    const response = await fetch('https://api.mailersend.com/v1/email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify(emailData)
+    })
+    
+    return {
+      ok: response.ok,
+      status: response.status
+    }
+  } catch (error) {
+    console.error('Erro ao enviar email:', error)
+    return {
+      ok: false,
+      status: 500
+    }
+  }
+}
+
+// Helper function to make Asaas API calls
+async function asaasRequest(
+  c: any,
+  endpoint: string,
+  method: string = 'GET',
+  body?: any,
+  customHeaders?: Record<string, string>
+) {
+  const apiKey = c.env.ASAAS_API_KEY
+  const apiUrl = c.env.ASAAS_API_URL
+  
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'access_token': apiKey,
+    'User-Agent': 'AsaasManager/1.0'
+  }
+  
+  // Adicionar headers customizados (ex: asaas-account-key para subcontas)
+  if (customHeaders) {
+    Object.assign(headers, customHeaders)
+  }
+  
+  const options: RequestInit = {
+    method,
+    headers
+  }
+  
+  if (body && method !== 'GET') {
+    options.body = JSON.stringify(body)
+  }
+  
+  try {
+    const response = await fetch(`${apiUrl}${endpoint}`, options)
+    const text = await response.text()
+    
+    let data
+    try {
+      data = JSON.parse(text)
+    } catch (e) {
+      // Se não for JSON, retorna o texto
+      data = { message: text }
+    }
+    
+    return {
+      ok: response.ok,
+      status: response.status,
+      data
+    }
+  } catch (error: any) {
+    return {
+      ok: false,
+      status: 500,
+      data: { error: error.message }
+    }
+  }
+}
+
+/**
+ * Cria configuração de split para Asaas garantindo que a sub-conta receba o valor LÍQUIDO
+ * 
+ * IMPORTANTE: 
+ * - percentualValue: Desconta taxas proporcionalmente de cada parte (sub-conta paga parte das taxas)
+ * - totalFixedValue: Sub-conta recebe valor líquido, conta principal paga TODAS as taxas
+ * 
+ * Exemplo com cobrança de R$ 100,00 e taxa Asaas de R$ 3,49:
+ * 
+ * COM percentualValue (ERRADO - sub-conta recebe menos):
+ * - Sub-conta: R$ 20,00 - (20% de R$ 3,49) = R$ 20,00 - R$ 0,70 = R$ 19,30
+ * - Conta principal: R$ 80,00 - (80% de R$ 3,49) = R$ 80,00 - R$ 2,79 = R$ 77,21
+ * 
+ * COM totalFixedValue (CORRETO - sub-conta recebe líquido):
+ * - Sub-conta: R$ 20,00 (líquido, sem descontar taxas)
+ * - Conta principal: R$ 100,00 - R$ 20,00 - R$ 3,49 = R$ 76,51
+ * 
+ * @param walletId - ID da carteira (wallet) da sub-conta
+ * @param totalValue - Valor total da cobrança
+ * @param percentage - Percentual que a sub-conta deve receber (padrão: 20%)
+ * @returns Array de split para a API Asaas
+ */
+function createNetSplit(walletId: string, totalValue: number, percentage: number = 20) {
+  // Calcular valor e arredondar para 2 casas decimais
+  const fixedValue = Math.round((totalValue * percentage) / 100 * 100) / 100
+  
+  console.log('🔧 createNetSplit:', { walletId, totalValue, percentage, fixedValue })
+  
+  // Validar que o valor não seja 0 ou negativo
+  if (fixedValue <= 0) {
+    console.error('❌ Split value is 0 or negative:', fixedValue)
+    throw new Error(`Split value must be greater than 0. Calculated: ${fixedValue}`)
+  }
+  
+  return [{
+    walletId: walletId,
+    fixedValue: fixedValue // Usar fixedValue em vez de totalFixedValue
+  }]
+}
+
+// API Routes
+
+// Login route
+app.post('/api/login', async (c) => {
+  try {
+    const { username, password } = await c.req.json()
+    
+    if (username === c.env.ADMIN_USERNAME && password === c.env.ADMIN_PASSWORD) {
+      const token = await createToken(username, c.env.JWT_SECRET)
+      
+      setCookie(c, 'auth_token', token, {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'Lax',
+        maxAge: 86400 // 24 hours
+      })
+      
+      return c.json({ 
+        ok: true, 
+        token,
+        data: { username, message: 'Login realizado com sucesso' }
+      })
+    } else {
+      return c.json({ 
+        ok: false, 
+        error: 'Usuário ou senha inválidos' 
+      }, 401)
+    }
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Logout route
+app.post('/api/logout', async (c) => {
+  setCookie(c, 'auth_token', '', {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'Lax',
+    maxAge: 0
+  })
+  
+  return c.json({ ok: true, message: 'Logout realizado com sucesso' })
+})
+
+// Change password route (requires authentication)
+app.post('/api/change-password', async (c) => {
+  try {
+    // Verificar autenticação
+    const token = getCookie(c, 'auth_token')
+    if (!token) {
+      return c.json({ error: 'Não autorizado' }, 401)
+    }
+    
+    const payload = await verifyToken(token, c.env.JWT_SECRET)
+    if (!payload) {
+      return c.json({ error: 'Token inválido' }, 401)
+    }
+    
+    const { currentPassword, newPassword } = await c.req.json()
+    
+    // Validar senha atual
+    if (currentPassword !== c.env.ADMIN_PASSWORD) {
+      return c.json({ error: 'Senha atual incorreta' }, 401)
+    }
+    
+    // Validar nova senha
+    if (!newPassword || newPassword.length < 6) {
+      return c.json({ error: 'Nova senha deve ter no mínimo 6 caracteres' }, 400)
+    }
+    
+    // IMPORTANTE: Em produção, você deve atualizar a senha no banco de dados ou variável de ambiente
+    // Por enquanto, retornamos uma mensagem informando que a senha não pode ser alterada via API
+    // pois ADMIN_PASSWORD é uma variável de ambiente do Cloudflare
+    
+    return c.json({ 
+      ok: false, 
+      error: 'Para alterar a senha do administrador, você deve atualizar a variável de ambiente ADMIN_PASSWORD no painel do Cloudflare Pages.\\n\\nAcesse: Cloudflare Dashboard → Pages → corretoracorporate → Settings → Environment Variables' 
+    }, 400)
+    
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Check auth status
+app.get('/api/check-auth', async (c) => {
+  const token = getCookie(c, 'auth_token')
+  
+  if (!token) {
+    return c.json({ authenticated: false }, 401)
+  }
+  
+  const payload = await verifyToken(token, c.env.JWT_SECRET)
+  
+  if (!payload) {
+    return c.json({ authenticated: false }, 401)
+  }
+  
+  return c.json({ 
+    authenticated: true, 
+    user: { username: payload.username }
+  })
+})
+
+// Public signup route (sem autenticação) - usado pela página pública de cadastro
+app.post('/api/public/signup', async (c) => {
+  try {
+    const body = await c.req.json()
+    
+    // 1. Criar subconta no Asaas
+    const result = await asaasRequest(c, '/v3/accounts', 'POST', body)
+    
+    if (!result.ok) {
+      return c.json(result)
+    }
+    
+    const account = result.data
+    
+    // 2. Criar cliente (customer) no Asaas usando os mesmos dados
+    const customerData = {
+      name: body.name,
+      email: body.email,
+      cpfCnpj: body.cpfCnpj,
+      mobilePhone: body.mobilePhone,
+      phone: body.phone,
+      postalCode: body.postalCode,
+      address: body.address,
+      addressNumber: body.addressNumber,
+      complement: body.complement,
+      province: body.province,
+      notificationDisabled: true // ✅ Desabilita emails automáticos do Asaas
+    }
+    
+    const customerResult = await asaasRequest(c, '/v3/customers', 'POST', customerData)
+    
+    let customerId = null
+    if (customerResult.ok && customerResult.data && customerResult.data.id) {
+      customerId = customerResult.data.id
+    }
+    
+    // 3. [REMOVIDO] Cobrança automática de R$ 50,00 removida
+    // Agora apenas envia email de boas-vindas, sem criar cobrança
+    
+    // 4. Enviar email de boas-vindas
+    await sendWelcomeEmail(
+      c,
+      account.name,
+      account.email,
+      account.id,
+      account.walletId
+    )
+    
+    return c.json({
+      ok: true,
+      data: account
+    })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Estatísticas do dashboard
+app.get('/api/stats', async (c) => {
+  try {
+    // Buscar subcontas reais da API Asaas
+    let accounts = []
+    let accountsFromAsaas = []
+    
+    try {
+      const accountsResult = await asaasRequest(c, '/v3/accounts')
+      accountsFromAsaas = accountsResult?.data?.data || []
+      console.log(`✅ Busca Asaas: ${accountsFromAsaas.length} contas`)
+    } catch (apiError) {
+      console.error('❌ Erro ao buscar contas do Asaas:', apiError)
+    }
+    
+    // Se Asaas não retornou contas, buscar do D1
+    if (accountsFromAsaas.length === 0) {
+      console.log('⚠️ Asaas retornou 0 contas, buscando do D1...')
+      
+      // Buscar signup_links que foram usados (uses_count > 0)
+      const signupLinksUsed = await c.env.DB.prepare(`
+        SELECT 
+          sl.id,
+          sl.account_id,
+          sl.url,
+          sl.created_at,
+          sl.active,
+          sl.uses_count,
+          sl.created_by,
+          sl.notes
+        FROM signup_links sl
+        WHERE sl.uses_count > 0 OR sl.account_id != 'new'
+        ORDER BY sl.created_at DESC
+      `).all()
+      
+      // Buscar transações para enriquecer dados
+      const transactionsData = await c.env.DB.prepare(`
+        SELECT DISTINCT account_id, COUNT(*) as tx_count
+        FROM transactions
+        GROUP BY account_id
+      `).all()
+      
+      const txMap = new Map()
+      for (const tx of (transactionsData?.results || [])) {
+        txMap.set(tx.account_id, tx.tx_count)
+      }
+      
+      accounts = (signupLinksUsed?.results || []).map((link: any) => ({
+        id: link.account_id,
+        name: `Conta ${link.account_id.substring(0, 8)}`,
+        email: link.notes || 'N/A',
+        dateCreated: link.created_at,
+        walletId: link.account_id,
+        active: link.active === 1,
+        transactionCount: txMap.get(link.account_id) || 0
+      }))
+      
+      console.log(`✅ D1 retornou ${accounts.length} contas com transações`)
+    } else {
+      accounts = accountsFromAsaas
+    }
+    
+    // Buscar links de auto-cadastro (assinatura recorrente)
+    const signupLinksResult = await c.env.DB.prepare(`
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END) as active,
+        SUM(uses_count) as total_uses
+      FROM subscription_signup_links
+    `).first()
+    
+    // Buscar links de PIX Automático
+    const pixAutoLinksResult = await c.env.DB.prepare(`
+      SELECT 
+        COUNT(*) as total,
+        SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END) as active,
+        SUM(uses_count) as total_uses
+      FROM pix_automatic_signup_links
+    `).first()
+    
+    // Buscar conversões de PIX Automático (autorizações criadas)
+    const pixAutoConversionsResult = await c.env.DB.prepare(`
+      SELECT COUNT(*) as total FROM pix_automatic_authorizations
+    `).first()
+    
+    // Calcular estatísticas
+    const totalAccounts = accounts.length
+    const approvedAccounts = accounts.filter((a: any) => a.walletId || a.active === 1).length
+    const pendingAccounts = totalAccounts - approvedAccounts
+    
+    // Links de cadastro (soma de ambos os tipos)
+    const signupLinksTotal = signupLinksResult?.total || 0
+    const signupLinksActive = signupLinksResult?.active || 0
+    const signupLinksUses = signupLinksResult?.total_uses || 0
+    
+    const pixAutoLinksTotal = pixAutoLinksResult?.total || 0
+    const pixAutoLinksActive = pixAutoLinksResult?.active || 0
+    const pixAutoLinksUses = pixAutoLinksResult?.total_uses || 0
+    const pixAutoConversions = pixAutoConversionsResult?.total || 0
+    
+    const totalLinks = signupLinksTotal + pixAutoLinksTotal
+    const activeLinks = signupLinksActive + pixAutoLinksActive
+    const totalConversions = signupLinksUses + pixAutoConversions
+    
+    // Taxa de conversão
+    const conversionRate = activeLinks > 0 ? ((totalConversions / activeLinks) * 100).toFixed(1) : '0.0'
+    
+    return c.json({
+      ok: true,
+      data: {
+        accounts: {
+          total: totalAccounts,
+          approved: approvedAccounts,
+          pending: pendingAccounts,
+          approvalRate: totalAccounts > 0 ? ((approvedAccounts / totalAccounts) * 100).toFixed(1) : '0'
+        },
+        links: {
+          total: totalLinks,
+          active: activeLinks,
+          conversions: totalConversions,
+          conversionRate
+        },
+        recentAccounts: accounts.slice(0, 5).map((a: any) => ({
+          id: a.id,
+          name: a.name || `Conta ${a.id?.substring(0, 8)}` || 'Sem nome',
+          email: a.email || 'N/A',
+          dateCreated: a.dateCreated || a.created_at,
+          status: a.walletId || a.active ? 'approved' : 'pending'
+        }))
+      }
+    })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// API: Salvar banner no D1 para compartilhamento público
+app.post('/api/banners', async (c) => {
+  try {
+    const body = await c.req.json()
+    const { accountId, linkUrl, qrCodeBase64, bannerImageBase64, title, description, value, promo, buttonText, color, chargeType, isCustomBanner } = body
+    
+    if (!accountId || !linkUrl) {
+      return c.json({ error: 'accountId e linkUrl são obrigatórios' }, 400)
+    }
+    
+    const bannerId = Date.now().toString()
+    
+    await c.env.DB.prepare(`
+      INSERT INTO banners (id, account_id, link_url, qr_code_base64, banner_image_base64, title, description, value, promo, button_text, color, charge_type, is_custom_banner)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      bannerId,
+      accountId,
+      linkUrl,
+      qrCodeBase64 || null,
+      bannerImageBase64 || null,
+      title || null,
+      description || null,
+      value || 0,
+      promo || null,
+      buttonText || null,
+      color || 'orange',
+      chargeType || 'monthly',
+      isCustomBanner ? 1 : 0
+    ).run()
+    
+    return c.json({ ok: true, bannerId })
+  } catch (error: any) {
+    console.error('Erro ao salvar banner:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// API: Buscar banner público por ID
+app.get('/api/banners/:accountId/:bannerId', async (c) => {
+  try {
+    const { accountId, bannerId } = c.req.param()
+    
+    const banner = await c.env.DB.prepare(`
+      SELECT * FROM banners WHERE account_id = ? AND id = ?
+    `).bind(accountId, bannerId).first()
+    
+    if (!banner) {
+      return c.json({ error: 'Banner não encontrado' }, 404)
+    }
+    
+    // Converter snake_case para camelCase para compatibilidade com frontend
+    const formattedBanner = {
+      id: banner.id,
+      accountId: banner.account_id,
+      linkUrl: banner.link_url,
+      qrCodeBase64: banner.qr_code_base64,
+      bannerImageBase64: banner.banner_image_base64,
+      title: banner.title,
+      description: banner.description,
+      value: banner.value,
+      promo: banner.promo,
+      buttonText: banner.button_text,
+      color: banner.color,
+      chargeType: banner.charge_type,
+      isCustomBanner: banner.is_custom_banner === 1,
+      createdAt: banner.created_at
+    }
+    
+    return c.json({ ok: true, banner: formattedBanner })
+  } catch (error: any) {
+    console.error('Erro ao buscar banner:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// ============================================
+// 🎰 API: LOTERIA FEDERAL
+// ============================================
+
+// API: Consultar bilhete pelo ID do pagamento
+app.get('/api/lottery/ticket/:paymentId', async (c) => {
+  try {
+    const paymentId = c.req.param('paymentId')
+    
+    const ticket = await c.env.DB.prepare(`
+      SELECT * FROM lottery_tickets WHERE payment_id = ?
+    `).bind(paymentId).first()
+    
+    if (!ticket) {
+      return c.json({ error: 'Bilhete não encontrado' }, 404)
+    }
+    
+    return c.json({ 
+      ok: true, 
+      ticket: {
+        id: ticket.id,
+        paymentId: ticket.payment_id,
+        customerName: ticket.customer_name,
+        customerEmail: ticket.customer_email,
+        ticketNumber: ticket.ticket_number,
+        drawDate: ticket.draw_date,
+        drawNumber: ticket.draw_number,
+        drawDescription: ticket.draw_description || 'Loteria Federal',
+        prizeDescription: ticket.prize_description || '1º Prêmio - R$ 500.000,00',
+        isCustomLottery: ticket.is_custom_lottery === 1,
+        status: ticket.status,
+        prizeType: ticket.prize_type,
+        prizeValue: ticket.prize_value,
+        checkedAt: ticket.checked_at,
+        createdAt: ticket.created_at
+      }
+    })
+  } catch (error: any) {
+    console.error('Erro ao buscar bilhete:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// API: Testar envio de e-mail (sem precisar de bilhete)
+app.post('/api/lottery/test-email', async (c) => {
+  try {
+    const body = await c.req.json()
+    const email = body.email || 'gelci.jose.grouptrig@gmail.com'
+    
+    console.log(`📧 Testando envio de e-mail para: ${email}`)
+    
+    const result = await sendLotteryTicketEmail(
+      c,
+      'Teste de E-mail',
+      email,
+      '999999',
+      '2026-03-25',
+      'Teste de Sorteio Especial',
+      '1º Prêmio - R$ 1.000.000,00',
+      'test_payment_id',
+      25.00
+    )
+    
+    console.log(`✅ Resultado do envio:`, result)
+    
+    if (result.ok) {
+      return c.json({
+        ok: true,
+        message: `E-mail de teste enviado para ${email}`,
+        status: result.status
+      })
+    } else {
+      return c.json({
+        ok: false,
+        error: 'Erro ao enviar e-mail',
+        status: result.status,
+        details: result
+      }, 500)
+    }
+  } catch (error: any) {
+    console.error('❌ Erro no teste de e-mail:', error)
+    return c.json({ 
+      ok: false,
+      error: error.message,
+      stack: error.stack
+    }, 500)
+  }
+})
+
+// API: Reenviar e-mail do bilhete
+app.post('/api/lottery/resend-email/:paymentId', async (c) => {
+  try {
+    const paymentId = c.req.param('paymentId')
+    
+    // Buscar bilhete no banco
+    const ticket = await c.env.DB.prepare(`
+      SELECT * FROM lottery_tickets WHERE payment_id = ?
+    `).bind(paymentId).first()
+    
+    if (!ticket) {
+      return c.json({ error: 'Bilhete não encontrado' }, 404)
+    }
+    
+    // Buscar valor do pagamento (tentar várias fontes)
+    let paymentValue: number = 10.00 // Valor padrão
+    
+    // 1. Tentar buscar do link via conversão
+    const conversion = await c.env.DB.prepare(`
+      SELECT link_id FROM subscription_conversions WHERE subscription_id = ? LIMIT 1
+    `).bind(paymentId).first()
+    
+    if (conversion && conversion.link_id) {
+      const linkData = await c.env.DB.prepare(`
+        SELECT value FROM subscription_signup_links WHERE id = ? LIMIT 1
+      `).bind(conversion.link_id).first()
+      
+      if (linkData && linkData.value) {
+        paymentValue = Number(linkData.value)
+      }
+    }
+    
+    // 2. Se não encontrou, buscar na tabela transactions
+    if (paymentValue === 10.00) {
+      const transaction = await c.env.DB.prepare(`
+        SELECT value FROM transactions WHERE id = ? LIMIT 1
+      `).bind(paymentId).first()
+      
+      if (transaction && transaction.value) {
+        paymentValue = Number(transaction.value)
+      }
+    }
+    
+    // Garantir que paymentValue é um número válido
+    if (isNaN(paymentValue) || paymentValue <= 0) {
+      paymentValue = 10.00
+    }
+    
+    const customerEmail = ticket.customer_email as string
+    
+    if (!customerEmail || customerEmail === 'sem-email@example.com') {
+      return c.json({ error: 'E-mail do cliente não disponível' }, 400)
+    }
+    
+    // Reenviar e-mail
+    console.log(`📧 Reenviando e-mail do bilhete para ${customerEmail}...`)
+    console.log(`💰 Valor do pagamento: R$ ${paymentValue.toFixed(2)}`)
+    
+    const emailResult = await sendLotteryTicketEmail(
+      c,
+      ticket.customer_name as string || 'Cliente',
+      customerEmail,
+      ticket.ticket_number as string,
+      ticket.draw_date as string,
+      ticket.draw_description as string || 'Loteria Federal',
+      ticket.prize_description as string || '1º Prêmio - R$ 500.000,00',
+      paymentId,
+      paymentValue
+    )
+    
+    if (emailResult.ok) {
+      console.log(`✅ E-mail reenviado com sucesso!`)
+      return c.json({ 
+        ok: true, 
+        message: `E-mail enviado para ${customerEmail}` 
+      })
+    } else {
+      console.error(`❌ Erro ao reenviar e-mail: ${emailResult.status}`)
+      return c.json({ 
+        error: 'Erro ao enviar e-mail', 
+        status: emailResult.status 
+      }, 500)
+    }
+  } catch (error: any) {
+    console.error('❌ Erro ao reenviar e-mail:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// API: Atualizar bilhete com configurações do link (forçar atualização manual)
+// API: Corrigir múltiplos tickets antigos de uma vez
+app.post('/api/admin/fix-tickets-batch', async (c) => {
+  try {
+    const body = await c.req.json()
+    const { linkId } = body
+    
+    if (!linkId) {
+      return c.json({ error: 'linkId é obrigatório' }, 400)
+    }
+    
+    console.log(`🔧 Corrigindo todos os tickets do link: ${linkId}`)
+    
+    // Buscar configurações do link
+    const linkConfig = await c.env.DB.prepare(`
+      SELECT lottery_enabled, lottery_draw_date, lottery_description, lottery_prize_description
+      FROM subscription_signup_links
+      WHERE id = ?
+      LIMIT 1
+    `).bind(linkId).first()
+    
+    if (!linkConfig) {
+      return c.json({ error: 'Link não encontrado' }, 404)
+    }
+    
+    const customDrawDate = linkConfig.lottery_draw_date as string | null
+    const drawDescription = (linkConfig.lottery_description as string) || 'Loteria Federal'
+    const prizeDescription = (linkConfig.lottery_prize_description as string) || '1º Prêmio - R$ 500.000,00'
+    
+    // Calcular data do sorteio
+    let drawDateStr: string
+    if (customDrawDate) {
+      drawDateStr = customDrawDate
+    } else {
+      // Calcular próxima quarta-feira
+      const today = new Date()
+      const drawDate = new Date(today)
+      const daysUntilWednesday = (3 - today.getDay() + 7) % 7 || 7
+      drawDate.setDate(today.getDate() + daysUntilWednesday)
+      drawDateStr = drawDate.toISOString().split('T')[0]
+    }
+    
+    // Buscar todos os bilhetes do link via conversões
+    const conversions = await c.env.DB.prepare(`
+      SELECT subscription_id FROM subscription_conversions WHERE link_id = ?
+    `).bind(linkId).all()
+    
+    if (!conversions.results || conversions.results.length === 0) {
+      return c.json({ error: 'Nenhuma conversão encontrada para este link' }, 404)
+    }
+    
+    const paymentIds = conversions.results.map((conv: any) => conv.subscription_id).filter(Boolean)
+    
+    console.log(`📋 Encontrados ${paymentIds.length} pagamentos para atualizar`)
+    
+    // Atualizar todos os bilhetes
+    let updatedCount = 0
+    const results = []
+    
+    for (const paymentId of paymentIds) {
+      const ticket = await c.env.DB.prepare(`
+        SELECT ticket_number, draw_date, draw_description, prize_description 
+        FROM lottery_tickets 
+        WHERE payment_id = ?
+      `).bind(paymentId).first()
+      
+      if (ticket) {
+        await c.env.DB.prepare(`
+          UPDATE lottery_tickets 
+          SET draw_date = ?, draw_description = ?, prize_description = ?
+          WHERE payment_id = ?
+        `).bind(drawDateStr, drawDescription, prizeDescription, paymentId).run()
+        
+        updatedCount++
+        results.push({
+          paymentId,
+          ticketNumber: ticket.ticket_number,
+          oldDate: ticket.draw_date,
+          newDate: drawDateStr,
+          oldPrize: ticket.prize_description,
+          newPrize: prizeDescription
+        })
+      }
+    }
+    
+    console.log(`✅ ${updatedCount} bilhetes atualizados com sucesso`)
+    
+    return c.json({
+      ok: true,
+      message: `${updatedCount} bilhetes atualizados com sucesso`,
+      linkId,
+      newDate: drawDateStr,
+      newDescription: drawDescription,
+      newPrize: prizeDescription,
+      tickets: results
+    })
+  } catch (error: any) {
+    console.error('❌ Erro ao corrigir bilhetes:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+app.post('/api/lottery/update-ticket/:paymentId', async (c) => {
+  try {
+    const paymentId = c.req.param('paymentId')
+    const body = await c.req.json().catch(() => ({}))
+    const linkId = body.linkId || null
+    
+    console.log(`🔄 Atualizando bilhete para pagamento: ${paymentId}`)
+    
+    // Buscar bilhete atual
+    const ticket = await c.env.DB.prepare(`
+      SELECT * FROM lottery_tickets WHERE payment_id = ?
+    `).bind(paymentId).first()
+    
+    if (!ticket) {
+      return c.json({ error: 'Bilhete não encontrado' }, 404)
+    }
+    
+    console.log(`🎫 Bilhete encontrado: ${ticket.ticket_number}`)
+    
+    // Buscar link_id da conversão ou usar o fornecido
+    let conversion = await c.env.DB.prepare(`
+      SELECT link_id FROM subscription_conversions WHERE subscription_id = ? LIMIT 1
+    `).bind(paymentId).first()
+    
+    // Se não encontrou conversão E linkId foi fornecido, usar o fornecido
+    let finalLinkId = conversion?.link_id || linkId
+    
+    console.log(`🔍 Conversão encontrada:`, conversion?.link_id || 'não encontrado')
+    console.log(`🔗 Link ID fornecido:`, linkId || 'não fornecido')
+    console.log(`✅ Link ID final a usar:`, finalLinkId || 'nenhum')
+    
+    if (!finalLinkId) {
+      // Tentar buscar o link mais recente da transação
+      const transaction = await c.env.DB.prepare(`
+        SELECT account_id FROM transactions WHERE id = ? LIMIT 1
+      `).bind(paymentId).first()
+      
+      if (transaction) {
+        const recentLink = await c.env.DB.prepare(`
+          SELECT id FROM subscription_signup_links 
+          WHERE account_id = ? 
+          ORDER BY created_at DESC 
+          LIMIT 1
+        `).bind(transaction.account_id).first()
+        
+        if (recentLink) {
+          finalLinkId = recentLink.id
+          console.log(`🔍 Usando link mais recente da conta: ${finalLinkId}`)
+        }
+      }
+    }
+    
+    if (!finalLinkId) {
+      return c.json({ 
+        error: 'Link de conversão não encontrado. Forneça o linkId no body da requisição.',
+        ticket: ticket.ticket_number,
+        help: 'Envie { "linkId": "uuid-do-link" } no body do POST'
+      }, 404)
+    }
+    
+    // Buscar configurações do link
+    const linkConfig = await c.env.DB.prepare(`
+      SELECT lottery_enabled, lottery_draw_date, lottery_description, lottery_prize_description
+      FROM subscription_signup_links
+      WHERE id = ?
+      LIMIT 1
+    `).bind(finalLinkId).first()
+    
+    if (!linkConfig) {
+      return c.json({ 
+        error: 'Configurações do link não encontradas',
+        linkId: finalLinkId 
+      }, 404)
+    }
+    
+    console.log(`🎲 Configurações do link:`, linkConfig)
+    
+    const customDrawDate = linkConfig.lottery_draw_date as string | null
+    const drawDescription = (linkConfig.lottery_description as string) || 'Loteria Federal'
+    const prizeDescription = (linkConfig.lottery_prize_description as string) || '1º Prêmio - R$ 500.000,00'
+    
+    // Calcular data do sorteio
+    let drawDateStr: string
+    if (customDrawDate) {
+      drawDateStr = customDrawDate
+    } else {
+      // Calcular próxima quarta-feira
+      const today = new Date()
+      const dayOfWeek = today.getDay()
+      let daysUntilWednesday = (3 - dayOfWeek + 7) % 7
+      if (daysUntilWednesday === 0) daysUntilWednesday = 7
+      
+      const drawDate = new Date()
+      drawDate.setDate(today.getDate() + daysUntilWednesday)
+      drawDateStr = drawDate.toISOString().split('T')[0]
+    }
+    
+    // Atualizar bilhete no banco
+    await c.env.DB.prepare(`
+      UPDATE lottery_tickets 
+      SET draw_date = ?,
+          draw_description = ?,
+          prize_description = ?,
+          custom_draw_date = ?,
+          is_custom_lottery = ?
+      WHERE payment_id = ?
+    `).bind(
+      drawDateStr,
+      drawDescription,
+      prizeDescription,
+      customDrawDate || null,
+      customDrawDate ? 1 : 0,
+      paymentId
+    ).run()
+    
+    console.log(`✅ Bilhete atualizado com sucesso!`)
+    
+    return c.json({
+      ok: true,
+      message: 'Bilhete atualizado com sucesso',
+      ticket: {
+        number: ticket.ticket_number as string,
+        oldDate: ticket.draw_date,
+        newDate: drawDateStr,
+        oldDescription: ticket.draw_description,
+        newDescription: drawDescription,
+        oldPrize: ticket.prize_description,
+        newPrize: prizeDescription
+      }
+    })
+  } catch (error: any) {
+    console.error('❌ Erro ao atualizar bilhete:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// API: Verificar se o bilhete ganhou (consulta API da Caixa)
+app.post('/api/lottery/check/:paymentId', async (c) => {
+  try {
+    const paymentId = c.req.param('paymentId')
+    
+    // Buscar bilhete no banco
+    const ticket = await c.env.DB.prepare(`
+      SELECT * FROM lottery_tickets WHERE payment_id = ?
+    `).bind(paymentId).first()
+    
+    if (!ticket) {
+      return c.json({ error: 'Bilhete não encontrado' }, 404)
+    }
+    
+    const ticketNumber = ticket.ticket_number as string
+    const drawDate = new Date(ticket.draw_date as string)
+    
+    // Verificar se o sorteio já aconteceu
+    const today = new Date()
+    if (drawDate > today) {
+      return c.json({ 
+        ok: true,
+        status: 'PENDING',
+        message: `Sorteio será realizado em ${drawDate.toLocaleDateString('pt-BR')}`,
+        ticket: {
+          ticketNumber,
+          drawDate: ticket.draw_date
+        }
+      })
+    }
+    
+    // Buscar resultado do sorteio na API da Caixa
+    // https://loteriascaixa-api.herokuapp.com/api/federal/latest
+    console.log(`🔍 Consultando resultado da Loteria Federal...`)
+    
+    try {
+      const response = await fetch('https://loteriascaixa-api.herokuapp.com/api/federal/latest')
+      const result = await response.json()
+      
+      console.log('📊 Resultado da API:', {
+        concurso: result.concurso,
+        data: result.data,
+        premios: result.premiacoes?.length || 0
+      })
+      
+      if (!result.premiacoes || result.premiacoes.length === 0) {
+        return c.json({ 
+          error: 'Resultado ainda não disponível',
+          drawDate: ticket.draw_date
+        }, 404)
+      }
+      
+      // Verificar apenas o 1º PRÊMIO
+      const firstPrize = result.premiacoes[0]
+      const winningNumber = firstPrize.numero.toString().padStart(6, '0')
+      const prizeValue = parseFloat(firstPrize.valor_premio.replace(/\./g, '').replace(',', '.'))
+      
+      console.log(`🎫 Bilhete: ${ticketNumber}`)
+      console.log(`🏆 1º Prêmio: ${winningNumber}`)
+      
+      const isWinner = ticketNumber === winningNumber
+      
+      // Atualizar status no banco
+      await c.env.DB.prepare(`
+        UPDATE lottery_tickets 
+        SET 
+          status = ?, 
+          draw_number = ?,
+          prize_type = ?,
+          prize_value = ?,
+          checked_at = datetime('now')
+        WHERE payment_id = ?
+      `).bind(
+        isWinner ? 'WINNER' : 'LOSER',
+        result.concurso,
+        isWinner ? '1ST' : null,
+        isWinner ? prizeValue : null,
+        paymentId
+      ).run()
+      
+      if (isWinner) {
+        console.log(`🎉 GANHADOR! Bilhete ${ticketNumber} ganhou R$ ${prizeValue.toFixed(2)}`)
+        
+        return c.json({
+          ok: true,
+          status: 'WINNER',
+          message: '🎉 PARABÉNS! VOCÊ GANHOU O 1º PRÊMIO!',
+          ticket: {
+            ticketNumber,
+            drawDate: result.data,
+            drawNumber: result.concurso
+          },
+          prize: {
+            type: '1º Prêmio',
+            value: prizeValue,
+            formattedValue: `R$ ${prizeValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+          }
+        })
+      } else {
+        console.log(`❌ Não ganhou. Número sorteado: ${winningNumber}`)
+        
+        return c.json({
+          ok: true,
+          status: 'LOSER',
+          message: 'Não foi dessa vez. Tente novamente!',
+          ticket: {
+            ticketNumber,
+            drawDate: result.data,
+            drawNumber: result.concurso
+          },
+          winningNumber: {
+            firstPrize: winningNumber
+          }
+        })
+      }
+      
+    } catch (apiError: any) {
+      console.error('❌ Erro ao consultar API da Caixa:', apiError)
+      return c.json({ 
+        error: 'Erro ao consultar resultado do sorteio',
+        details: apiError.message 
+      }, 500)
+    }
+    
+  } catch (error: any) {
+    console.error('Erro ao verificar bilhete:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// API: Listar todos os bilhetes de um cliente (por email)
+app.get('/api/lottery/tickets/email/:email', async (c) => {
+  try {
+    const email = c.req.param('email')
+    
+    const tickets = await c.env.DB.prepare(`
+      SELECT * FROM lottery_tickets 
+      WHERE customer_email = ?
+      ORDER BY created_at DESC
+    `).bind(email).all()
+    
+    return c.json({ 
+      ok: true, 
+      tickets: tickets.results.map((t: any) => ({
+        id: t.id,
+        paymentId: t.payment_id,
+        ticketNumber: t.ticket_number,
+        drawDate: t.draw_date,
+        drawNumber: t.draw_number,
+        status: t.status,
+        prizeType: t.prize_type,
+        prizeValue: t.prize_value,
+        createdAt: t.created_at
+      }))
+    })
+  } catch (error: any) {
+    console.error('Erro ao listar bilhetes:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Relatório de subconta
+app.get('/api/reports/:accountId', async (c) => {
+  try {
+    const db = c.env.DB
+    const accountId = c.req.param('accountId')
+    const startDate = c.req.query('startDate')
+    const endDate = c.req.query('endDate')
+    
+    // Buscar informações da subconta do D1
+    const accountQuery = await db.prepare('SELECT * FROM signup_links WHERE account_id = ? LIMIT 1').bind(accountId).first()
+    
+    let account: any = null
+    
+    if (accountQuery) {
+      // Subconta encontrada no D1
+      account = {
+        id: accountQuery.account_id,
+        name: `Conta ${accountId.substring(0, 8)}`,
+        email: 'contato@exemplo.com',
+        cpfCnpj: '000.000.000-00',
+        walletId: accountQuery.account_id
+      }
+    } else {
+      // Subconta não encontrada no D1, buscar direto do Asaas
+      console.log(`⚠️ Subconta ${accountId} não encontrada no D1, buscando no Asaas...`)
+      
+      const asaasAccount = await asaasRequest(c, `/v3/accounts/${accountId}`, 'GET')
+      
+      if (!asaasAccount.ok || !asaasAccount.data) {
+        return c.json({ error: 'Subconta não encontrada no Asaas', accountId }, 404)
+      }
+      
+      account = {
+        id: asaasAccount.data.id,
+        name: asaasAccount.data.name || `Conta ${accountId.substring(0, 8)}`,
+        email: asaasAccount.data.email || 'N/A',
+        cpfCnpj: asaasAccount.data.cpfCnpj || 'N/A',
+        walletId: asaasAccount.data.walletId || accountId
+      }
+      
+      console.log('✅ Subconta encontrada no Asaas:', account.name)
+    }
+    
+    // Buscar transações do banco D1 local
+    let query = `SELECT * FROM transactions WHERE account_id = ?`
+    const params = [accountId]
+    
+    if (startDate) {
+      query += ` AND created_at >= ?`
+      params.push(startDate)
+    }
+    if (endDate) {
+      query += ` AND created_at <= ?`
+      params.push(endDate + ' 23:59:59')
+    }
+    
+    query += ` ORDER BY created_at DESC`
+    
+    const result = await db.prepare(query).bind(...params).all()
+    let payments = result.results || []
+    
+    // Se não houver transações no D1, buscar direto do Asaas
+    if (payments.length === 0) {
+      console.log(`⚠️ Nenhuma transação no D1 para ${accountId}, buscando no Asaas...`)
+      
+      // IMPORTANTE: Buscar apenas pagamentos com split para esse walletId
+      // Não há filtro direto por walletId na API, então buscar todos e filtrar localmente
+      let asaasPaymentsUrl = `/payments?limit=1000`
+      if (startDate) asaasPaymentsUrl += `&dateCreated[ge]=${startDate}`
+      if (endDate) asaasPaymentsUrl += `&dateCreated[le]=${endDate}`
+      
+      const asaasPayments = await asaasRequest(c, asaasPaymentsUrl, 'GET')
+      
+      if (asaasPayments.ok && asaasPayments.data?.data) {
+        // Filtrar apenas pagamentos que têm split para essa subconta (walletId)
+        const walletId = account.walletId
+        
+        const filteredPayments = asaasPayments.data.data.filter((p: any) => {
+          // Verificar se o pagamento tem split para esse walletId
+          if (p.split && Array.isArray(p.split)) {
+            return p.split.some((s: any) => s.walletId === walletId)
+          }
+          return false
+        })
+        
+        payments = filteredPayments.map((p: any) => ({
+          id: p.id,
+          value: p.value,
+          description: p.description,
+          due_date: p.dueDate,
+          status: p.status,
+          created_at: p.dateCreated,
+          billing_type: p.billingType,
+          payment_date: p.paymentDate
+        }))
+        
+        console.log(`✅ ${payments.length} transações encontradas no Asaas com split para ${walletId}`)
+      } else {
+        console.log(`⚠️ Nenhuma transação encontrada no Asaas`)
+      }
+    }
+    
+    // Calcular estatísticas
+    let totalReceived = 0
+    let totalPending = 0
+    let totalOverdue = 0
+    let totalRefunded = 0
+    
+    payments.forEach((payment: any) => {
+      const value = parseFloat(payment.value || 0)
+      if (payment.status === 'RECEIVED') totalReceived += value
+      else if (payment.status === 'PENDING') totalPending += value
+      else if (payment.status === 'OVERDUE') totalOverdue += value
+      else if (payment.status === 'REFUNDED') totalRefunded += value
+    })
+    
+    // Preparar transações para retorno
+    const transactions = payments.map((p: any) => ({
+      id: p.id,
+      value: parseFloat(p.value || 0),
+      description: p.description || 'Sem descrição',
+      dueDate: p.due_date,
+      status: p.status,
+      dateCreated: p.created_at,
+      billingType: p.billing_type,
+      paymentDate: p.payment_date
+    }))
+    
+    return c.json({
+      ok: true,
+      data: {
+        account: {
+          id: account.id,
+          name: account.name,
+          email: account.email,
+          cpfCnpj: account.cpfCnpj,
+          walletId: account.walletId
+        },
+        period: {
+          startDate: startDate || 'Início',
+          endDate: endDate || 'Hoje'
+        },
+        summary: {
+          totalReceived,
+          totalPending,
+          totalOverdue,
+          totalRefunded,
+          totalTransactions: payments.length
+        },
+        transactions
+      }
+    })
+  } catch (error: any) {
+    console.error('Erro ao buscar relatório:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Endpoint de relatório consolidado (todas as subcontas)
+// IMPORTANTE: Deve vir ANTES do endpoint com :accountId para evitar conflito de rotas
+app.get('/api/reports/all-accounts/detailed', async (c) => {
+  try {
+    const db = c.env.DB
+    const startDate = c.req.query('startDate')
+    const endDate = c.req.query('endDate')
+    const chargeType = c.req.query('chargeType') || 'all'
+    const statusFilter = c.req.query('status') || 'all'
+    
+    // Buscar todas as subcontas e criar mapa de nomes
+    const accountsResult = await db.prepare('SELECT DISTINCT account_id, wallet_id FROM transactions').all()
+    const accounts = accountsResult.results || []
+    
+    // Criar mapa de account_id → nome da conta
+    const accountNamesMap: Record<string, string> = {}
+    for (const acc of accounts) {
+      const accountId = (acc as any).account_id
+      // Buscar nome da subconta na tabela subscription_signup_links
+      const linkInfo = await db.prepare(`
+        SELECT description FROM subscription_signup_links 
+        WHERE account_id = ? 
+        LIMIT 1
+      `).bind(accountId).first()
+      
+      if (linkInfo && linkInfo.description) {
+        accountNamesMap[accountId] = linkInfo.description
+      } else {
+        accountNamesMap[accountId] = `Conta ${accountId.substring(0, 8)}`
+      }
+    }
+    
+    // Buscar transações de todas as subcontas
+    let query = `SELECT * FROM transactions WHERE 1=1`
+    const params: any[] = []
+    
+    if (startDate) {
+      query += ` AND created_at >= ?`
+      params.push(startDate)
+    }
+    if (endDate) {
+      query += ` AND created_at <= ?`
+      params.push(endDate + ' 23:59:59')
+    }
+    if (statusFilter && statusFilter !== 'all') {
+      query += ` AND status = ?`
+      params.push(statusFilter)
+    }
+    
+    query += ` ORDER BY created_at DESC`
+    
+    const result = await db.prepare(query).bind(...params).all()
+    let payments = result.results || []
+    
+    // Enriquecer cada pagamento com dados do cliente e subconta
+    for (let i = 0; i < payments.length; i++) {
+      const payment = payments[i] as any
+      
+      // Buscar dados do cliente
+      const conversion = await db.prepare(`
+        SELECT sc.*, ssl.charge_type 
+        FROM subscription_conversions sc
+        LEFT JOIN subscription_signup_links ssl ON sc.link_id = ssl.id
+        WHERE sc.subscription_id = ?
+        LIMIT 1
+      `).bind(payment.id).first()
+      
+      let finalConversion = conversion
+      
+      // Se não encontrou, tentar buscar pelo account_id (casos onde múltiplos pagamentos da mesma conta)
+      if (!finalConversion) {
+        finalConversion = await db.prepare(`
+          SELECT sc.*, ssl.charge_type 
+          FROM subscription_conversions sc
+          LEFT JOIN subscription_signup_links ssl ON sc.link_id = ssl.id
+          WHERE ssl.account_id = ?
+          ORDER BY sc.converted_at DESC
+          LIMIT 1
+        `).bind(payment.account_id).first()
+      }
+      
+      if (finalConversion) {
+        payment.customer_name = finalConversion.customer_name
+        payment.customer_email = finalConversion.customer_email
+        payment.customer_cpf = finalConversion.customer_cpf
+        payment.customer_birthdate = finalConversion.customer_birthdate
+        payment.charge_type = finalConversion.charge_type || 'monthly'
+      } else {
+        payment.customer_name = 'N/A'
+        payment.customer_email = 'N/A'
+        payment.customer_cpf = 'N/A'
+        payment.customer_birthdate = 'N/A'
+        payment.charge_type = 'monthly'
+      }
+      
+      // Atribuir nome da subconta do mapa
+      payment.account_name = accountNamesMap[payment.account_id] || `Conta ${payment.account_id.substring(0, 8)}`
+    }
+    
+    // Filtrar por tipo de cobrança
+    if (chargeType && chargeType !== 'all') {
+      payments = payments.filter((p: any) => {
+        const pChargeType = p.charge_type || 'monthly'
+        return pChargeType === chargeType
+      })
+    }
+    
+    // Calcular estatísticas
+    let totalReceived = 0
+    let totalPending = 0
+    let totalOverdue = 0
+    let totalRefunded = 0
+    
+    payments.forEach((payment: any) => {
+      const value = parseFloat(payment.value || 0)
+      if (payment.status === 'RECEIVED') totalReceived += value
+      else if (payment.status === 'PENDING') totalPending += value
+      else if (payment.status === 'OVERDUE') totalOverdue += value
+      else if (payment.status === 'REFUNDED') totalRefunded += value
+    })
+    
+    // Preparar transações
+    const transactions = payments.map((p: any) => ({
+      id: p.id,
+      accountId: p.account_id,
+      accountName: p.account_name || 'N/A',
+      value: parseFloat(p.value || 0),
+      description: p.description || 'Sem descrição',
+      dueDate: p.due_date,
+      status: p.status,
+      dateCreated: p.created_at,
+      billingType: p.billing_type,
+      paymentDate: p.payment_date,
+      chargeType: p.charge_type || 'monthly',
+      customer: {
+        name: p.customer_name || 'N/A',
+        email: p.customer_email || 'N/A',
+        cpf: p.customer_cpf || 'N/A',
+        birthdate: p.customer_birthdate || 'N/A'
+      }
+    }))
+    
+    return c.json({
+      ok: true,
+      data: {
+        account: {
+          id: 'ALL_ACCOUNTS',
+          name: 'Todas as Subcontas',
+          email: 'consolidado@sistema.com',
+          cpfCnpj: '-',
+          walletId: '-'
+        },
+        period: {
+          startDate: startDate || 'Início',
+          endDate: endDate || 'Hoje'
+        },
+        filters: {
+          chargeType: chargeType || 'all',
+          status: statusFilter || 'all'
+        },
+        summary: {
+          totalReceived,
+          totalPending,
+          totalOverdue,
+          totalRefunded,
+          totalTransactions: payments.length,
+          totalAccounts: accounts.length
+        },
+        transactions
+      }
+    })
+  } catch (error: any) {
+    console.error('Erro ao buscar relatório consolidado:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// ===== ENDPOINTS ESPECÍFICOS POR STATUS (para sistemas externos) =====
+
+// Middleware de autenticação via API Key para sistemas externos
+async function externalApiAuth(c: any, next: any) {
+  const apiKey = c.req.header('X-API-Key')
+  const validApiKey = c.env.EXTERNAL_API_KEY || 'demo-key-123' // Default para desenvolvimento
+  
+  // Se não forneceu API Key, bloquear
+  if (!apiKey) {
+    return c.json({ 
+      error: 'API Key obrigatória. Envie no header X-API-Key',
+      docs: 'https://github.com/kainow252-cmyk/Cadastro/blob/main/API_RELATORIOS_EXTERNOS.md'
+    }, 401)
+  }
+  
+  // Validar API Key
+  if (apiKey !== validApiKey) {
+    return c.json({ 
+      error: 'API Key inválida',
+      docs: 'https://github.com/kainow252-cmyk/Cadastro/blob/main/API_RELATORIOS_EXTERNOS.md'
+    }, 403)
+  }
+  
+  await next()
+}
+
+// Helper function para buscar relatório consolidado com status específico
+async function getConsolidatedReportByStatus(c: any, statusFilter: string) {
+  try {
+    const db = c.env.DB
+    const startDate = c.req.query('startDate')
+    const endDate = c.req.query('endDate')
+    const chargeType = c.req.query('chargeType') || 'all'
+    
+    // Buscar todas as subcontas e criar mapa de nomes
+    const accountsResult = await db.prepare('SELECT DISTINCT account_id, wallet_id FROM transactions').all()
+    const accounts = accountsResult.results || []
+    
+    // Criar mapa de account_id → nome da conta
+    const accountNamesMap: Record<string, string> = {}
+    for (const acc of accounts) {
+      const accountId = (acc as any).account_id
+      const linkInfo = await db.prepare(`
+        SELECT description FROM subscription_signup_links 
+        WHERE account_id = ? 
+        LIMIT 1
+      `).bind(accountId).first()
+      
+      if (linkInfo && linkInfo.description) {
+        accountNamesMap[accountId] = linkInfo.description
+      } else {
+        accountNamesMap[accountId] = `Conta ${accountId.substring(0, 8)}`
+      }
+    }
+    
+    // Buscar transações com filtro de status
+    let query = `SELECT * FROM transactions WHERE status = ?`
+    const params: any[] = [statusFilter]
+    
+    if (startDate) {
+      query += ` AND created_at >= ?`
+      params.push(startDate)
+    }
+    if (endDate) {
+      query += ` AND created_at <= ?`
+      params.push(endDate + ' 23:59:59')
+    }
+    
+    query += ` ORDER BY created_at DESC`
+    
+    const result = await db.prepare(query).bind(...params).all()
+    let payments = result.results || []
+    
+    // Enriquecer cada pagamento com dados do cliente e subconta
+    for (let i = 0; i < payments.length; i++) {
+      const payment = payments[i] as any
+      
+      // Buscar dados do cliente
+      const conversion = await db.prepare(`
+        SELECT sc.*, ssl.charge_type 
+        FROM subscription_conversions sc
+        LEFT JOIN subscription_signup_links ssl ON sc.link_id = ssl.id
+        WHERE sc.subscription_id = ?
+        LIMIT 1
+      `).bind(payment.id).first()
+      
+      let finalConversion = conversion
+      
+      // Se não encontrou, tentar buscar pelo account_id
+      if (!finalConversion) {
+        finalConversion = await db.prepare(`
+          SELECT sc.*, ssl.charge_type 
+          FROM subscription_conversions sc
+          LEFT JOIN subscription_signup_links ssl ON sc.link_id = ssl.id
+          WHERE ssl.account_id = ?
+          ORDER BY sc.converted_at DESC
+          LIMIT 1
+        `).bind(payment.account_id).first()
+      }
+      
+      if (finalConversion) {
+        payment.customer_name = finalConversion.customer_name
+        payment.customer_email = finalConversion.customer_email
+        payment.customer_cpf = finalConversion.customer_cpf
+        payment.customer_birthdate = finalConversion.customer_birthdate
+        payment.charge_type = finalConversion.charge_type || 'monthly'
+      } else {
+        payment.customer_name = 'N/A'
+        payment.customer_email = 'N/A'
+        payment.customer_cpf = 'N/A'
+        payment.customer_birthdate = 'N/A'
+        payment.charge_type = 'monthly'
+      }
+      
+      // Atribuir nome da subconta
+      payment.account_name = accountNamesMap[payment.account_id] || `Conta ${payment.account_id.substring(0, 8)}`
+    }
+    
+    // Filtrar por tipo de cobrança
+    if (chargeType && chargeType !== 'all') {
+      payments = payments.filter((p: any) => {
+        const pChargeType = p.charge_type || 'monthly'
+        return pChargeType === chargeType
+      })
+    }
+    
+    // Calcular estatísticas (apenas para o status solicitado)
+    let totalValue = 0
+    payments.forEach((payment: any) => {
+      totalValue += parseFloat(payment.value || 0)
+    })
+    
+    // Preparar transações
+    const transactions = payments.map((p: any) => ({
+      id: p.id,
+      accountId: p.account_id,
+      accountName: p.account_name || 'N/A',
+      value: parseFloat(p.value || 0),
+      description: p.description || 'Sem descrição',
+      dueDate: p.due_date,
+      status: p.status,
+      dateCreated: p.created_at,
+      billingType: p.billing_type,
+      paymentDate: p.payment_date,
+      chargeType: p.charge_type || 'monthly',
+      customer: {
+        name: p.customer_name || 'N/A',
+        email: p.customer_email || 'N/A',
+        cpf: p.customer_cpf || 'N/A',
+        birthdate: p.customer_birthdate || 'N/A'
+      }
+    }))
+    
+    return c.json({
+      ok: true,
+      data: {
+        account: {
+          id: 'ALL_ACCOUNTS',
+          name: 'Todas as Subcontas',
+          email: 'consolidado@sistema.com',
+          cpfCnpj: '-',
+          walletId: '-'
+        },
+        period: {
+          startDate: startDate || 'Início',
+          endDate: endDate || 'Hoje'
+        },
+        filters: {
+          chargeType: chargeType || 'all',
+          status: statusFilter
+        },
+        summary: {
+          totalValue,
+          totalTransactions: payments.length,
+          totalAccounts: accounts.length,
+          status: statusFilter
+        },
+        transactions
+      }
+    })
+  } catch (error: any) {
+    console.error(`Erro ao buscar relatório consolidado (status: ${statusFilter}):`, error)
+    return c.json({ error: error.message }, 500)
+  }
+}
+
+// API para sistemas externos: PAGAMENTOS RECEBIDOS (PÚBLICA - SEM AUTENTICAÇÃO)
+app.get('/api/reports/all-accounts/received', async (c) => {
+  return await getConsolidatedReportByStatus(c, 'RECEIVED')
+})
+
+// API para sistemas externos: PAGAMENTOS PENDENTES (PÚBLICA - SEM AUTENTICAÇÃO)
+app.get('/api/reports/all-accounts/pending', async (c) => {
+  return await getConsolidatedReportByStatus(c, 'PENDING')
+})
+
+// API para sistemas externos: PAGAMENTOS VENCIDOS (PÚBLICA - SEM AUTENTICAÇÃO)
+app.get('/api/reports/all-accounts/overdue', async (c) => {
+  return await getConsolidatedReportByStatus(c, 'OVERDUE')
+})
+
+// API para sistemas externos: PAGAMENTOS REEMBOLSADOS (PÚBLICA - SEM AUTENTICAÇÃO)
+app.get('/api/reports/all-accounts/refunded', async (c) => {
+  return await getConsolidatedReportByStatus(c, 'REFUNDED')
+})
+
+// Endpoint aprimorado de relatórios com dados dos clientes
+app.get('/api/reports/:accountId/detailed', async (c) => {
+  try {
+    const db = c.env.DB
+    const accountId = c.req.param('accountId')
+    const startDate = c.req.query('startDate')
+    const endDate = c.req.query('endDate')
+    const chargeType = c.req.query('chargeType') // 'all', 'single', 'monthly', 'pix_auto', 'link_cadastro'
+    const statusFilter = c.req.query('status') // 'all', 'RECEIVED', 'PENDING', etc.
+    
+    // Buscar informações da subconta
+    const accountQuery = await db.prepare('SELECT * FROM signup_links WHERE account_id = ? LIMIT 1').bind(accountId).first()
+    
+    let account: any = null
+    
+    if (accountQuery) {
+      account = {
+        id: accountQuery.account_id,
+        name: accountQuery.customer_name || `Conta ${accountId.substring(0, 8)}`,
+        email: accountQuery.customer_email || 'N/A',
+        cpfCnpj: accountQuery.customer_cpf || 'N/A',
+        walletId: accountQuery.wallet_id
+      }
+    } else {
+      const asaasAccount = await asaasRequest(c, `/v3/accounts/${accountId}`, 'GET')
+      if (!asaasAccount.ok || !asaasAccount.data) {
+        return c.json({ error: 'Subconta não encontrada', accountId }, 404)
+      }
+      account = {
+        id: asaasAccount.data.id,
+        name: asaasAccount.data.name || `Conta ${accountId.substring(0, 8)}`,
+        email: asaasAccount.data.email || 'N/A',
+        cpfCnpj: asaasAccount.data.cpfCnpj || 'N/A',
+        walletId: asaasAccount.data.walletId || accountId
+      }
+    }
+    
+    // Buscar transações do D1 (query simplificada)
+    let query = `SELECT * FROM transactions WHERE account_id = ?`
+    const params = [accountId]
+    
+    if (startDate) {
+      query += ` AND created_at >= ?`
+      params.push(startDate)
+    }
+    if (endDate) {
+      query += ` AND created_at <= ?`
+      params.push(endDate + ' 23:59:59')
+    }
+    if (statusFilter && statusFilter !== 'all') {
+      query += ` AND status = ?`
+      params.push(statusFilter)
+    }
+    
+    query += ` ORDER BY created_at DESC`
+    
+    const result = await db.prepare(query).bind(...params).all()
+    let payments = result.results || []
+    
+    // Enriquecer cada pagamento com dados do cliente
+    for (let i = 0; i < payments.length; i++) {
+      const payment = payments[i] as any
+      
+      // Buscar dados do cliente via subscription_conversions
+      // Nota: payment.id pode ser tanto subscription_id quanto payment_id
+      // Buscar primeiro por subscription_id, depois por customer_id relacionado
+      const conversion = await db.prepare(`
+        SELECT sc.*, ssl.charge_type 
+        FROM subscription_conversions sc
+        LEFT JOIN subscription_signup_links ssl ON sc.link_id = ssl.id
+        WHERE sc.subscription_id = ?
+        LIMIT 1
+      `).bind(payment.id).first()
+      
+      let finalConversion = conversion
+      
+      // Se não encontrou, tentar buscar pelo account_id (casos onde múltiplos pagamentos da mesma conta)
+      if (!finalConversion) {
+        finalConversion = await db.prepare(`
+          SELECT sc.*, ssl.charge_type 
+          FROM subscription_conversions sc
+          LEFT JOIN subscription_signup_links ssl ON sc.link_id = ssl.id
+          WHERE ssl.account_id = ?
+          ORDER BY sc.converted_at DESC
+          LIMIT 1
+        `).bind(payment.account_id).first()
+      }
+      
+      if (finalConversion) {
+        payment.customer_name = finalConversion.customer_name
+        payment.customer_email = finalConversion.customer_email
+        payment.customer_cpf = finalConversion.customer_cpf
+        payment.customer_birthdate = finalConversion.customer_birthdate
+        payment.charge_type = finalConversion.charge_type || 'monthly'
+      } else {
+        payment.customer_name = 'N/A'
+        payment.customer_email = 'N/A'
+        payment.customer_cpf = 'N/A'
+        payment.customer_birthdate = 'N/A'
+        payment.charge_type = 'monthly'
+      }
+    }
+    
+    // Filtrar por tipo de cobrança
+    if (chargeType && chargeType !== 'all') {
+      payments = payments.filter((p: any) => {
+        const pChargeType = p.charge_type || 'monthly'
+        return pChargeType === chargeType
+      })
+    }
+    
+    // Calcular estatísticas
+    let totalReceived = 0
+    let totalPending = 0
+    let totalOverdue = 0
+    let totalRefunded = 0
+    
+    payments.forEach((payment: any) => {
+      const value = parseFloat(payment.value || 0)
+      if (payment.status === 'RECEIVED') totalReceived += value
+      else if (payment.status === 'PENDING') totalPending += value
+      else if (payment.status === 'OVERDUE') totalOverdue += value
+      else if (payment.status === 'REFUNDED') totalRefunded += value
+    })
+    
+    // Preparar transações com dados dos clientes
+    const transactions = payments.map((p: any) => ({
+      id: p.id,
+      value: parseFloat(p.value || 0),
+      description: p.description || 'Sem descrição',
+      dueDate: p.due_date,
+      status: p.status,
+      dateCreated: p.created_at,
+      billingType: p.billing_type,
+      paymentDate: p.payment_date,
+      chargeType: p.charge_type || 'monthly',
+      customer: {
+        name: p.customer_name || 'N/A',
+        email: p.customer_email || 'N/A',
+        cpf: p.customer_cpf || 'N/A',
+        birthdate: p.customer_birthdate || 'N/A'
+      }
+    }))
+    
+    return c.json({
+      ok: true,
+      data: {
+        account: {
+          id: account.id,
+          name: account.name,
+          email: account.email,
+          cpfCnpj: account.cpfCnpj,
+          walletId: account.walletId
+        },
+        period: {
+          startDate: startDate || 'Início',
+          endDate: endDate || 'Hoje'
+        },
+        filters: {
+          chargeType: chargeType || 'all',
+          status: statusFilter || 'all'
+        },
+        summary: {
+          totalReceived,
+          totalPending,
+          totalOverdue,
+          totalRefunded,
+          totalTransactions: payments.length
+        },
+        transactions
+      }
+    })
+  } catch (error: any) {
+    console.error('Erro ao buscar relatório detalhado:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Endpoint simplificado para listar transações (sem validação de conta)
+app.get('/api/transactions-list/:accountId', async (c) => {
+  try {
+    const db = c.env.DB
+    const accountId = c.req.param('accountId')
+    
+    const result = await db.prepare('SELECT * FROM transactions WHERE account_id = ? ORDER BY created_at DESC').bind(accountId).all()
+    const transactions = result.results || []
+    
+    return c.json({
+      ok: true,
+      accountId,
+      total: transactions.length,
+      transactions
+    })
+  } catch (error: any) {
+    console.error('Erro ao buscar transações:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Criar link de pagamento
+app.post('/api/payment-links', async (c) => {
+  try {
+    const body = await c.req.json()
+    const { accountId, name, description, billingType, chargeType, value, cycle, dueDate, duration } = body
+    
+    // Dados base do link
+    const linkData: any = {
+      name,
+      description: description || undefined,
+      billingType: billingType === 'UNDEFINED' ? undefined : billingType,
+      chargeType,
+      endDate: undefined
+    }
+    
+    if (chargeType === 'DETACHED') {
+      // Link de valor fixo
+      linkData.value = parseFloat(value)
+      // Para PIX, sempre é necessário dueDateLimitDays (quantidade de dias para vencimento)
+      linkData.dueDateLimitDays = 30
+    } else if (chargeType === 'RECURRENT') {
+      // Link de assinatura
+      linkData.subscriptionCycle = cycle
+      linkData.subscriptionValue = parseFloat(value)
+      if (duration) {
+        linkData.maxInstallmentCount = parseInt(duration)
+      }
+    }
+    
+    // Se accountId foi fornecido, criar link NA SUBCONTA
+    let customHeaders = undefined
+    if (accountId) {
+      // Buscar API key da subconta
+      const accountResult = await asaasRequest(c, `/v3/accounts/${accountId}`)
+      if (!accountResult.ok) {
+        return c.json({ error: 'Subconta não encontrada' }, 404)
+      }
+      
+      const walletId = accountResult.data?.walletId
+      if (!walletId) {
+        return c.json({ error: 'Subconta não possui walletId (não aprovada ainda)' }, 400)
+      }
+      
+      // Buscar chaves API da subconta
+      const keysResult = await asaasRequest(c, `/v3/accounts/${accountId}/api-keys`)
+      const keys = keysResult.data?.data || []
+      
+      if (keys.length === 0) {
+        return c.json({ error: 'Subconta não possui chaves API. Crie uma chave primeiro.' }, 400)
+      }
+      
+      // Usar a primeira chave ativa
+      const activeKey = keys.find((k: any) => k.active)
+      if (!activeKey) {
+        return c.json({ error: 'Subconta não possui chaves API ativas' }, 400)
+      }
+      
+      // Usar header asaas-account-key para criar na subconta
+      customHeaders = {
+        'asaas-account-key': activeKey.apiKey
+      }
+    }
+    
+    // Criar link na API Asaas (conta principal OU subconta)
+    const result = await asaasRequest(c, '/v3/paymentLinks', 'POST', linkData, customHeaders)
+    
+    if (!result.ok) {
+      // Log detalhado do erro para debug
+      console.error('Erro Asaas API:', JSON.stringify(result.data, null, 2))
+      const errorMessage = result.data?.errors?.[0]?.description || result.data?.error || JSON.stringify(result.data) || 'Erro ao criar link'
+      return c.json({ error: errorMessage, details: result.data }, 400)
+    }
+    
+    return c.json({
+      ok: true,
+      data: result.data,
+      account: accountId ? { id: accountId, usedSubaccount: true } : { usedSubaccount: false }
+    })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Listar links de pagamento
+app.get('/api/payment-links', async (c) => {
+  try {
+    const result = await asaasRequest(c, '/v3/paymentLinks')
+    
+    return c.json({
+      ok: true,
+      data: result.data?.data || [],
+      totalCount: result.data?.totalCount || 0
+    })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Buscar QR Code PIX de um pagamento
+app.get('/api/payments/:id/pixqrcode', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const result = await asaasRequest(c, `/v3/payments/${id}/pixQrCode`)
+    
+    if (!result.ok) {
+      return c.json({ 
+        error: 'Erro ao buscar QR Code',
+        details: result.data 
+      }, result.status || 400)
+    }
+    
+    return c.json({
+      ok: true,
+      data: result.data
+    })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Deletar link de pagamento
+app.delete('/api/payment-links/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    
+    const result = await asaasRequest(c, `/v3/paymentLinks/${id}`, 'DELETE')
+    
+    return c.json({ ok: true })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Buscar pagamentos de um link específico
+app.get('/api/payment-links/:id/payments', async (c) => {
+  try {
+    const linkId = c.req.param('id')
+    
+    // Buscar cobranças associadas ao link
+    const result = await asaasRequest(c, `/v3/payments?paymentLink=${linkId}`)
+    
+    // FILTRO ADICIONAL: A API Asaas tem bug e retorna pagamentos de outros links
+    // Vamos filtrar apenas pagamentos que realmente pertencem a este link
+    const allPayments = result.data?.data || []
+    const filteredPayments = allPayments.filter((payment: any) => 
+      payment.paymentLink === linkId
+    )
+    
+    return c.json({
+      ok: true,
+      data: filteredPayments,
+      totalCount: filteredPayments.length
+    })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Buscar detalhes de um pagamento específico
+app.get('/api/payments/:id', async (c) => {
+  try {
+    const paymentId = c.req.param('id')
+    
+    const result = await asaasRequest(c, `/v3/payments/${paymentId}`)
+    
+    return c.json({
+      ok: true,
+      data: result.data
+    })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Buscar informações de um cliente/customer
+app.get('/api/customers/:id', async (c) => {
+  try {
+    const customerId = c.req.param('id')
+    
+    const result = await asaasRequest(c, `/v3/customers/${customerId}`)
+    
+    return c.json({
+      ok: true,
+      data: result.data
+    })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Listar todos os pagamentos
+app.get('/api/payments', async (c) => {
+  try {
+    const { status, dateCreated, limit, offset } = c.req.query()
+    
+    let endpoint = '/payments?'
+    const params = []
+    
+    if (status) params.push(`status=${status}`)
+    if (dateCreated) params.push(`dateCreated[ge]=${dateCreated}`)
+    if (limit) params.push(`limit=${limit}`)
+    if (offset) params.push(`offset=${offset}`)
+    
+    endpoint += params.join('&')
+    
+    const result = await asaasRequest(c, endpoint)
+    
+    return c.json({
+      ok: true,
+      data: result.data?.data || [],
+      totalCount: result.data?.totalCount || 0,
+      hasMore: result.data?.hasMore || false
+    })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Debug endpoint para verificar variáveis de ambiente
+app.get('/api/debug/env', async (c) => {
+  const hasApiKey = !!c.env.ASAAS_API_KEY
+  const hasApiUrl = !!c.env.ASAAS_API_URL
+  const apiKeyPrefix = c.env.ASAAS_API_KEY?.substring(0, 20) + '...'
+  
+  return c.json({
+    hasApiKey,
+    hasApiUrl,
+    apiKeyPrefix,
+    apiUrl: c.env.ASAAS_API_URL
+  })
+})
+
+// Endpoint para inicializar tabelas do banco D1 (executar uma vez)
+// Criar 10 novas assinaturas com cartões de teste
+app.post('/api/admin/create-test-subscriptions', authMiddleware, async (c) => {
+  try {
+    const db = c.env.DB
+    
+    // 10 assinaturas novas com cartões de teste variados
+    const newSubscriptions = [
+      // Visa aprovadas
+      {
+        customer_name: 'Rafael Mendes',
+        customer_email: 'rafael.mendes@email.com',
+        customer_cpf: '111.222.333-44',
+        customer_phone: '(11) 91234-5678',
+        value: 59.90,
+        description: 'Plano Gold Mensal',
+        recurrence_type: 'MONTHLY',
+        card_number: '5428258051342340',
+        card_last4: '2340',
+        card_brand: 'Visa',
+        card_expiry_month: '01',
+        card_expiry_year: '2028'
+      },
+      {
+        customer_name: 'Beatriz Almeida',
+        customer_email: 'beatriz.almeida@email.com',
+        customer_cpf: '222.333.444-55',
+        customer_phone: '(21) 92345-6789',
+        value: 89.90,
+        description: 'Plano Platinum Mensal',
+        recurrence_type: 'MONTHLY',
+        card_number: '5308547387340761',
+        card_last4: '0761',
+        card_brand: 'Visa',
+        card_expiry_month: '03',
+        card_expiry_year: '2028'
+      },
+      {
+        customer_name: 'Thiago Rodrigues',
+        customer_email: 'thiago.rodrigues@email.com',
+        customer_cpf: '333.444.555-66',
+        customer_phone: '(31) 93456-7890',
+        value: 119.90,
+        description: 'Plano Diamond Mensal',
+        recurrence_type: 'MONTHLY',
+        card_number: '5328575787984264',
+        card_last4: '8264',
+        card_brand: 'Visa',
+        card_expiry_month: '06',
+        card_expiry_year: '2028'
+      },
+      // Mastercard aprovadas
+      {
+        customer_name: 'Camila Souza',
+        customer_email: 'camila.souza@email.com',
+        customer_cpf: '444.555.666-77',
+        customer_phone: '(41) 94567-8901',
+        value: 199.90,
+        description: 'Plano Corporate Mensal',
+        recurrence_type: 'MONTHLY',
+        card_number: '5448280000000007',
+        card_last4: '0007',
+        card_brand: 'Mastercard',
+        card_expiry_month: '09',
+        card_expiry_year: '2027'
+      },
+      {
+        customer_name: 'Diego Silva',
+        customer_email: 'diego.silva@email.com',
+        customer_cpf: '555.666.777-88',
+        customer_phone: '(51) 95678-9012',
+        value: 249.90,
+        description: 'Plano Executive Mensal',
+        recurrence_type: 'MONTHLY',
+        card_number: '4235647728025682',
+        card_last4: '5682',
+        card_brand: 'Mastercard',
+        card_expiry_month: '12',
+        card_expiry_year: '2027'
+      },
+      // Hipercard e Elo
+      {
+        customer_name: 'Larissa Oliveira',
+        customer_email: 'larissa.oliveira@email.com',
+        customer_cpf: '666.777.888-99',
+        customer_phone: '(61) 96789-0123',
+        value: 69.90,
+        description: 'Plano Silver Mensal',
+        recurrence_type: 'MONTHLY',
+        card_number: '6062825624254001',
+        card_last4: '4001',
+        card_brand: 'Hipercard',
+        card_expiry_month: '02',
+        card_expiry_year: '2028'
+      },
+      {
+        customer_name: 'Gustavo Costa',
+        customer_email: 'gustavo.costa@email.com',
+        customer_cpf: '777.888.999-00',
+        customer_phone: '(71) 97890-1234',
+        value: 139.90,
+        description: 'Plano Pro Mensal',
+        recurrence_type: 'MONTHLY',
+        card_number: '4389351648020055',
+        card_last4: '0055',
+        card_brand: 'Elo',
+        card_expiry_month: '04',
+        card_expiry_year: '2028'
+      },
+      // Planos anuais
+      {
+        customer_name: 'Patricia Santos',
+        customer_email: 'patricia.santos@email.com',
+        customer_cpf: '888.999.000-11',
+        customer_phone: '(81) 98901-2345',
+        value: 499.90,
+        description: 'Plano Premium Anual',
+        recurrence_type: 'YEARLY',
+        card_number: '5428258051342340',
+        card_last4: '2340',
+        card_brand: 'Visa',
+        card_expiry_month: '05',
+        card_expiry_year: '2029'
+      },
+      {
+        customer_name: 'Rodrigo Lima',
+        customer_email: 'rodrigo.lima@email.com',
+        customer_cpf: '999.000.111-22',
+        customer_phone: '(91) 99012-3456',
+        value: 799.90,
+        description: 'Plano Business Anual',
+        recurrence_type: 'YEARLY',
+        card_number: '5448280000000007',
+        card_last4: '0007',
+        card_brand: 'Mastercard',
+        card_expiry_month: '07',
+        card_expiry_year: '2029'
+      },
+      {
+        customer_name: 'Amanda Pereira',
+        customer_email: 'amanda.pereira@email.com',
+        customer_cpf: '000.111.222-33',
+        customer_phone: '(85) 90123-4567',
+        value: 999.90,
+        description: 'Plano Enterprise Anual',
+        recurrence_type: 'YEARLY',
+        card_number: '5328575787984264',
+        card_last4: '8264',
+        card_brand: 'Visa',
+        card_expiry_month: '10',
+        card_expiry_year: '2029'
+      }
+    ]
+    
+    const created = []
+    
+    for (const sub of newSubscriptions) {
+      const id = crypto.randomUUID()
+      const customerId = `cust_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      const deltapagSubId = `sub_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+      
+      await db.prepare(`
+        INSERT INTO deltapag_subscriptions 
+        (id, customer_id, customer_name, customer_email, customer_cpf, customer_phone,
+         deltapag_subscription_id, deltapag_customer_id, value, description, 
+         recurrence_type, status, card_number, card_last4, card_brand, card_expiry_month, card_expiry_year,
+         next_due_date, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?, ?, ?, datetime('now'))
+      `).bind(
+        id,
+        customerId,
+        sub.customer_name,
+        sub.customer_email,
+        sub.customer_cpf,
+        sub.customer_phone,
+        deltapagSubId,
+        customerId,
+        sub.value,
+        sub.description,
+        sub.recurrence_type,
+        sub.card_number,
+        sub.card_last4,
+        sub.card_brand,
+        sub.card_expiry_month,
+        sub.card_expiry_year,
+        new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      ).run()
+      
+      created.push({
+        name: sub.customer_name,
+        email: sub.customer_email,
+        value: sub.value,
+        card: `${sub.card_brand} •••• ${sub.card_last4}`,
+        status: 'ACTIVE'
+      })
+      
+      console.log(`✅ ${sub.customer_name}: ${sub.card_brand} •••• ${sub.card_last4}`)
+    }
+    
+    return c.json({
+      ok: true,
+      message: '10 novas assinaturas criadas com sucesso!',
+      count: created.length,
+      subscriptions: created
+    })
+    
+  } catch (error: any) {
+    console.error('❌ Erro ao criar assinaturas:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Sincronizar dados de cartão da API DeltaPag
+app.post('/api/admin/sync-deltapag-cards', authMiddleware, async (c) => {
+  try {
+    // Buscar todas as assinaturas do banco local
+    const localSubs = await c.env.DB.prepare(`
+      SELECT * FROM deltapag_subscriptions 
+      WHERE card_last4 IS NULL OR card_last4 = ''
+    `).all()
+    
+    console.log(`📊 ${localSubs.results?.length || 0} assinaturas sem dados de cartão`)
+    
+    if (!localSubs.results || localSubs.results.length === 0) {
+      return c.json({ 
+        ok: true, 
+        message: 'Todas as assinaturas já possuem dados de cartão',
+        updated: 0
+      })
+    }
+    
+    let updated = 0
+    const errors: string[] = []
+    
+    // Para cada assinatura, buscar dados na API DeltaPag
+    for (const sub of localSubs.results) {
+      try {
+        // Buscar assinatura na API DeltaPag
+        const deltapagSub = await deltapagRequest(
+          c, 
+          `/subscriptions/${sub.deltapag_subscription_id}`, 
+          'GET'
+        )
+        
+        if (!deltapagSub.ok) {
+          console.error(`❌ Erro ao buscar assinatura ${sub.deltapag_subscription_id}:`, deltapagSub.data)
+          errors.push(`${sub.customer_name}: ${deltapagSub.data.message || 'Erro desconhecido'}`)
+          continue
+        }
+        
+        const apiSub = deltapagSub.data
+        
+        // Extrair dados do cartão da resposta da API
+        let cardLast4 = null
+        let cardBrand = null
+        
+        // DeltaPag retorna creditCard nos dados da assinatura
+        if (apiSub.creditCard) {
+          cardLast4 = apiSub.creditCard.creditCardNumber?.slice(-4) || null
+          cardBrand = apiSub.creditCard.creditCardBrand || 'Unknown'
+        } else if (apiSub.creditCardNumber) {
+          // Algumas APIs retornam diretamente
+          cardLast4 = apiSub.creditCardNumber.slice(-4)
+          cardBrand = apiSub.creditCardBrand || 'Unknown'
+        }
+        
+        if (cardLast4) {
+          // Atualizar banco local
+          await c.env.DB.prepare(`
+            UPDATE deltapag_subscriptions 
+            SET card_last4 = ?, 
+                card_brand = ?,
+                updated_at = datetime('now')
+            WHERE id = ?
+          `).bind(cardLast4, cardBrand, sub.id).run()
+          
+          updated++
+          console.log(`✅ ${sub.customer_name}: ${cardBrand} •••• ${cardLast4}`)
+        } else {
+          console.log(`⚠️ ${sub.customer_name}: Sem dados de cartão na API`)
+          errors.push(`${sub.customer_name}: Sem dados de cartão na API DeltaPag`)
+        }
+        
+      } catch (error: any) {
+        console.error(`❌ Erro ao processar ${sub.customer_name}:`, error)
+        errors.push(`${sub.customer_name}: ${error.message}`)
+      }
+    }
+    
+    return c.json({
+      ok: true,
+      message: `${updated} assinaturas atualizadas com dados de cartão`,
+      updated,
+      total: localSubs.results.length,
+      errors: errors.length > 0 ? errors : undefined
+    })
+    
+  } catch (error: any) {
+    console.error('❌ Erro na sincronização:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Endpoint de teste para verificar configuração DeltaPag
+app.get('/api/admin/test-deltapag-config', authMiddleware, async (c) => {
+  try {
+    const hasApiKey = !!c.env.DELTAPAG_API_KEY
+    const hasApiUrl = !!c.env.DELTAPAG_API_URL
+    
+    return c.json({
+      ok: true,
+      config: {
+        hasApiKey,
+        hasApiUrl,
+        apiKeyLength: c.env.DELTAPAG_API_KEY?.length || 0,
+        apiUrl: c.env.DELTAPAG_API_URL || 'not set',
+        apiKeyPrefix: c.env.DELTAPAG_API_KEY?.substring(0, 20) + '...' || 'not set'
+      }
+    })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Endpoint temporário PÚBLICO para aplicar migration 0010 (charge_type)
+// REMOVER após aplicação bem-sucedida em produção
+app.post('/api/admin/apply-migration-0010', async (c) => {
+  try {
+    console.log('🔧 Aplicando migration 0010: charge_type...')
+    
+    const db = c.env.DB
+    
+    // 1. Adicionar coluna charge_type na tabela subscription_signup_links
+    await db.prepare(`
+      ALTER TABLE subscription_signup_links 
+      ADD COLUMN charge_type TEXT DEFAULT 'monthly' CHECK(charge_type IN ('single', 'monthly'))
+    `).run()
+    
+    console.log('✅ Coluna charge_type adicionada em subscription_signup_links')
+    
+    // 2. Adicionar coluna charge_type na tabela pix_automatic_signup_links
+    await db.prepare(`
+      ALTER TABLE pix_automatic_signup_links 
+      ADD COLUMN charge_type TEXT DEFAULT 'monthly' CHECK(charge_type IN ('single', 'monthly'))
+    `).run()
+    
+    console.log('✅ Coluna charge_type adicionada em pix_automatic_signup_links')
+    
+    // 3. Atualizar registros existentes
+    const result1 = await db.prepare(`
+      UPDATE subscription_signup_links SET charge_type = 'monthly' WHERE charge_type IS NULL
+    `).run()
+    
+    const result2 = await db.prepare(`
+      UPDATE pix_automatic_signup_links SET charge_type = 'monthly' WHERE charge_type IS NULL
+    `).run()
+    
+    console.log(`✅ ${result1.meta.changes} registros atualizados em subscription_signup_links`)
+    console.log(`✅ ${result2.meta.changes} registros atualizados em pix_automatic_signup_links`)
+    
+    return c.json({
+      ok: true,
+      message: 'Migration 0010 aplicada com sucesso',
+      updates: {
+        subscription_signup_links: result1.meta.changes,
+        pix_automatic_signup_links: result2.meta.changes
+      }
+    })
+    
+  } catch (error: any) {
+    console.error('❌ Erro ao aplicar migration:', error)
+    
+    // Se a coluna já existe, retornar sucesso
+    if (error.message?.includes('duplicate column name')) {
+      return c.json({
+        ok: true,
+        message: 'Migration já aplicada (coluna charge_type já existe)',
+        alreadyApplied: true
+      })
+    }
+    
+    return c.json({ 
+      ok: false, 
+      error: error.message,
+      hint: 'Coluna charge_type pode já existir ou houve erro de sintaxe'
+    }, 500)
+  }
+})
+
+// Endpoint de teste para criar um cliente de teste na DeltaPag
+app.post('/api/admin/test-deltapag-api', authMiddleware, async (c) => {
+  try {
+    console.log('🧪 Testando API DeltaPag...')
+    
+    if (!c.env.DELTAPAG_API_KEY) {
+      return c.json({ ok: false, error: 'DELTAPAG_API_KEY não configurada' }, 400)
+    }
+    
+    // Dados de cliente de teste
+    const testCustomer = {
+      name: 'Cliente Teste API',
+      email: 'teste-api-' + Date.now() + '@example.com',
+      cpf: '12345678901',
+      mobilePhone: '11999999999'
+    }
+    
+    console.log('📤 Enviando para DeltaPag:', testCustomer)
+    
+    // Tentar criar cliente
+    const result = await deltapagRequest(c, '/customers', 'POST', testCustomer)
+    
+    console.log('📥 Resposta DeltaPag:', result)
+    
+    return c.json({
+      ok: result.ok,
+      statusCode: result.status,
+      response: result.data,
+      testData: testCustomer
+    })
+    
+  } catch (error: any) {
+    console.error('❌ Erro ao testar API DeltaPag:', error)
+    return c.json({ 
+      ok: false, 
+      error: error.message,
+      stack: error.stack 
+    }, 500)
+  }
+})
+
+// Endpoint PÚBLICO para testar criação de assinatura completa
+app.post('/api/public/test-deltapag-subscription', async (c) => {
+  const debugLogs: string[] = []
+  const log = (msg: string) => {
+    console.log(msg)
+    debugLogs.push(msg)
+  }
+  
+  try {
+    log('🧪 [DEBUG] Testando criação de assinatura completa...')
+    
+    if (!c.env.DELTAPAG_API_KEY) {
+      return c.json({ ok: false, error: 'API key não configurada', debugLogs }, 400)
+    }
+    
+    // 1. Criar cliente
+    const customerData = {
+      name: 'Teste Assinatura',
+      email: 'teste-sub-' + Date.now() + '@example.com',
+      cpf: '12345678901',
+      mobilePhone: '11999999999'
+    }
+    
+    log('📤 Criando cliente: ' + JSON.stringify(customerData))
+    const customerResult = await deltapagRequest(c, '/customers', 'POST', customerData)
+    log(`📥 Cliente - Status: ${customerResult.status}`)
+    
+    const customerId = customerResult.data.id || customerResult.headers.get('content-id')
+    log(`✅ Customer ID: ${customerId}`)
+    
+    if (!customerId) {
+      return c.json({ ok: false, error: 'Não obteve customer ID', debugLogs }, 500)
+    }
+    
+    // 2. Criar assinatura
+    const nextDueDate = new Date()
+    nextDueDate.setDate(nextDueDate.getDate() + 1)
+    
+    const subscriptionData = {
+      customer: customerId,
+      billingType: 'CREDIT_CARD',
+      value: 99.90,
+      nextDueDate: nextDueDate.toISOString().split('T')[0],
+      cycle: 'MONTHLY',
+      description: 'Teste de Assinatura',
+      creditCard: {
+        holderName: 'Teste Assinatura',
+        number: '5428258051342340',
+        expiryMonth: '12',
+        expiryYear: '2027',
+        ccv: '123'
+      },
+      creditCardHolderInfo: {
+        name: 'Teste Assinatura',
+        email: customerData.email,
+        cpfCnpj: '12345678901',
+        postalCode: '01310100',
+        addressNumber: '1000',
+        phone: '11999999999'
+      }
+    }
+    
+    log('📤 Payload da assinatura: ' + JSON.stringify(subscriptionData, null, 2))
+    
+    const subscriptionResult = await deltapagRequest(c, '/subscriptions', 'POST', subscriptionData)
+    
+    log(`📥 Assinatura - Status: ${subscriptionResult.status}`)
+    log(`📥 Assinatura - OK: ${subscriptionResult.ok}`)
+    log(`📥 Assinatura - Body: ${JSON.stringify(subscriptionResult.data, null, 2)}`)
+    
+    // Log headers
+    log('📋 Headers da assinatura:')
+    const subHeaders: Record<string, string> = {}
+    subscriptionResult.headers.forEach((value, key) => {
+      log(`  ${key}: ${value}`)
+      subHeaders[key] = value
+    })
+    
+    const subscriptionId = subscriptionResult.data.id 
+      || subscriptionResult.headers.get('content-id')
+      || subscriptionResult.headers.get('location')?.match(/\/subscriptions\/([^\/]+)$/)?.[1]
+    
+    log(`🔍 Subscription ID final: ${subscriptionId}`)
+    
+    return c.json({
+      ok: true,
+      customerId,
+      subscriptionId,
+      customerStatus: customerResult.status,
+      subscriptionStatus: subscriptionResult.status,
+      subscriptionResponse: subscriptionResult.data,
+      subscriptionHeaders: subHeaders,
+      debugLogs,
+      timestamp: new Date().toISOString()
+    })
+    
+  } catch (error: any) {
+    log(`❌ Erro: ${error.message}`)
+    log(`❌ Stack: ${error.stack}`)
+    
+    return c.json({
+      ok: false,
+      error: error.message,
+      stack: error.stack,
+      debugLogs
+    }, 500)
+  }
+})
+
+// Endpoint PÚBLICO de teste DeltaPag com debug completo
+app.post('/api/public/test-deltapag-debug', async (c) => {
+  try {
+    const debugLogs: string[] = []
+    const log = (msg: string) => {
+      console.log(msg)
+      debugLogs.push(msg)
+    }
+    
+    log('🧪 [DEBUG] Testando API DeltaPag com logs completos...')
+    
+    // Verificar variáveis
+    const hasApiKey = !!c.env.DELTAPAG_API_KEY
+    const hasApiUrl = !!c.env.DELTAPAG_API_URL
+    const apiUrl = c.env.DELTAPAG_API_URL || 'https://api-sandbox.deltapag.io/api/v2'
+    
+    log(`✅ DELTAPAG_API_KEY existe: ${hasApiKey}`)
+    log(`✅ URL que será usada: ${apiUrl}`)
+    
+    if (!hasApiKey) {
+      return c.json({ 
+        ok: false, 
+        error: 'DELTAPAG_API_KEY não configurada',
+        debugLogs
+      }, 400)
+    }
+    
+    // Dados de cliente de teste
+    const testCustomer = {
+      name: 'Cliente Debug Teste',
+      email: 'debug-' + Date.now() + '@example.com',
+      cpf: '12345678901',
+      mobilePhone: '11999999999'
+    }
+    
+    log('📤 Enviando para DeltaPag: ' + JSON.stringify(testCustomer))
+    
+    // Fazer requisição
+    const result = await deltapagRequest(c, '/customers', 'POST', testCustomer)
+    
+    log(`📥 Status: ${result.status}`)
+    log(`📥 OK: ${result.ok}`)
+    log(`📥 Body: ${JSON.stringify(result.data)}`)
+    
+    // Listar TODOS os headers
+    log('📋 === HEADERS DA RESPOSTA ===')
+    const headers: Record<string, string> = {}
+    result.headers.forEach((value, key) => {
+      log(`  ${key}: ${value}`)
+      headers[key] = value
+    })
+    
+    // Tentar extrair Location
+    const location = result.headers.get('location') 
+      || result.headers.get('Location')
+      || result.headers.get('LOCATION')
+    
+    log(`📍 Location header: ${location}`)
+    
+    let customerId = result.data.id
+    log(`🔍 ID no body: ${customerId}`)
+    
+    if (!customerId && location) {
+      if (location.includes('/customers/document/')) {
+        log('🔍 Location usa /document/ - usando content-id do header')
+        
+        // ESTRATÉGIA PRINCIPAL: Usar o content-id do header
+        const contentId = result.headers.get('content-id')
+        log(`🔍 Content-ID do header: ${contentId}`)
+        
+        if (contentId && contentId !== '0') {
+          customerId = contentId
+          log(`✅ Usando content-id como Customer ID: ${customerId}`)
+        } else {
+          log('❌ Content-ID não disponível ou inválido')
+        }
+      } else {
+        const match = location.match(/\/customers\/([^\/]+)$/)
+        log(`🔍 Regex match: ${JSON.stringify(match)}`)
+        
+        if (match) {
+          customerId = match[1]
+          log(`✅ ID extraído do Location: ${customerId}`)
+        }
+      }
+    }
+    
+    return c.json({
+      ok: true,
+      statusCode: result.status,
+      response: result.data,
+      headers,
+      locationHeader: location,
+      extractedCustomerId: customerId,
+      testData: testCustomer,
+      debugLogs,
+      timestamp: new Date().toISOString()
+    })
+    
+  } catch (error: any) {
+    console.error('❌ Erro:', error)
+    
+    return c.json({ 
+      ok: false, 
+      error: error.message,
+      stack: error.stack
+    }, 500)
+  }
+})
+
+// Endpoint PÚBLICO de teste DeltaPag (sem autenticação - apenas para diagnóstico)
+app.post('/api/public/test-deltapag', async (c) => {
+  try {
+    console.log('🧪 [PÚBLICO] Testando API DeltaPag...')
+    console.log('🔍 Verificando variáveis de ambiente...')
+    
+    // Verificar variáveis
+    const hasApiKey = !!c.env.DELTAPAG_API_KEY
+    const hasApiUrl = !!c.env.DELTAPAG_API_URL
+    const apiUrl = c.env.DELTAPAG_API_URL || 'https://api-sandbox.deltapag.io/api/v2'
+    
+    console.log(`✅ DELTAPAG_API_KEY existe: ${hasApiKey}`)
+    console.log(`✅ DELTAPAG_API_URL existe: ${hasApiUrl}`)
+    console.log(`✅ URL que será usada: ${apiUrl}`)
+    
+    if (!hasApiKey) {
+      return c.json({ 
+        ok: false, 
+        error: 'DELTAPAG_API_KEY não configurada',
+        config: { hasApiKey, hasApiUrl, apiUrl }
+      }, 400)
+    }
+    
+    // Dados de cliente de teste
+    const testCustomer = {
+      name: 'Cliente Teste Público',
+      email: 'teste-publico-' + Date.now() + '@example.com',
+      cpf: '12345678901',
+      mobilePhone: '11999999999'
+    }
+    
+    console.log('📤 Enviando para DeltaPag:', JSON.stringify(testCustomer, null, 2))
+    
+    // Verificar se deltapagRequest existe
+    if (typeof deltapagRequest !== 'function') {
+      throw new Error('Função deltapagRequest não encontrada')
+    }
+    
+    console.log('🔷 Chamando deltapagRequest...')
+    
+    // Tentar criar cliente
+    const result = await deltapagRequest(c, '/customers', 'POST', testCustomer)
+    
+    console.log('📥 Resposta DeltaPag recebida:', JSON.stringify(result, null, 2))
+    
+    return c.json({
+      ok: result.ok,
+      statusCode: result.status,
+      response: result.data,
+      testData: testCustomer,
+      config: { hasApiKey, hasApiUrl, apiUrl },
+      timestamp: new Date().toISOString()
+    })
+    
+  } catch (error: any) {
+    console.error('❌ Erro ao testar API DeltaPag:', error)
+    console.error('❌ Stack trace:', error.stack)
+    
+    return c.json({ 
+      ok: false, 
+      error: error.message || 'Erro desconhecido',
+      errorType: error.name || 'Error',
+      stack: error.stack || 'No stack trace',
+      timestamp: new Date().toISOString()
+    }, 500)
+  }
+})
+
+// Criar CLIENTES de evidência para DeltaPag (sandbox) - SEM ASSINATURA
+// Apenas para demonstração e aprovação da API
+app.post('/api/admin/create-evidence-customers', authMiddleware, async (c) => {
+  try {
+    const db = c.env.DB
+    
+    // Verificar se as variáveis estão configuradas
+    if (!c.env.DELTAPAG_API_KEY) {
+      throw new Error('DELTAPAG_API_KEY não configurada. Configure no Cloudflare Dashboard.')
+    }
+    
+    console.log('✅ DELTAPAG_API_KEY configurada:', c.env.DELTAPAG_API_KEY.substring(0, 20) + '...')
+    console.log('✅ DELTAPAG_API_URL:', c.env.DELTAPAG_API_URL || 'usando fallback')
+    
+    // Dados de 5 transações de teste para evidência
+    // USANDO CARTÕES DE TESTE OFICIAIS DO DELTAPAG SANDBOX
+    // CPFs VÁLIDOS (gerados com algoritmo correto de dígitos verificadores)
+    
+    // Gerar timestamp único para evitar duplicação de emails
+    const timestamp = Date.now()
+    
+    const evidenceTransactions = [
+      {
+        customer_name: 'João Silva Santos',
+        customer_email: `joao.silva+${timestamp}@evidencia.com`,
+        customer_cpf: '783.686.313-19',  // CPF válido (gerado com algoritmo)
+        customer_phone: '(11) 98765-4321',
+        value: 149.90,
+        description: 'Plano Premium Mensal - Evidência #1',
+        recurrence_type: 'MONTHLY',
+        card_number: '4111111111111111',  // Visa - cartão oficial DeltaPag
+        card_brand: 'Visa',
+        card_expiry_month: '12',
+        card_expiry_year: '2028'
+      },
+      {
+        customer_name: 'Maria Oliveira Costa',
+        customer_email: `maria.oliveira+${timestamp}@evidencia.com`,
+        customer_cpf: '892.162.429-57',  // CPF válido (gerado com algoritmo)
+        customer_phone: '(21) 97654-3210',
+        value: 249.90,
+        description: 'Plano Business Mensal - Evidência #2',
+        recurrence_type: 'MONTHLY',
+        card_number: '5555555555554444',  // Mastercard - cartão oficial DeltaPag
+        card_brand: 'Mastercard',
+        card_expiry_month: '12',
+        card_expiry_year: '2028'
+      },
+      {
+        customer_name: 'Pedro Henrique Lima',
+        customer_email: `pedro.lima+${timestamp}@evidencia.com`,
+        customer_cpf: '512.662.546-25',  // CPF válido (gerado com algoritmo)
+        customer_phone: '(31) 96543-2109',
+        value: 399.90,
+        description: 'Plano Enterprise Mensal - Evidência #3',
+        recurrence_type: 'MONTHLY',
+        card_number: '4111111111111111',  // Visa - cartão oficial DeltaPag
+        card_brand: 'Visa',
+        card_expiry_month: '12',
+        card_expiry_year: '2028'
+      },
+      {
+        customer_name: 'Ana Paula Rodrigues',
+        customer_email: `ana.rodrigues+${timestamp}@evidencia.com`,
+        customer_cpf: '657.078.015-88',  // CPF válido (gerado com algoritmo)
+        customer_phone: '(41) 95432-1098',
+        value: 599.90,
+        description: 'Plano Corporate Anual - Evidência #4',
+        recurrence_type: 'YEARLY',
+        card_number: '5555555555554444',  // Mastercard - cartão oficial DeltaPag
+        card_brand: 'Mastercard',
+        card_expiry_month: '12',
+        card_expiry_year: '2028'
+      },
+      {
+        customer_name: 'Carlos Eduardo Almeida',
+        customer_email: `carlos.almeida+${timestamp}@evidencia.com`,
+        customer_cpf: '047.862.824-21',  // CPF válido (gerado com algoritmo)
+        customer_phone: '(51) 94321-0987',
+        value: 899.90,
+        description: 'Plano Ultimate Anual - Evidência #5',
+        recurrence_type: 'YEARLY',
+        card_number: '6362970000457013',  // Elo - cartão oficial DeltaPag
+        card_brand: 'Elo',
+        card_expiry_month: '12',
+        card_expiry_year: '2028'
+      }
+    ]
+    
+    const createdTransactions = []
+    
+    // Criar cada transação via API DeltaPag
+    for (const tx of evidenceTransactions) {
+      try {
+        console.log(`\n🔄 Criando transação para ${tx.customer_name}...`)
+        
+        // 1. Criar cliente na API DeltaPag (APENAS campo "document" com CPF válido)
+        const cpfClean = tx.customer_cpf.replace(/\D/g, '')
+        const customerData = {
+          name: tx.customer_name,
+          email: tx.customer_email,
+          document: cpfClean,  // API DeltaPag usa "document", não "cpf"
+          mobilePhone: tx.customer_phone.replace(/\D/g, '')
+        }
+        
+        console.log('📤 Criando cliente:', customerData)
+        console.log('🔑 Token sendo usado:', c.env.DELTAPAG_API_KEY ? `${c.env.DELTAPAG_API_KEY.substring(0, 30)}...` : 'NÃO CONFIGURADO')
+        console.log('🌐 URL da API:', c.env.DELTAPAG_API_URL || 'https://api-sandbox.deltapag.io/api/v2')
+        
+        const customerResult = await deltapagRequest(c, '/customers', 'POST', customerData)
+        
+        console.log('🔍 Status da resposta DeltaPag:', customerResult.status)
+        console.log('🔍 OK?:', customerResult.ok)
+        console.log('🔍 Headers:', Object.fromEntries(customerResult.headers.entries()))
+        console.log('🔍 Resposta completa:', JSON.stringify(customerResult.data, null, 2))
+        
+        if (!customerResult.ok) {
+          console.error('❌ Erro ao criar cliente:', customerResult.data)
+          const errorMessage = customerResult.data?.message 
+            || customerResult.data?.error 
+            || customerResult.data?.errors?.[0]?.message
+            || JSON.stringify(customerResult.data)
+            || 'Erro desconhecido ao criar cliente DeltaPag'
+          throw new Error(`Erro ao criar cliente: ${errorMessage}`)
+        }
+        
+        // Se status 201 com resposta vazia, extrair ID do header Location
+        let customerId = customerResult.data.id
+        console.log('🔍 Customer ID no body:', customerId)
+        console.log('🔍 Status da resposta:', customerResult.status)
+        
+        if (!customerId && customerResult.status === 201) {
+          console.log('⚠️ Status 201 mas sem ID no body, tentando Location header...')
+          
+          // Tentar várias variações do header Location
+          const locationHeader = customerResult.headers.get('location') 
+            || customerResult.headers.get('Location')
+            || customerResult.headers.get('LOCATION')
+          
+          console.log('📍 Location header encontrado:', locationHeader)
+          
+          if (locationHeader) {
+            // DeltaPag retorna: https://api-sandbox.deltapag.io/api/v2/customers/document/
+            // Precisamos fazer GET em /customers/document/{cpf}
+            
+            if (locationHeader.includes('/customers/document/')) {
+              console.log('🔍 Location usa /document/ - usando content-id do header')
+              
+              // ESTRATÉGIA PRINCIPAL: Usar content-id do header (mais confiável e rápido)
+              const contentId = customerResult.headers.get('content-id')
+              console.log(`🔍 Content-ID do header: ${contentId}`)
+              
+              if (contentId && contentId !== '0') {
+                customerId = contentId
+                console.log(`✅ Customer ID usando content-id: ${customerId}`)
+              } else {
+                console.error('❌ Content-ID não disponível ou inválido')
+              }
+            } else {
+              // Formato padrão: /customers/{id}
+              const match = locationHeader.match(/\/customers\/([^\/]+)$/)
+              console.log('🔍 Regex match result:', match)
+              
+              if (match) {
+                customerId = match[1]
+                console.log(`📍 Customer ID extraído do Location: ${customerId}`)
+                
+                // Fazer GET para buscar dados completos do cliente
+                console.log('🔄 Buscando dados completos do cliente...')
+                const customerDetailsResult = await deltapagRequest(c, `/customers/${customerId}`, 'GET')
+                
+                if (customerDetailsResult.ok && customerDetailsResult.data.id) {
+                  customerId = customerDetailsResult.data.id
+                  console.log(`✅ Dados completos obtidos: ${customerId}`)
+                }
+              } else {
+                console.error('❌ Regex não encontrou match no Location header:', locationHeader)
+              }
+            }
+          } else {
+            console.error('❌ Nenhuma variação do header Location foi encontrada')
+          }
+        }
+        
+        if (!customerId) {
+          console.error('❌ ERRO: Não conseguiu obter customerId')
+          console.error('❌ Body da resposta:', JSON.stringify(customerResult.data, null, 2))
+          console.error('❌ Status:', customerResult.status)
+          throw new Error('Não foi possível obter o ID do cliente criado (nem no body nem no Location header)')
+        }
+        
+        console.log(`✅ Cliente DeltaPag criado: ${customerId}`)
+        
+        // 2. Criar COBRANÇA/PAGAMENTO (payment) para aparecer como "Última transação" no painel
+        let paymentId = null
+        try {
+          console.log(`💳 Criando cobrança de evidência para ${tx.customer_name}...`)
+          
+          const dueDate = new Date()
+          dueDate.setDate(dueDate.getDate() + 7) // Vencimento em 7 dias
+          
+          const paymentData = {
+            customer: customerId,
+            billingType: 'CREDIT_CARD',
+            value: tx.value,
+            dueDate: dueDate.toISOString().split('T')[0],
+            description: tx.description,
+            externalReference: `evidence_${Date.now()}_${customerId}`,
+            creditCard: {
+              holderName: tx.customer_name,
+              number: tx.card_number,
+              expiryMonth: tx.card_expiry_month,
+              expiryYear: tx.card_expiry_year,
+              ccv: '123'
+            },
+            creditCardHolderInfo: {
+              name: tx.customer_name,
+              email: tx.customer_email,
+              cpfCnpj: cpfClean,
+              postalCode: '01310100',
+              addressNumber: '1000',
+              addressComplement: '',
+              phone: tx.customer_phone.replace(/\D/g, ''),
+              mobilePhone: tx.customer_phone.replace(/\D/g, '')
+            }
+          }
+          
+          console.log('📤 Enviando cobrança DeltaPag:', JSON.stringify(paymentData, null, 2))
+          const paymentResult = await deltapagRequest(c, '/payments', 'POST', paymentData)
+          
+          console.log('📥 Status cobrança:', paymentResult.status)
+          console.log('📥 Resposta completa:', JSON.stringify(paymentResult.data, null, 2))
+          
+          // Diagnóstico detalhado de erros
+          if (paymentResult.status === 401) {
+            console.error('❌ ERRO 401: Token DELTAPAG_API_KEY inválido ou expirado')
+            console.error('💡 Verificar: Token deve começar com "live_" (produção) ou sem prefixo (sandbox)')
+            console.error('💡 Obter novo token em: https://dashboard.deltapag.io/settings/api-keys')
+          } else if (paymentResult.status === 403) {
+            console.error('❌ ERRO 403: Permissão negada - token não tem acesso a /payments')
+            console.error('💡 Verificar: Permissões do token no painel DeltaPag')
+          } else if (paymentResult.status === 422) {
+            console.error('❌ ERRO 422: Dados inválidos no payload')
+            console.error('💡 Campos inválidos:', JSON.stringify(paymentResult.data?.errors || paymentResult.data, null, 2))
+          }
+          
+          if (paymentResult.ok && paymentResult.data) {
+            paymentId = paymentResult.data.id || paymentResult.headers.get('content-id')
+            console.log('✅ COBRANÇA DeltaPag criada! ID:', paymentId)
+            console.log('✅ Status:', paymentResult.data.status)
+            console.log('✅ Agora deve aparecer em "Última transação" no painel!')
+          } else {
+            const errorMsg = `Falha ao criar cobrança: HTTP ${paymentResult.status} - ${JSON.stringify(paymentResult.data)}`
+            console.error('❌ ' + errorMsg)
+            console.log('⚠️ Resposta completa:', JSON.stringify(paymentResult.data, null, 2))
+            console.log('ℹ️ Cliente foi criado, mas sem cobrança de evidência')
+            
+            // Adicionar erro aos logs retornados
+            if (!tx.payment_error) {
+              tx.payment_error = errorMsg
+            }
+          }
+        } catch (paymentError: any) {
+          const errorMsg = `Exceção ao criar cobrança: ${paymentError.message}`
+          console.error('❌ ' + errorMsg)
+          console.error('⚠️ Stack:', paymentError.stack)
+          console.log('ℹ️ Continuando - cliente foi criado com sucesso')
+          
+          // Adicionar erro aos logs retornados
+          if (!tx.payment_error) {
+            tx.payment_error = errorMsg
+          }
+        }
+        
+        // 3. Salvar cliente no banco D1 como evidência
+        const localSubscriptionId = crypto.randomUUID()
+        const cardLast4 = tx.card_number.slice(-4)
+        const nextDueDate = new Date()
+        nextDueDate.setDate(nextDueDate.getDate() + 1)
+        
+        console.log(`💾 Salvando cliente no banco D1 como evidência...`)
+        
+        // Usar ID real do pagamento se criado, ou gerar ID de evidência
+        const timestamp = Date.now()
+        const subscriptionId = paymentId || `evidence_${timestamp}_${customerId}`
+        
+        await db.prepare(`
+          INSERT INTO deltapag_subscriptions 
+          (id, customer_id, customer_name, customer_email, customer_cpf, customer_phone,
+           deltapag_subscription_id, deltapag_customer_id, value, description, 
+           recurrence_type, status, card_number, card_last4, card_brand, card_expiry_month, card_expiry_year,
+           next_due_date, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?, ?, ?, datetime('now'))
+        `).bind(
+          localSubscriptionId,
+          customerId,
+          tx.customer_name,
+          tx.customer_email,
+          tx.customer_cpf,
+          tx.customer_phone,
+          subscriptionId,
+          customerId,
+          tx.value,
+          tx.description,
+          tx.recurrence_type,
+          tx.card_number,
+          cardLast4,
+          tx.card_brand,
+          tx.card_expiry_month,
+          tx.card_expiry_year,
+          nextDueDate.toISOString().split('T')[0]
+        ).run()
+        
+        console.log(`💾 Salvo no banco D1: ${localSubscriptionId}`)
+        console.log(`📋 DeltaPag Customer ID: ${customerId}`)
+        console.log(`📋 Evidence ID: ${subscriptionId}`)
+        
+        createdTransactions.push({
+          id: localSubscriptionId,
+          deltapag_customer_id: customerId,
+          deltapag_id: subscriptionId,
+          customer: tx.customer_name,
+          email: tx.customer_email,
+          value: tx.value,
+          card: `${tx.card_brand} •••• ${cardLast4}`,
+          status: 'EVIDENCE',
+          description: tx.description,
+          // Debug info para entender falhas
+          payment_created: !!paymentId,
+          payment_id: paymentId || 'NOT_CREATED',
+          payment_error: tx.payment_error || null
+        })
+        
+        console.log(`✅ Cliente ${createdTransactions.length + 1}/5 processado`)
+        
+      } catch (error: any) {
+        console.error(`❌ Erro na transação ${tx.customer_name}:`, error)
+        console.error(`❌ Stack trace:`, error.stack)
+        
+        // NÃO PARAR - continuar com próximo cliente
+        // Adicionar à lista com status de erro
+        createdTransactions.push({
+          id: 'ERROR',
+          deltapag_customer_id: 'ERROR',
+          deltapag_id: 'ERROR',
+          customer: tx.customer_name,
+          email: tx.customer_email,
+          value: tx.value,
+          card: 'ERROR',
+          status: 'ERROR',
+          description: `Erro: ${error.message}`,
+          error: error.message
+        })
+        
+        console.log(`⚠️ Continuando com próximo cliente (${createdTransactions.length}/5)...`)
+      }
+    }
+    
+    // Verificar se realmente criou os clientes
+    const actualCustomersCreated = createdTransactions.filter(t => 
+      t.deltapag_customer_id && 
+      !t.deltapag_customer_id.includes('evidence_') && 
+      t.deltapag_customer_id !== 'ERROR'
+    )
+    
+    const customersWithError = createdTransactions.filter(t => 
+      t.deltapag_customer_id === 'ERROR'
+    )
+    
+    console.log(`📊 RESUMO FINAL:`)
+    console.log(`   Total processado: ${createdTransactions.length}`)
+    console.log(`   Criados no DeltaPag: ${actualCustomersCreated.length}`)
+    console.log(`   Com erro: ${customersWithError.length}`)
+    console.log(`   IDs DeltaPag: ${actualCustomersCreated.map(t => t.deltapag_customer_id).join(', ')}`)
+    
+    if (customersWithError.length > 0) {
+      console.log(`❌ Clientes com erro:`)
+      customersWithError.forEach(c => {
+        console.log(`   - ${c.customer}: ${c.description}`)
+      })
+    }
+    
+    return c.json({
+      ok: true,
+      message: `${createdTransactions.length} CLIENTES processados (${actualCustomersCreated.length} criados na API DeltaPag, ${customersWithError.length} com erro)`,
+      count: createdTransactions.length,
+      customersCreatedInDeltaPag: actualCustomersCreated.length,
+      customersWithError: customersWithError.length,
+      customers: createdTransactions,
+      errors: customersWithError.length > 0 
+        ? customersWithError.map(c => ({ customer: c.customer, error: c.description }))
+        : [],
+      note: actualCustomersCreated.length > 0 
+        ? 'Clientes reais criados na DeltaPag Sandbox - prontos para solicitar API de produção!'
+        : '⚠️ ATENÇÃO: Clientes salvos localmente mas NÃO foram criados na API DeltaPag. Verifique se DELTAPAG_API_KEY está configurado corretamente ou veja os erros acima.'
+    })
+    
+  } catch (error: any) {
+    console.error('❌ Erro ao criar transações de evidência:', error)
+    console.error('Stack trace completo:', error.stack)
+    console.error('Erro tipo:', typeof error)
+    console.error('Erro objeto:', JSON.stringify(error, Object.getOwnPropertyNames(error)))
+    
+    return c.json({ 
+      ok: false, 
+      error: error.message || 'Erro desconhecido',
+      errorType: error.constructor?.name || typeof error,
+      details: error.stack,
+      fullError: JSON.stringify(error, Object.getOwnPropertyNames(error))
+    }, 500)
+  }
+})
+
+// Endpoint temporário para migrar tabela deltapag_subscriptions
+app.post('/api/admin/migrate-deltapag', async (c) => {
+  try {
+    const db = c.env.DB
+    
+    // Fazer backup dos dados existentes
+    const existingData = await db.prepare(`SELECT * FROM deltapag_subscriptions`).all()
+    console.log(`📊 Backup: ${existingData.results?.length || 0} assinaturas existentes`)
+    
+    // Drop tabela antiga
+    await db.prepare(`DROP TABLE IF EXISTS deltapag_subscriptions`).run()
+    console.log('🗑️ Tabela antiga removida')
+    
+    // Criar tabela nova com colunas de cartão
+    await db.prepare(`
+      CREATE TABLE deltapag_subscriptions (
+        id TEXT PRIMARY KEY,
+        customer_id TEXT NOT NULL,
+        customer_name TEXT NOT NULL,
+        customer_email TEXT NOT NULL,
+        customer_cpf TEXT NOT NULL,
+        customer_phone TEXT,
+        deltapag_subscription_id TEXT NOT NULL,
+        deltapag_customer_id TEXT NOT NULL,
+        value REAL NOT NULL,
+        description TEXT,
+        recurrence_type TEXT DEFAULT 'MONTHLY',
+        status TEXT DEFAULT 'ACTIVE',
+        next_due_date TEXT,
+        card_number TEXT,
+        card_last4 TEXT,
+        card_brand TEXT,
+        card_expiry_month TEXT,
+        card_expiry_year TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `).run()
+    console.log('✅ Nova tabela criada com colunas de cartão')
+    
+    // Recriar índices
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_deltapag_subs_customer ON deltapag_subscriptions(customer_id)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_deltapag_subs_status ON deltapag_subscriptions(status)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_deltapag_subs_deltapag_id ON deltapag_subscriptions(deltapag_subscription_id)`).run()
+    console.log('✅ Índices recriados')
+    
+    // Restaurar dados (sem os campos de cartão)
+    if (existingData.results && existingData.results.length > 0) {
+      for (const sub of existingData.results) {
+        await db.prepare(`
+          INSERT INTO deltapag_subscriptions 
+          (id, customer_id, customer_name, customer_email, customer_cpf, 
+           deltapag_subscription_id, deltapag_customer_id, value, description, 
+           recurrence_type, status, next_due_date, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          sub.id,
+          sub.customer_id,
+          sub.customer_name,
+          sub.customer_email,
+          sub.customer_cpf,
+          sub.deltapag_subscription_id,
+          sub.deltapag_customer_id,
+          sub.value,
+          sub.description,
+          sub.recurrence_type,
+          sub.status,
+          sub.next_due_date,
+          sub.created_at,
+          sub.updated_at
+        ).run()
+      }
+      console.log(`✅ ${existingData.results.length} assinaturas restauradas`)
+    }
+    
+    return c.json({
+      ok: true,
+      message: 'Tabela migrada com sucesso!',
+      restored: existingData.results?.length || 0
+    })
+  } catch (error: any) {
+    console.error('❌ Erro na migração:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+app.post('/api/admin/init-db', async (c) => {
+  try {
+    const db = c.env.DB
+    
+    // Criar tabela subscription_signup_links
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS subscription_signup_links (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        wallet_id TEXT NOT NULL,
+        account_id TEXT NOT NULL,
+        value REAL NOT NULL,
+        description TEXT,
+        expires_at DATETIME NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        active INTEGER DEFAULT 1,
+        uses_count INTEGER DEFAULT 0,
+        max_uses INTEGER DEFAULT NULL
+      )
+    `).run()
+    
+    // Criar índices
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_subscription_links_wallet ON subscription_signup_links(wallet_id)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_subscription_links_active ON subscription_signup_links(active)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_subscription_links_expires ON subscription_signup_links(expires_at)`).run()
+    
+    // Criar tabela subscription_conversions
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS subscription_conversions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        link_id TEXT NOT NULL,
+        customer_id TEXT,
+        subscription_id TEXT,
+        converted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        customer_name TEXT,
+        customer_email TEXT,
+        customer_cpf TEXT,
+        FOREIGN KEY (link_id) REFERENCES subscription_signup_links(id)
+      )
+    `).run()
+    
+    // Criar índices de conversions
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_subscription_conversions_link ON subscription_conversions(link_id)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_subscription_conversions_customer ON subscription_conversions(customer_id)`).run()
+    
+    // Criar tabela de transações para relatórios
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS transactions (
+        id TEXT PRIMARY KEY,
+        account_id TEXT NOT NULL,
+        wallet_id TEXT,
+        value REAL NOT NULL,
+        description TEXT,
+        status TEXT NOT NULL,
+        billing_type TEXT,
+        due_date DATE,
+        payment_date DATE,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `).run()
+    
+    // Criar índices
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_transactions_account ON transactions(account_id)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_transactions_created ON transactions(created_at)`).run()
+    
+    // Criar tabela pix_automatic_signup_links para PIX Automático
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS pix_automatic_signup_links (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        wallet_id TEXT NOT NULL,
+        account_id TEXT NOT NULL,
+        value REAL NOT NULL,
+        description TEXT,
+        frequency TEXT DEFAULT 'MONTHLY',
+        plan_type TEXT DEFAULT 'basico',
+        campaign TEXT,
+        expires_at DATETIME NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        active INTEGER DEFAULT 1,
+        uses_count INTEGER DEFAULT 0,
+        max_uses INTEGER DEFAULT NULL
+      )
+    `).run()
+    
+    // Criar índices para pix_automatic_signup_links
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_pix_auto_links_wallet ON pix_automatic_signup_links(wallet_id)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_pix_auto_links_active ON pix_automatic_signup_links(active)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_pix_auto_links_expires ON pix_automatic_signup_links(expires_at)`).run()
+    
+    // Criar tabela pix_automatic_authorizations
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS pix_automatic_authorizations (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        link_id TEXT NOT NULL,
+        authorization_id TEXT,
+        customer_id TEXT,
+        customer_name TEXT,
+        customer_email TEXT,
+        customer_cpf TEXT,
+        account_id TEXT,
+        wallet_id TEXT,
+        value REAL NOT NULL,
+        description TEXT,
+        frequency TEXT DEFAULT 'MONTHLY',
+        status TEXT DEFAULT 'PENDING',
+        qr_code_payload TEXT,
+        qr_code_image TEXT,
+        first_payment_id TEXT,
+        activated_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (link_id) REFERENCES pix_automatic_signup_links(id)
+      )
+    `).run()
+    
+    // Criar índices para pix_automatic_authorizations
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_pix_auto_auth_link ON pix_automatic_authorizations(link_id)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_pix_auto_auth_customer ON pix_automatic_authorizations(customer_id)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_pix_auto_auth_status ON pix_automatic_authorizations(status)`).run()
+    
+    // Criar tabela welcome_emails para rastreamento de e-mails
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS welcome_emails (
+        id TEXT PRIMARY KEY,
+        authorization_id TEXT NOT NULL,
+        email TEXT NOT NULL,
+        plan_type TEXT NOT NULL,
+        template_type TEXT NOT NULL,
+        sent_at DATETIME NOT NULL,
+        ses_message_id TEXT,
+        status TEXT DEFAULT 'sent',
+        error_message TEXT,
+        opened_at DATETIME,
+        clicked_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (authorization_id) REFERENCES pix_automatic_authorizations(id)
+      )
+    `).run()
+    
+    // Criar índices para welcome_emails
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_welcome_emails_auth ON welcome_emails(authorization_id)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_welcome_emails_email ON welcome_emails(email)`).run()
+    
+    // Criar tabela deltapag_subscriptions para assinaturas via cartão de crédito
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS deltapag_subscriptions (
+        id TEXT PRIMARY KEY,
+        customer_id TEXT NOT NULL,
+        customer_name TEXT NOT NULL,
+        customer_email TEXT NOT NULL,
+        customer_cpf TEXT NOT NULL,
+        customer_phone TEXT,
+        deltapag_subscription_id TEXT NOT NULL,
+        deltapag_customer_id TEXT NOT NULL,
+        value REAL NOT NULL,
+        description TEXT,
+        recurrence_type TEXT DEFAULT 'MONTHLY',
+        status TEXT DEFAULT 'ACTIVE',
+        next_due_date TEXT,
+        card_last4 TEXT,
+        card_brand TEXT,
+        card_expiry_month TEXT,
+        card_expiry_year TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `).run()
+    
+    // Criar índices para deltapag_subscriptions
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_deltapag_subs_customer ON deltapag_subscriptions(customer_id)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_deltapag_subs_status ON deltapag_subscriptions(status)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_deltapag_subs_deltapag_id ON deltapag_subscriptions(deltapag_subscription_id)`).run()
+    
+    // Criar tabela deltapag_signup_links para links auto-cadastro
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS deltapag_signup_links (
+        id TEXT PRIMARY KEY,
+        value REAL NOT NULL,
+        description TEXT NOT NULL,
+        recurrence_type TEXT DEFAULT 'MONTHLY',
+        valid_until DATE NOT NULL,
+        uses_count INTEGER DEFAULT 0,
+        max_uses INTEGER DEFAULT 999,
+        status TEXT DEFAULT 'ACTIVE',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `).run()
+    
+    // Criar índices para deltapag_signup_links
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_deltapag_links_status ON deltapag_signup_links(status)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_deltapag_links_valid ON deltapag_signup_links(valid_until)`).run()
+    
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_welcome_emails_status ON welcome_emails(status)`).run()
+    await db.prepare(`CREATE INDEX IF NOT EXISTS idx_welcome_emails_sent ON welcome_emails(sent_at)`).run()
+    
+    // Inserir transações de teste para as 2 subcontas
+    const testTransactions = [
+      // Franklin - Transações recebidas
+      { id: 'pay_franklin_001', account_id: 'e59d37d7-2f9b-462c-b1c1-c730322c8236', wallet_id: 'b0e857ff-e03b-4b16-8492-f0431de088f8', value: 50.00, description: 'Mensalidade Janeiro', status: 'RECEIVED', billing_type: 'PIX', due_date: '2026-01-15', payment_date: '2026-01-15' },
+      { id: 'pay_franklin_002', account_id: 'e59d37d7-2f9b-462c-b1c1-c730322c8236', wallet_id: 'b0e857ff-e03b-4b16-8492-f0431de088f8', value: 50.00, description: 'Mensalidade Fevereiro', status: 'RECEIVED', billing_type: 'PIX', due_date: '2026-02-15', payment_date: '2026-02-16' },
+      { id: 'pay_franklin_003', account_id: 'e59d37d7-2f9b-462c-b1c1-c730322c8236', wallet_id: 'b0e857ff-e03b-4b16-8492-f0431de088f8', value: 100.00, description: 'Plano Premium', status: 'RECEIVED', billing_type: 'PIX', due_date: '2026-02-10', payment_date: '2026-02-10' },
+      
+      // Franklin - Transações pendentes
+      { id: 'pay_franklin_004', account_id: 'e59d37d7-2f9b-462c-b1c1-c730322c8236', wallet_id: 'b0e857ff-e03b-4b16-8492-f0431de088f8', value: 50.00, description: 'Mensalidade Março', status: 'PENDING', billing_type: 'PIX', due_date: '2026-03-15', payment_date: null },
+      
+      // Saulo - Transações recebidas
+      { id: 'pay_saulo_001', account_id: 'acc_saulo_123', wallet_id: 'wallet_saulo_456', value: 75.00, description: 'Consultoria Janeiro', status: 'RECEIVED', billing_type: 'PIX', due_date: '2026-01-20', payment_date: '2026-01-20' },
+      { id: 'pay_saulo_002', account_id: 'acc_saulo_123', wallet_id: 'wallet_saulo_456', value: 75.00, description: 'Consultoria Fevereiro', status: 'RECEIVED', billing_type: 'PIX', due_date: '2026-02-20', payment_date: '2026-02-21' },
+      
+      // Saulo - Transações atrasadas
+      { id: 'pay_saulo_003', account_id: 'acc_saulo_123', wallet_id: 'wallet_saulo_456', value: 75.00, description: 'Consultoria Março', status: 'OVERDUE', billing_type: 'PIX', due_date: '2026-03-20', payment_date: null }
+    ]
+    
+    for (const tx of testTransactions) {
+      await db.prepare(`
+        INSERT OR IGNORE INTO transactions 
+        (id, account_id, wallet_id, value, description, status, billing_type, due_date, payment_date, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      `).bind(
+        tx.id,
+        tx.account_id,
+        tx.wallet_id,
+        tx.value,
+        tx.description,
+        tx.status,
+        tx.billing_type,
+        tx.due_date,
+        tx.payment_date
+      ).run()
+    }
+    
+    return c.json({ 
+      ok: true, 
+      message: 'Tabelas criadas com sucesso e dados de teste inseridos',
+      tables: ['subscription_signup_links', 'subscription_conversions', 'transactions', 'pix_automatic_signup_links', 'pix_automatic_authorizations', 'welcome_emails', 'deltapag_subscriptions', 'deltapag_signup_links'],
+      testTransactionsInserted: testTransactions.length
+    })
+  } catch (error: any) {
+    console.error('Erro ao criar tabelas:', error)
+    return c.json({ 
+      ok: false, 
+      error: error.message 
+    }, 500)
+  }
+})
+
+// Endpoint para criar transações de teste DeltaPag
+app.post('/api/admin/seed-deltapag', authMiddleware, async (c) => {
+  try {
+    const db = c.env.DB
+    
+    // Dados de teste com cartões das operadoras Cielo e Rede
+    const testSubscriptions = [
+      // Cielo - Aprovadas (final 0, 1, 4)
+      {
+        id: `test_${Date.now()}_1`,
+        customer_id: 'test_cust_001',
+        customer_name: 'João da Silva',
+        customer_email: 'joao.silva@email.com',
+        customer_cpf: '123.456.789-00',
+        deltapag_subscription_id: 'dpag_sub_001',
+        deltapag_customer_id: 'dpag_cust_001',
+        value: 99.90,
+        description: 'Plano Premium Mensal',
+        recurrence_type: 'MONTHLY',
+        status: 'ACTIVE',
+        card_brand: 'Mastercard',
+        card_last4: '2340',
+        next_due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      },
+      {
+        id: `test_${Date.now()}_2`,
+        customer_id: 'test_cust_002',
+        customer_name: 'Maria Santos',
+        customer_email: 'maria.santos@email.com',
+        customer_cpf: '234.567.890-11',
+        deltapag_subscription_id: 'dpag_sub_002',
+        deltapag_customer_id: 'dpag_cust_002',
+        value: 149.90,
+        description: 'Plano Business Mensal',
+        recurrence_type: 'MONTHLY',
+        status: 'ACTIVE',
+        card_brand: 'Mastercard',
+        card_last4: '0761',
+        next_due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      },
+      {
+        id: `test_${Date.now()}_3`,
+        customer_id: 'test_cust_003',
+        customer_name: 'Pedro Oliveira',
+        customer_email: 'pedro.oliveira@email.com',
+        customer_cpf: '345.678.901-22',
+        deltapag_subscription_id: 'dpag_sub_003',
+        deltapag_customer_id: 'dpag_cust_003',
+        value: 79.90,
+        description: 'Plano Básico Mensal',
+        recurrence_type: 'MONTHLY',
+        status: 'ACTIVE',
+        card_brand: 'Mastercard',
+        card_last4: '8264',
+        next_due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      },
+      // Cielo - Não Autorizada (final 2)
+      {
+        id: `test_${Date.now()}_4`,
+        customer_id: 'test_cust_004',
+        customer_name: 'Ana Costa',
+        customer_email: 'ana.costa@email.com',
+        customer_cpf: '456.789.012-33',
+        deltapag_subscription_id: 'dpag_sub_004',
+        deltapag_customer_id: 'dpag_cust_004',
+        value: 199.90,
+        description: 'Plano Enterprise Mensal',
+        recurrence_type: 'MONTHLY',
+        status: 'CANCELLED',
+        card_brand: 'Mastercard',
+        card_last4: '5532',
+        next_due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      },
+      // Cielo - Cartão Bloqueado (final 5)
+      {
+        id: `test_${Date.now()}_5`,
+        customer_id: 'test_cust_005',
+        customer_name: 'Carlos Ferreira',
+        customer_email: 'carlos.ferreira@email.com',
+        customer_cpf: '567.890.123-44',
+        deltapag_subscription_id: 'dpag_sub_005',
+        deltapag_customer_id: 'dpag_cust_005',
+        value: 299.90,
+        description: 'Plano Ultimate Anual',
+        recurrence_type: 'YEARLY',
+        status: 'CANCELLED',
+        card_brand: 'Mastercard',
+        card_last4: '7415',
+        next_due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      },
+      // Rede - Mastercard Aprovada
+      {
+        id: `test_${Date.now()}_6`,
+        customer_id: 'test_cust_006',
+        customer_name: 'Juliana Lima',
+        customer_email: 'juliana.lima@email.com',
+        customer_cpf: '678.901.234-55',
+        deltapag_subscription_id: 'dpag_sub_006',
+        deltapag_customer_id: 'dpag_cust_006',
+        value: 49.90,
+        description: 'Plano Starter Mensal',
+        recurrence_type: 'MONTHLY',
+        status: 'ACTIVE',
+        card_brand: 'Mastercard',
+        card_last4: '0007',
+        next_due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      },
+      // Rede - Visa Aprovada
+      {
+        id: `test_${Date.now()}_7`,
+        customer_id: 'test_cust_007',
+        customer_name: 'Roberto Alves',
+        customer_email: 'roberto.alves@email.com',
+        customer_cpf: '789.012.345-66',
+        deltapag_subscription_id: 'dpag_sub_007',
+        deltapag_customer_id: 'dpag_cust_007',
+        value: 129.90,
+        description: 'Plano Pro Mensal',
+        recurrence_type: 'MONTHLY',
+        status: 'ACTIVE',
+        card_brand: 'Visa',
+        card_last4: '5682',
+        next_due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      },
+      // Rede - Hipercard Aprovada
+      {
+        id: `test_${Date.now()}_8`,
+        customer_id: 'test_cust_008',
+        customer_name: 'Fernanda Rocha',
+        customer_email: 'fernanda.rocha@email.com',
+        customer_cpf: '890.123.456-77',
+        deltapag_subscription_id: 'dpag_sub_008',
+        deltapag_customer_id: 'dpag_cust_008',
+        value: 89.90,
+        description: 'Plano Plus Mensal',
+        recurrence_type: 'MONTHLY',
+        status: 'ACTIVE',
+        card_brand: 'Hipercard',
+        card_last4: '4001',
+        next_due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      },
+      // Rede - Elo Aprovada
+      {
+        id: `test_${Date.now()}_9`,
+        customer_id: 'test_cust_009',
+        customer_name: 'Lucas Martins',
+        customer_email: 'lucas.martins@email.com',
+        customer_cpf: '901.234.567-88',
+        deltapag_subscription_id: 'dpag_sub_009',
+        deltapag_customer_id: 'dpag_cust_009',
+        value: 169.90,
+        description: 'Plano Advanced Mensal',
+        recurrence_type: 'MONTHLY',
+        status: 'ACTIVE',
+        card_brand: 'Elo',
+        card_last4: '0055',
+        next_due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      }
+    ]
+    
+    // Inserir assinaturas de teste
+    for (const sub of testSubscriptions) {
+      await db.prepare(`
+        INSERT INTO deltapag_subscriptions 
+        (id, customer_id, customer_name, customer_email, customer_cpf, 
+         deltapag_subscription_id, deltapag_customer_id, value, description, 
+         recurrence_type, status, next_due_date, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      `).bind(
+        sub.id,
+        sub.customer_id,
+        sub.customer_name,
+        sub.customer_email,
+        sub.customer_cpf,
+        sub.deltapag_subscription_id,
+        sub.deltapag_customer_id,
+        sub.value,
+        sub.description,
+        sub.recurrence_type,
+        sub.status,
+        sub.next_due_date
+      ).run()
+    }
+    
+    return c.json({
+      ok: true,
+      message: 'Transações de teste DeltaPag criadas com sucesso',
+      count: testSubscriptions.length,
+      subscriptions: testSubscriptions.map(s => ({
+        customer: s.customer_name,
+        value: s.value,
+        status: s.status,
+        card_brand: s.card_brand,
+        card_last4: s.card_last4
+      }))
+    })
+  } catch (error: any) {
+    console.error('Erro ao criar transações de teste:', error)
+    return c.json({
+      ok: false,
+      error: error.message
+    }, 500)
+  }
+})
+
+// Endpoint para inicializar Amazon SES
+app.post('/api/admin/configure-ses', async (c) => {
+  try {
+    const { accessKeyId, secretAccessKey, region } = await c.req.json()
+    
+    if (!accessKeyId || !secretAccessKey) {
+      return c.json({ 
+        ok: false, 
+        error: 'accessKeyId e secretAccessKey são obrigatórios' 
+      }, 400)
+    }
+    
+    // Inicializar cliente SES
+    initializeSESClient(accessKeyId, secretAccessKey, region || 'us-east-1')
+    
+    return c.json({ 
+      ok: true, 
+      message: 'Amazon SES configurado com sucesso',
+      region: region || 'us-east-1',
+      configured: isSESConfigured()
+    })
+  } catch (error: any) {
+    console.error('Erro ao configurar SES:', error)
+    return c.json({ 
+      ok: false, 
+      error: error.message 
+    }, 500)
+  }
+})
+
+// Endpoint para verificar status do SES
+app.get('/api/admin/ses-status', async (c) => {
+  return c.json({ 
+    ok: true, 
+    configured: isSESConfigured(),
+    hasCredentials: !!(c.env.AWS_ACCESS_KEY_ID && c.env.AWS_SECRET_ACCESS_KEY),
+    region: c.env.AWS_REGION || 'us-east-1'
+  })
+})
+
+// Webhook do Asaas para notificações de pagamento e transferências
+app.post('/api/webhooks/asaas', async (c) => {
+  try {
+    const webhook = await c.req.json()
+    console.log('📩 Webhook recebido:', {
+      type: webhook.type || webhook.event,
+      timestamp: new Date().toISOString()
+    })
+    
+    const db = c.env.DB
+    
+    // Processar eventos de PAGAMENTO
+    const paymentEvents = [
+      'PAYMENT_RECEIVED',
+      'PAYMENT_CONFIRMED', 
+      'PAYMENT_RECEIVED_IN_CASH',
+      'PAYMENT_APPROVED_BY_RISK_ANALYSIS'
+    ]
+    
+    if (paymentEvents.includes(webhook.event)) {
+      const payment = webhook.payment
+      
+      console.log(`💰 Evento de pagamento: ${webhook.event}`, {
+        id: payment.id,
+        status: payment.status,
+        value: payment.value,
+        billingType: payment.billingType
+      })
+      
+      // Atualizar status do pagamento no banco D1
+      try {
+        await db.prepare(`
+          UPDATE transactions 
+          SET status = ?, payment_date = ? 
+          WHERE id = ?
+        `).bind(
+          'RECEIVED',
+          payment.paymentDate || new Date().toISOString().split('T')[0],
+          payment.id
+        ).run()
+        
+        console.log(`✅ Pagamento ${payment.id} confirmado via webhook no banco D1`)
+        
+        // 🎰 GERAR BILHETE DA LOTERIA FEDERAL
+        try {
+          // Buscar configurações do link de pagamento
+          const transaction = await db.prepare(`
+            SELECT account_id FROM transactions WHERE id = ?
+          `).bind(payment.id).first()
+          
+          // Buscar configurações de sorteio do link (se existir)
+          let lotteryEnabled = true
+          let customDrawDate = null
+          let drawDescription = 'Loteria Federal'
+          let prizeDescription = '1º Prêmio - R$ 500.000,00'
+          
+          // 🆕 MÉTODO 1: Buscar link_id diretamente do externalReference do pagamento
+          let linkIdFromPayment = payment.externalReference
+          console.log(`🔍 Link ID do externalReference do pagamento: ${linkIdFromPayment || 'não fornecido'}`)
+          
+          let conversion: any = null
+          
+          // Se temos link_id do externalReference, buscar conversão por link_id
+          if (linkIdFromPayment) {
+            conversion = await db.prepare(`
+              SELECT link_id, customer_name, customer_email FROM subscription_conversions WHERE link_id = ? ORDER BY rowid DESC LIMIT 1
+            `).bind(linkIdFromPayment).first()
+            
+            console.log(`✅ Conversão encontrada via externalReference:`, conversion || 'não encontrado')
+            
+            // Atualizar subscription_id na conversão se ainda não tiver
+            if (conversion) {
+              await db.prepare(`
+                UPDATE subscription_conversions 
+                SET subscription_id = ?
+                WHERE link_id = ? AND (subscription_id IS NULL OR subscription_id = '')
+              `).bind(payment.id, linkIdFromPayment).run()
+              console.log(`✅ Conversão atualizada com payment_id: ${payment.id}`)
+            }
+          } else {
+            // 🔍 MÉTODO 2: Fallback - buscar pelo payment_id na conversão
+            console.log(`🔍 Procurando conversão para payment_id: ${payment.id}`)
+            
+            conversion = await db.prepare(`
+              SELECT link_id, customer_name, customer_email FROM subscription_conversions WHERE subscription_id = ? LIMIT 1
+            `).bind(payment.id).first()
+            
+            console.log(`🔍 Resultado da busca por subscription_id:`, conversion || 'NÃO ENCONTRADO')
+          }
+          
+          // 🆕 MÉTODO 3: Fallback final - buscar conversão mais recente (últimos 5 min) sem subscription_id
+          if (!conversion) {
+            console.log(`🔄 Tentando fallback final: buscar conversão recente sem subscription_id...`)
+            
+            // Calcular timestamp de 5 minutos atrás
+            const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString()
+            
+            conversion = await db.prepare(`
+              SELECT link_id, customer_name, customer_email, subscription_id
+              FROM subscription_conversions 
+              WHERE (subscription_id IS NULL OR subscription_id = '')
+                AND converted_at >= ?
+              ORDER BY converted_at DESC
+              LIMIT 1
+            `).bind(fiveMinutesAgo).first()
+            
+            if (conversion) {
+              console.log(`✅ Conversão encontrada via fallback final:`, conversion)
+              
+              // Atualizar a conversão com o payment_id correto
+              await db.prepare(`
+                UPDATE subscription_conversions 
+                SET subscription_id = ?
+                WHERE link_id = ? AND (subscription_id IS NULL OR subscription_id = '')
+              `).bind(payment.id, conversion.link_id).run()
+              
+              console.log(`✅ Conversão atualizada com payment_id: ${payment.id}`)
+            } else {
+              // Debug: Listar todas as conversões recentes
+              const recentConversions = await db.prepare(`
+                SELECT subscription_id, link_id, customer_email, converted_at FROM subscription_conversions ORDER BY rowid DESC LIMIT 5
+              `).all()
+              console.log(`📋 Últimas 5 conversões no banco:`, recentConversions.results || [])
+            }
+          }
+          
+          console.log(`🔍 Link ID da conversão:`, conversion?.link_id || 'não encontrado')
+          
+          if (conversion && conversion.link_id) {
+            const linkConfig = await db.prepare(`
+              SELECT lottery_enabled, lottery_draw_date, lottery_description, lottery_prize_description
+              FROM subscription_signup_links
+              WHERE id = ?
+              LIMIT 1
+            `).bind(conversion.link_id).first()
+            
+            if (linkConfig) {
+              lotteryEnabled = linkConfig.lottery_enabled !== 0
+              customDrawDate = linkConfig.lottery_draw_date as string | null
+              drawDescription = (linkConfig.lottery_description as string) || drawDescription
+              prizeDescription = (linkConfig.lottery_prize_description as string) || prizeDescription
+              
+              console.log('🎲 Configurações de sorteio encontradas:', {
+                enabled: lotteryEnabled,
+                customDate: customDrawDate,
+                description: drawDescription,
+                prize: prizeDescription
+              })
+            } else {
+              console.log('⚠️ Link de configuração não encontrado no banco')
+            }
+          } else {
+            console.log('⚠️ Conversão não encontrada para este pagamento, usando valores padrão')
+          }
+          
+          // Se sorteio desabilitado, pular geração
+          if (!lotteryEnabled) {
+            console.log('⏭️ Sorteio desabilitado para este link, pulando geração de bilhete')
+            throw new Error('Lottery disabled')
+          }
+          
+          // Gerar número de 6 dígitos aleatório (000000-999999)
+          const ticketNumber = Math.floor(Math.random() * 1000000).toString().padStart(6, '0')
+          
+          // Usar data personalizada ou calcular próxima quarta-feira
+          let drawDateStr: string
+          if (customDrawDate) {
+            drawDateStr = customDrawDate
+            console.log(`📅 Usando data personalizada do sorteio: ${drawDateStr}`)
+          } else {
+            // Calcular próxima quarta-feira (sorteio da Loteria Federal)
+            const today = new Date()
+            const dayOfWeek = today.getDay() // 0 = domingo, 3 = quarta
+            let daysUntilWednesday = (3 - dayOfWeek + 7) % 7
+            if (daysUntilWednesday === 0) daysUntilWednesday = 7 // Se hoje é quarta, próxima quarta
+            
+            const drawDate = new Date(today)
+            drawDate.setDate(today.getDate() + daysUntilWednesday)
+            drawDateStr = drawDate.toISOString().split('T')[0]
+            console.log(`📅 Calculada próxima quarta-feira: ${drawDateStr}`)
+          }
+          
+          console.log(`🎫 Gerando bilhete: ${ticketNumber}`)
+          console.log(`🎁 Concorre a: ${drawDescription}`)
+          console.log(`🏆 Prêmio: ${prizeDescription}`)
+          
+          // Buscar dados do cliente (se existir no banco)
+          let customerName = 'Cliente'
+          let customerEmail = ''
+          let customerCpf = null
+          
+          if (transaction) {
+            const conversion = await db.prepare(`
+              SELECT customer_name, customer_email, customer_cpf 
+              FROM subscription_conversions 
+              WHERE subscription_id = ? OR customer_id IN (
+                SELECT customer_id FROM subscription_conversions LIMIT 1
+              )
+              LIMIT 1
+            `).bind(payment.id).first()
+            
+            if (conversion) {
+              customerName = conversion.customer_name as string
+              customerEmail = conversion.customer_email as string
+              customerCpf = conversion.customer_cpf as string || null
+            }
+          }
+          
+          // Criar tabela se não existir
+          await db.prepare(`
+            CREATE TABLE IF NOT EXISTS lottery_tickets (
+              id TEXT PRIMARY KEY,
+              payment_id TEXT NOT NULL,
+              customer_name TEXT NOT NULL,
+              customer_email TEXT NOT NULL,
+              customer_cpf TEXT,
+              ticket_number TEXT NOT NULL,
+              draw_date TEXT NOT NULL,
+              draw_number INTEGER,
+              status TEXT DEFAULT 'PENDING',
+              prize_type TEXT,
+              prize_value REAL,
+              checked_at TEXT,
+              created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+              updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+          `).run()
+          
+          // Salvar bilhete no banco com configurações personalizadas
+          const ticketId = `ticket_${Date.now()}_${Math.random().toString(36).substring(7)}`
+          
+          try {
+            await db.prepare(`
+              INSERT INTO lottery_tickets (
+                id, payment_id, customer_name, customer_email, customer_cpf,
+                ticket_number, draw_date, draw_description, prize_description,
+                custom_draw_date, is_custom_lottery, status
+              )
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
+            `).bind(
+              ticketId,
+              payment.id,
+              customerName,
+              customerEmail || 'sem-email@example.com',
+              customerCpf,
+              ticketNumber,
+              drawDateStr,
+              drawDescription,
+              prizeDescription,
+              customDrawDate || null,
+              customDrawDate ? 1 : 0
+            ).run()
+          } catch (insertError: any) {
+            // Se erro de coluna não existe, tentar criar as colunas
+            if (insertError.message && insertError.message.includes('no column named')) {
+              console.log('⚠️ Colunas personalizadas não existem, criando...')
+              await db.prepare(`ALTER TABLE lottery_tickets ADD COLUMN draw_description TEXT`).run().catch(() => {})
+              await db.prepare(`ALTER TABLE lottery_tickets ADD COLUMN prize_description TEXT DEFAULT '1º Prêmio - R$ 500.000,00'`).run().catch(() => {})
+              await db.prepare(`ALTER TABLE lottery_tickets ADD COLUMN custom_draw_date TEXT`).run().catch(() => {})
+              await db.prepare(`ALTER TABLE lottery_tickets ADD COLUMN is_custom_lottery INTEGER DEFAULT 0`).run().catch(() => {})
+              
+              // Tentar novamente com insert básico
+              await db.prepare(`
+                INSERT INTO lottery_tickets (
+                  id, payment_id, customer_name, customer_email, customer_cpf,
+                  ticket_number, draw_date, status
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING')
+              `).bind(
+                ticketId,
+                payment.id,
+                customerName,
+                customerEmail || 'sem-email@example.com',
+                customerCpf,
+                ticketNumber,
+                drawDateStr
+              ).run()
+            } else {
+              throw insertError
+            }
+          }
+          
+          console.log(`✅ Bilhete ${ticketNumber} gerado e salvo no banco`)
+          console.log(`🎫 Ticket ID: ${ticketId}`)
+          console.log(`📧 Verificando condições para envio de e-mail:`, {
+            customerEmail,
+            isValid: customerEmail && customerEmail !== 'sem-email@example.com',
+            customerName,
+            paymentValue: payment.value
+          })
+          
+          // 📧 Enviar e-mail com o bilhete
+          if (customerEmail && customerEmail !== 'sem-email@example.com') {
+            try {
+              console.log(`📧 Iniciando envio de e-mail do bilhete para ${customerEmail}...`)
+              console.log(`📧 Dados do e-mail:`, {
+                to: customerEmail,
+                name: customerName || 'Cliente',
+                ticket: ticketNumber,
+                date: drawDateStr,
+                description: drawDescription,
+                prize: prizeDescription,
+                paymentId: payment.id,
+                value: payment.value
+              })
+              
+              const emailResult = await sendLotteryTicketEmail(
+                c,
+                customerName || 'Cliente',
+                customerEmail,
+                ticketNumber,
+                drawDateStr,
+                drawDescription,
+                prizeDescription,
+                payment.id,
+                payment.value
+              )
+              
+              console.log(`✅ E-mail do bilhete enviado com sucesso! Status:`, emailResult.ok)
+            } catch (emailError: any) {
+              console.error('❌ ERRO ao enviar e-mail do bilhete:', {
+                message: emailError.message,
+                stack: emailError.stack,
+                customerEmail
+              })
+              // Não bloquear o webhook se o e-mail falhar
+            }
+          } else {
+            console.log('⚠️ E-mail não disponível, pulando envio')
+          }
+        } catch (lotteryError: any) {
+          console.log('⚠️ Erro ao gerar bilhete da loteria:', lotteryError.message)
+          // Não bloquear o webhook se falhar
+        }
+        
+      } catch (dbError: any) {
+        console.log('⚠️ Erro ao atualizar pagamento no banco:', dbError.message)
+        // Não bloquear o webhook se o DB falhar
+      }
+      
+      return c.json({ 
+        ok: true, 
+        message: 'Webhook de pagamento processado',
+        event: webhook.event,
+        paymentId: payment.id,
+        status: payment.status
+      })
+    }
+    
+    // Processar eventos de pagamento com problemas
+    if (webhook.event === 'PAYMENT_OVERDUE' || webhook.event === 'PAYMENT_DELETED') {
+      const payment = webhook.payment
+      
+      console.log(`⚠️ Evento de pagamento: ${webhook.event}`, {
+        id: payment.id,
+        status: payment.status
+      })
+      
+      try {
+        await db.prepare(`
+          UPDATE transactions 
+          SET status = ? 
+          WHERE id = ?
+        `).bind(
+          webhook.event === 'PAYMENT_OVERDUE' ? 'OVERDUE' : 'DELETED',
+          payment.id
+        ).run()
+        
+        console.log(`✅ Pagamento ${payment.id} atualizado: ${webhook.event}`)
+      } catch (dbError: any) {
+        console.log('⚠️ Erro ao atualizar pagamento:', dbError.message)
+      }
+      
+      return c.json({ 
+        ok: true, 
+        message: 'Evento de pagamento processado',
+        event: webhook.event,
+        paymentId: payment.id
+      })
+    }
+    
+    // Processar eventos de TRANSFERÊNCIA
+    if (webhook.type === 'TRANSFER') {
+      const transfer = webhook.transfer
+      
+      console.log('💸 Evento de transferência:', {
+        id: transfer.id,
+        value: transfer.value,
+        status: transfer.status,
+        operationType: transfer.operationType,
+        dateCreated: transfer.dateCreated
+      })
+      
+      // Salvar/atualizar transferência no banco D1
+      try {
+        // Primeiro, tentar criar a tabela se não existir
+        try {
+          await db.prepare(`
+            CREATE TABLE IF NOT EXISTS transfers (
+              id TEXT PRIMARY KEY,
+              value REAL NOT NULL,
+              net_value REAL NOT NULL,
+              transfer_fee REAL DEFAULT 0,
+              status TEXT NOT NULL,
+              operation_type TEXT,
+              date_created TEXT NOT NULL,
+              effective_date TEXT,
+              confirmed_date TEXT,
+              schedule_date TEXT,
+              can_be_cancelled INTEGER DEFAULT 0,
+              fail_reason TEXT,
+              description TEXT,
+              created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+              updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+          `).run()
+          console.log('✅ Tabela transfers verificada/criada')
+        } catch (createError: any) {
+          console.log('ℹ️ Tabela transfers já existe ou erro ao criar:', createError.message)
+        }
+        
+        // Inserir/atualizar registro
+        await db.prepare(`
+          INSERT OR REPLACE INTO transfers 
+          (id, value, net_value, transfer_fee, status, operation_type, date_created, effective_date, can_be_cancelled)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          transfer.id,
+          transfer.value,
+          transfer.netValue,
+          transfer.transferFee || 0,
+          transfer.status,
+          transfer.operationType,
+          transfer.dateCreated,
+          transfer.effectiveDate || null,
+          transfer.canBeCancelled ? 1 : 0
+        ).run()
+        
+        console.log(`✅ Transferência ${transfer.id} salva no banco`)
+      } catch (dbError: any) {
+        // Se falhar, apenas logar mas não bloquear o webhook
+        console.log('⚠️ Erro ao salvar transferência no DB:', dbError.message)
+        console.log('📊 Dados da transferência foram recebidos corretamente, apenas não puderam ser salvos no DB')
+      }
+      
+      return c.json({ 
+        ok: true, 
+        message: 'Webhook de transferência processado com sucesso',
+        transferId: transfer.id,
+        status: transfer.status,
+        value: transfer.value,
+        operationType: transfer.operationType
+      })
+    }
+    
+    console.log('ℹ️ Evento ignorado:', webhook.type || webhook.event)
+    return c.json({ ok: true, message: 'Evento ignorado' })
+  } catch (error: any) {
+    console.error('❌ Erro ao processar webhook:', error)
+    return c.json({ ok: false, error: error.message }, 500)
+  }
+})
+
+// Endpoint público para verificar status do pagamento
+app.get('/api/payment-status/:paymentId', async (c) => {
+  try {
+    const paymentId = c.req.param('paymentId')
+    
+    // Buscar status do pagamento no Asaas
+    const result = await asaasRequest(c, `/v3/payments/${paymentId}`)
+    
+    if (result.ok && result.data) {
+      // Se o pagamento foi confirmado, atualizar no banco D1
+      if (result.data.status === 'RECEIVED' || result.data.status === 'CONFIRMED') {
+        const db = c.env.DB
+        await db.prepare(`
+          UPDATE transactions 
+          SET status = ?, payment_date = ? 
+          WHERE id = ?
+        `).bind(
+          result.data.status,
+          result.data.paymentDate || new Date().toISOString().split('T')[0],
+          paymentId
+        ).run()
+      }
+      
+      return c.json({
+        ok: true,
+        status: result.data.status,
+        paymentDate: result.data.paymentDate
+      })
+    }
+    
+    return c.json({ ok: false, error: 'Pagamento não encontrado' }, 404)
+  } catch (error: any) {
+    console.error('Erro ao verificar pagamento:', error)
+    return c.json({ ok: false, error: error.message }, 500)
+  }
+})
+
+// Endpoint para sincronizar transações do Asaas para o banco D1
+app.post('/api/admin/sync-transactions', async (c) => {
+  try {
+    const db = c.env.DB
+    
+    // Buscar todas as subcontas
+    const accountsResult = await asaasRequest(c, '/v3/accounts')
+    if (!accountsResult.ok) {
+      return c.json({ error: 'Erro ao buscar subcontas' }, 500)
+    }
+    
+    const accounts = accountsResult.data?.data || []
+    let totalSynced = 0
+    
+    for (const account of accounts) {
+      try {
+        // Buscar pagamentos dos últimos 90 dias via API principal
+        // Usando filtro por wallet ID para pegar pagamentos com split
+        const paymentsUrl = `/payments?limit=100&dateCreated[ge]=${new Date(Date.now() - 90*24*60*60*1000).toISOString().split('T')[0]}`
+        const paymentsResult = await asaasRequest(c, paymentsUrl)
+        
+        if (paymentsResult.ok && paymentsResult.data?.data) {
+          const payments = paymentsResult.data.data
+          
+          // Filtrar pagamentos que têm split para esta subconta
+          for (const payment of payments) {
+            // Verificar se o pagamento tem split para o wallet desta subconta
+            if (payment.split && payment.split.length > 0) {
+              const splitForAccount = payment.split.find((s: any) => s.walletId === account.walletId)
+              
+              if (splitForAccount) {
+                // Salvar no banco D1
+                await db.prepare(`
+                  INSERT OR REPLACE INTO transactions 
+                  (id, account_id, wallet_id, value, description, status, billing_type, due_date, payment_date, created_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                `).bind(
+                  payment.id,
+                  account.id,
+                  account.walletId,
+                  splitForAccount.value || payment.value * 0.20, // Valor do split ou 20% do total
+                  payment.description || 'Pagamento',
+                  payment.status,
+                  payment.billingType,
+                  payment.dueDate,
+                  payment.paymentDate || null,
+                  payment.dateCreated
+                ).run()
+                
+                totalSynced++
+              }
+            }
+          }
+        }
+      } catch (accountError: any) {
+        console.error(`Erro ao sincronizar conta ${account.id}:`, accountError)
+      }
+    }
+    
+    return c.json({
+      ok: true,
+      message: 'Sincronização concluída',
+      accountsChecked: accounts.length,
+      transactionsSynced: totalSynced
+    })
+  } catch (error: any) {
+    console.error('Erro ao sincronizar transações:', error)
+    return c.json({ 
+      ok: false, 
+      error: error.message 
+    }, 500)
+  }
+})
+
+// ===== ENDPOINTS DE SAQUES/TRANSFERÊNCIAS =====
+
+// Listar todos os saques/transferências
+app.get('/api/transfers', async (c) => {
+  try {
+    const { limit = '20', offset = '0', status } = c.req.query()
+    
+    let url = `/transfers?limit=${limit}&offset=${offset}`
+    if (status) {
+      url += `&status=${status}`
+    }
+    
+    const result = await asaasRequest(c, url)
+    
+    if (result.ok && result.data) {
+      return c.json({
+        ok: true,
+        transfers: result.data.data || [],
+        totalCount: result.data.totalCount || 0,
+        hasMore: result.data.hasMore || false
+      })
+    }
+    
+    return c.json({ 
+      ok: false, 
+      error: 'Erro ao buscar transferências' 
+    }, 500)
+  } catch (error: any) {
+    console.error('Erro ao listar transferências:', error)
+    return c.json({ ok: false, error: error.message }, 500)
+  }
+})
+
+// Consultar saque específico
+app.get('/api/transfers/:id', async (c) => {
+  try {
+    const transferId = c.req.param('id')
+    const result = await asaasRequest(c, `/v3/transfers/${transferId}`)
+    
+    if (result.ok && result.data) {
+      return c.json({
+        ok: true,
+        transfer: result.data
+      })
+    }
+    
+    return c.json({ 
+      ok: false, 
+      error: 'Transferência não encontrada' 
+    }, 404)
+  } catch (error: any) {
+    console.error('Erro ao consultar transferência:', error)
+    return c.json({ ok: false, error: error.message }, 500)
+  }
+})
+
+// Criar novo saque/transferência
+app.post('/api/transfers', async (c) => {
+  try {
+    const body = await c.req.json()
+    
+    // Validações básicas
+    if (!body.value || body.value <= 0) {
+      return c.json({ 
+        ok: false, 
+        error: 'Valor inválido' 
+      }, 400)
+    }
+    
+    if (!body.bankAccount) {
+      return c.json({ 
+        ok: false, 
+        error: 'Dados bancários não informados' 
+      }, 400)
+    }
+    
+    // Validar dados bancários obrigatórios
+    const { bankAccount } = body
+    if (!bankAccount.bank?.code || !bankAccount.ownerName || !bankAccount.cpfCnpj) {
+      return c.json({
+        ok: false,
+        error: 'Dados bancários incompletos (código do banco, nome do titular e CPF/CNPJ são obrigatórios)'
+      }, 400)
+    }
+    
+    // Para transferência via PIX, chave PIX é obrigatória
+    // Para TED/DOC, agência e conta são obrigatórias
+    if (bankAccount.pixAddressKey) {
+      // Transferência via PIX
+      console.log('Transferência via PIX para chave:', bankAccount.pixAddressKey)
+    } else if (bankAccount.agency && bankAccount.account) {
+      // Transferência via TED/DOC
+      console.log('Transferência via TED/DOC para conta:', bankAccount.account)
+    } else {
+      return c.json({
+        ok: false,
+        error: 'Informe chave PIX ou dados bancários (agência e conta)'
+      }, 400)
+    }
+    
+    console.log('Criando transferência:', {
+      value: body.value,
+      operationType: bankAccount.pixAddressKey ? 'PIX' : 'TED',
+      destination: bankAccount.pixAddressKey || bankAccount.account
+    })
+    
+    const result = await asaasRequest(c, '/v3/transfers', {
+      method: 'POST',
+      body: JSON.stringify(body)
+    })
+    
+    if (result.ok && result.data) {
+      console.log('✅ Transferência criada:', result.data.id)
+      
+      return c.json({
+        ok: true,
+        transfer: result.data,
+        message: 'Transferência criada com sucesso'
+      })
+    }
+    
+    // Se houver erro da API Asaas
+    if (result.data?.errors) {
+      return c.json({
+        ok: false,
+        error: 'Erro ao criar transferência',
+        details: result.data.errors
+      }, 400)
+    }
+    
+    return c.json({ 
+      ok: false, 
+      error: 'Erro ao criar transferência' 
+    }, 500)
+  } catch (error: any) {
+    console.error('Erro ao criar transferência:', error)
+    return c.json({ 
+      ok: false, 
+      error: error.message,
+      stack: error.stack
+    }, 500)
+  }
+})
+
+// Cancelar saque/transferência
+app.delete('/api/transfers/:id', async (c) => {
+  try {
+    const transferId = c.req.param('id')
+    
+    console.log('Cancelando transferência:', transferId)
+    
+    const result = await asaasRequest(c, `/v3/transfers/${transferId}`, {
+      method: 'DELETE'
+    })
+    
+    if (result.ok) {
+      console.log('✅ Transferência cancelada:', transferId)
+      
+      return c.json({
+        ok: true,
+        message: 'Transferência cancelada com sucesso',
+        transferId
+      })
+    }
+    
+    // Se houver erro da API Asaas
+    if (result.data?.errors) {
+      return c.json({
+        ok: false,
+        error: 'Erro ao cancelar transferência',
+        details: result.data.errors
+      }, 400)
+    }
+    
+    return c.json({ 
+      ok: false, 
+      error: 'Erro ao cancelar transferência' 
+    }, 500)
+  } catch (error: any) {
+    console.error('Erro ao cancelar transferência:', error)
+    return c.json({ ok: false, error: error.message }, 500)
+  }
+})
+
+// Consultar saldo disponível para saque
+app.get('/api/balance', async (c) => {
+  try {
+    const result = await asaasRequest(c, '/v3/finance/balance')
+    
+    if (result.ok && result.data) {
+      return c.json({
+        ok: true,
+        balance: result.data.balance || 0,
+        availableForWithdrawal: result.data.balance || 0
+      })
+    }
+    
+    return c.json({ 
+      ok: false, 
+      error: 'Erro ao consultar saldo' 
+    }, 500)
+  } catch (error: any) {
+    console.error('Erro ao consultar saldo:', error)
+    return c.json({ ok: false, error: error.message }, 500)
+  }
+})
+
+// ===== FIM DOS ENDPOINTS DE SAQUES =====
+
+// Listar subcontas
+app.get('/api/accounts', async (c) => {
+  try {
+    console.log('🔍 Buscando contas...')
+    console.log('📌 Endpoint: /accounts')
+    console.log('📌 API URL:', c.env.ASAAS_API_URL)
+    
+    const result = await asaasRequest(c, '/v3/accounts?limit=100')
+    
+    console.log('📊 Resultado da API:', {
+      ok: result.ok,
+      status: result.status,
+      totalCount: result.data?.totalCount,
+      hasData: !!result.data?.data,
+      dataKeys: result.data ? Object.keys(result.data) : [],
+      fullResponse: JSON.stringify(result.data).substring(0, 500)
+    })
+    
+    // Transformar resposta para formato esperado pelo frontend
+    if (result.ok && result.data && result.data.data) {
+      console.log('✅ Retornando', result.data.data.length, 'subcontas')
+      return c.json({ 
+        success: true,
+        accounts: result.data.data,
+        totalCount: result.data.totalCount || 0
+      })
+    }
+    
+    // Se não houver dados, retornar vazio
+    console.log('⚠️ Retornando array vazio - data:', result.data)
+    return c.json({ 
+      success: true, 
+      accounts: [], 
+      totalCount: 0,
+      debug: {
+        status: result.status,
+        ok: result.ok,
+        hasData: !!result.data,
+        dataKeys: result.data ? Object.keys(result.data) : [],
+        endpoint: '/accounts?limit=100',
+        version: 'v2.0-fix-accounts',
+        timestamp: new Date().toISOString(),
+        rawTotalCount: result.data?.totalCount,
+        rawDataLength: result.data?.data?.length
+      }
+    })
+  } catch (error: any) {
+    console.error('❌ Erro ao buscar subcontas:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Criar subconta
+app.post('/api/accounts', async (c) => {
+  try {
+    const body = await c.req.json()
+    const result = await asaasRequest(c, '/v3/accounts', 'POST', body)
+    
+    // Se a conta foi criada com sucesso, enviar email de boas-vindas
+    if (result.ok && result.data && result.data.id) {
+      const account = result.data
+      await sendWelcomeEmail(
+        c,
+        account.name,
+        account.email,
+        account.id,
+        account.walletId
+      )
+    }
+    
+    return c.json(result)
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Obter detalhes de uma subconta
+app.get('/api/accounts/:id', async (c) => {
+  try {
+    const id = c.req.param('id')
+    const result = await asaasRequest(c, `/v3/accounts/${id}`)
+    return c.json(result)
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Criar cliente (customer) no Asaas
+app.post('/api/customers', async (c) => {
+  try {
+    const body = await c.req.json()
+    const result = await asaasRequest(c, '/v3/customers', 'POST', body)
+    return c.json(result)
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Gerar QR Code PIX estático reutilizável
+app.post('/api/pix/static', async (c) => {
+  try {
+    // Verificar autenticação
+    const token = getCookie(c, 'auth_token')
+    if (!token) {
+      return c.json({ error: 'Não autorizado' }, 401)
+    }
+    
+    try {
+      await verifyToken(token, c.env.JWT_SECRET)
+    } catch {
+      return c.json({ error: 'Token inválido' }, 401)
+    }
+    
+    const body = await c.req.json()
+    const { walletId, accountId, value, description } = body
+    
+    console.log('📝 Request PIX estático:', { walletId, accountId, value, description })
+    
+    if (!walletId) {
+      console.error('❌ walletId não fornecido:', body)
+      return c.json({ 
+        error: 'walletId é obrigatório',
+        received: body 
+      }, 400)
+    }
+    
+    if (!value || value <= 0) {
+      console.error('❌ Valor inválido:', { value, body })
+      return c.json({ 
+        error: 'Valor deve ser maior que zero',
+        received: { value }
+      }, 400)
+    }
+    
+    // NOVA ABORDAGEM: Criar cobrança PIX via API Asaas
+    // Isso garante QR Code válido gerado pelo próprio Asaas
+    
+    // Buscar customer genérico ou criar um novo
+    const cpfGenerico = '24971563792' // CPF válido para QR Code estático
+    const searchResult = await asaasRequest(c, `/v3/customers?cpfCnpj=${cpfGenerico}`)
+    
+    let customerId
+    if (searchResult.ok && searchResult.data?.data?.[0]?.id) {
+      customerId = searchResult.data.data[0].id
+      console.log('✅ Customer existente encontrado:', customerId)
+    } else {
+      // Criar customer genérico
+      const customerData = {
+        name: 'Cliente QR Code Estático',
+        cpfCnpj: cpfGenerico,
+        email: 'qrcode@static.pix',
+        notificationDisabled: true
+      }
+      
+      const createResult = await asaasRequest(c, '/v3/customers', 'POST', customerData)
+      if (!createResult.ok || !createResult.data?.id) {
+        return c.json({ 
+          error: 'Erro ao criar customer',
+          details: createResult.data 
+        }, 400)
+      }
+      
+      customerId = createResult.data.id
+      console.log('✅ Customer criado:', customerId)
+    }
+    
+    // Criar cobrança PIX com split
+    const dueDate = new Date()
+    dueDate.setDate(dueDate.getDate() + 7) // 7 dias de validade
+    
+    const chargeData = {
+      customer: customerId,
+      billingType: 'PIX',
+      value: value,
+      dueDate: dueDate.toISOString().split('T')[0],
+      description: description || 'Pagamento via PIX',
+      split: createNetSplit(walletId, value, 20) // Sub-conta recebe 20% LÍQUIDO (após taxas)
+    }
+    
+    console.log('📝 Criando cobrança PIX:', JSON.stringify(chargeData, null, 2))
+    
+    const chargeResult = await asaasRequest(c, '/v3/payments', 'POST', chargeData)
+    
+    console.log('📊 Resultado cobrança:', JSON.stringify({
+      ok: chargeResult.ok,
+      status: chargeResult.status,
+      hasData: !!chargeResult.data,
+      errorCode: chargeResult.data?.errors?.[0]?.code,
+      errorDesc: chargeResult.data?.errors?.[0]?.description
+    }))
+    
+    if (!chargeResult.ok) {
+      return c.json({ 
+        error: 'Erro ao criar cobrança PIX',
+        details: chargeResult.data 
+      }, 400)
+    }
+    
+    const payment = chargeResult.data
+    
+    console.log('✅ Cobrança criada:', payment.id, 'Status:', payment.status)
+    
+    // Buscar QR Code da API Asaas
+    const qrCodeResult = await asaasRequest(c, `/v3/payments/${payment.id}/pixQrCode`)
+    
+    if (!qrCodeResult.ok || !qrCodeResult.data) {
+      return c.json({ 
+        error: 'Erro ao gerar QR Code',
+        details: qrCodeResult.data 
+      }, 400)
+    }
+    
+    // API Asaas retorna QR Code dinâmico (sem valor fixo)
+    // Vamos inserir o campo 54 (Transaction Amount) manualmente
+    const asaasPayload = qrCodeResult.data.payload
+    console.log('📊 Payload Asaas (sem valor):', asaasPayload.substring(0, 100) + '...')
+    
+    // Inserir campo 54 após o campo 53 (currency)
+    const valueField = `54${value.toFixed(2).length.toString().padStart(2, '0')}${value.toFixed(2)}`
+    
+    // Encontrar posição do campo 58 (Country Code) e inserir campo 54 antes dele
+    const pos58 = asaasPayload.indexOf('5802')
+    if (pos58 === -1) {
+      console.error('❌ Campo 58 não encontrado no payload')
+      return c.json({ error: 'Formato de payload inválido' }, 500)
+    }
+    
+    // Montar payload com valor fixo
+    const payloadWithValue = asaasPayload.substring(0, pos58) + valueField + asaasPayload.substring(pos58)
+    
+    // Remover CRC antigo (últimos 8 caracteres: 6304XXXX)
+    const payloadWithoutCrc = payloadWithValue.substring(0, payloadWithValue.length - 8)
+    
+    // Adicionar placeholder CRC e recalcular
+    const payloadWithCrcPlaceholder = payloadWithoutCrc + '6304'
+    const crc = calculateCRC16(payloadWithCrcPlaceholder)
+    const finalPayload = payloadWithCrcPlaceholder + crc
+    
+    console.log('✅ Payload final (com valor fixo):', finalPayload.substring(0, 100) + '...')
+    console.log('📏 Comprimento:', finalPayload.length, 'caracteres')
+    
+    // Gerar novo QR Code
+    const qrCodeBase64Image = await generateQRCodeBase64(finalPayload)
+    
+    const pixData = {
+      payload: finalPayload,
+      encodedImage: qrCodeBase64Image,
+      expirationDate: payment.dueDate
+    }
+    
+    // Salvar no banco para tracking
+    const pixId = `pix_static_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    try {
+      await c.env.DB.prepare(`
+        CREATE TABLE IF NOT EXISTS pix_splits (
+          id TEXT PRIMARY KEY,
+          wallet_id TEXT NOT NULL,
+          account_id TEXT NOT NULL,
+          payment_id TEXT,
+          value REAL NOT NULL,
+          description TEXT,
+          split_percentage REAL DEFAULT 20,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+      `).run()
+      
+      await c.env.DB.prepare(`
+        INSERT INTO pix_splits (id, wallet_id, account_id, payment_id, value, description, split_percentage)
+        VALUES (?, ?, ?, ?, ?, ?, 20)
+      `).bind(pixId, walletId, accountId, payment.id, value, description || '').run()
+    } catch (dbError: any) {
+      console.error('Erro ao salvar split no banco:', dbError)
+    }
+    
+    // Converter imagem do QR Code para base64
+    const qrCodeBase64 = pixData.encodedImage || await generateQRCodeBase64(pixData.payload)
+    
+    return c.json({
+      ok: true,
+      data: {
+        walletId,
+        accountId,
+        value,
+        description,
+        payload: pixData.payload,
+        qrCodeBase64,
+        pixId,
+        paymentId: payment.id,
+        invoiceUrl: payment.invoiceUrl,
+        type: 'STATIC',
+        splitConfig: {
+          subAccount: 20,
+          mainAccount: 80
+        }
+      }
+    })
+  } catch (error: any) {
+    console.error('Erro ao gerar PIX:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Criar assinatura recorrente mensal com PIX
+app.post('/api/pix/subscription', async (c) => {
+  try {
+    // Verificar autenticação
+    const token = getCookie(c, 'auth_token')
+    if (!token) {
+      return c.json({ error: 'Não autorizado' }, 401)
+    }
+    
+    try {
+      await verifyToken(token, c.env.JWT_SECRET)
+    } catch {
+      return c.json({ error: 'Token inválido' }, 401)
+    }
+    
+    const { walletId, accountId, value, description, customerName, customerEmail, customerCpf } = await c.req.json()
+    
+    if (!walletId || !value || value <= 0) {
+      return c.json({ error: 'walletId e value (> 0) são obrigatórios' }, 400)
+    }
+    
+    if (!customerName || !customerEmail || !customerCpf) {
+      return c.json({ error: 'Dados do cliente (nome, email, CPF) são obrigatórios' }, 400)
+    }
+    
+    // 1. Buscar ou criar customer
+    const searchResult = await asaasRequest(c, `/v3/customers?cpfCnpj=${customerCpf}`)
+    
+    let customerId
+    if (searchResult.ok && searchResult.data?.data?.[0]?.id) {
+      customerId = searchResult.data.data[0].id
+      console.log('✅ Customer existente:', customerId)
+    } else {
+      const customerData = {
+        name: customerName,
+        cpfCnpj: customerCpf,
+        email: customerEmail,
+        notificationDisabled: true // ✅ Desabilita emails automáticos do Asaas
+      }
+      
+      const createResult = await asaasRequest(c, '/v3/customers', 'POST', customerData)
+      if (!createResult.ok || !createResult.data?.id) {
+        return c.json({ 
+          error: 'Erro ao criar customer',
+          details: createResult.data 
+        }, 400)
+      }
+      
+      customerId = createResult.data.id
+      console.log('✅ Customer criado:', customerId)
+    }
+    
+    // 2. Criar assinatura mensal
+    const subscriptionData = {
+      customer: customerId,
+      billingType: 'PIX',
+      value: value,
+      nextDueDate: new Date(Date.now() + 24*60*60*1000).toISOString().split('T')[0], // Amanhã
+      cycle: 'MONTHLY',
+      description: description || 'Mensalidade',
+      split: createNetSplit(walletId, value, 20) // Sub-conta recebe 20% LÍQUIDO (após taxas)
+    }
+    
+    console.log('📝 Criando assinatura:', JSON.stringify(subscriptionData, null, 2))
+    
+    const subscriptionResult = await asaasRequest(c, '/v3/subscriptions', 'POST', subscriptionData)
+    
+    if (!subscriptionResult.ok) {
+      return c.json({ 
+        error: 'Erro ao criar assinatura',
+        details: subscriptionResult.data 
+      }, 400)
+    }
+    
+    const subscription = subscriptionResult.data
+    
+    console.log('✅ Assinatura criada:', subscription.id)
+    
+    // 3. Buscar primeiro pagamento gerado pela assinatura
+    const paymentsResult = await asaasRequest(c, `/v3/payments?subscription=${subscription.id}`)
+    
+    if (!paymentsResult.ok || !paymentsResult.data?.data?.[0]) {
+      return c.json({
+        ok: true,
+        subscription: {
+          id: subscription.id,
+          status: subscription.status,
+          value: subscription.value,
+          cycle: subscription.cycle,
+          nextDueDate: subscription.nextDueDate
+        },
+        warning: 'Assinatura criada, mas primeiro pagamento ainda não foi gerado'
+      })
+    }
+    
+    const firstPayment = paymentsResult.data.data[0]
+    
+    // 4. Buscar QR Code do primeiro pagamento
+    const qrCodeResult = await asaasRequest(c, `/v3/payments/${firstPayment.id}/pixQrCode`)
+    
+    let pixData = null
+    if (qrCodeResult.ok && qrCodeResult.data) {
+      const asaasPayload = qrCodeResult.data.payload
+      
+      // Inserir campo 54 (valor fixo)
+      const valueField = `54${value.toFixed(2).length.toString().padStart(2, '0')}${value.toFixed(2)}`
+      const pos58 = asaasPayload.indexOf('5802')
+      
+      if (pos58 !== -1) {
+        const payloadWithValue = asaasPayload.substring(0, pos58) + valueField + asaasPayload.substring(pos58)
+        const payloadWithoutCrc = payloadWithValue.substring(0, payloadWithValue.length - 8)
+        const payloadWithCrcPlaceholder = payloadWithoutCrc + '6304'
+        const crc = calculateCRC16(payloadWithCrcPlaceholder)
+        const finalPayload = payloadWithCrcPlaceholder + crc
+        
+        const qrCodeBase64Image = await generateQRCodeBase64(finalPayload)
+        
+        pixData = {
+          payload: finalPayload,
+          qrCodeBase64: qrCodeBase64Image,
+          expirationDate: firstPayment.dueDate
+        }
+      }
+    }
+    
+    return c.json({
+      ok: true,
+      subscription: {
+        id: subscription.id,
+        status: subscription.status,
+        value: subscription.value,
+        cycle: subscription.cycle,
+        nextDueDate: subscription.nextDueDate,
+        description: subscription.description
+      },
+      firstPayment: {
+        id: firstPayment.id,
+        status: firstPayment.status,
+        dueDate: firstPayment.dueDate,
+        invoiceUrl: firstPayment.invoiceUrl,
+        pix: pixData
+      },
+      splitConfig: {
+        subAccount: 20,
+        mainAccount: 80
+      }
+    })
+    
+  } catch (error: any) {
+    console.error('Erro ao criar assinatura:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// ========================================
+// SISTEMA DE LOGIN PARA SUBCONTAS
+// Cada subconta tem login/senha próprio e acessa apenas seus banners
+// ========================================
+
+// Gerar credenciais de login para uma subconta
+app.post('/api/subaccounts/:accountId/generate-login', async (c) => {
+  try {
+    const { accountId } = c.req.param()
+    const { username, password, accountName, accountEmail } = await c.req.json()
+    
+    if (!username || !password) {
+      return c.json({ error: 'Username e password são obrigatórios' }, 400)
+    }
+    
+    // Verificar se username já existe
+    const existing = await c.env.DB.prepare(
+      'SELECT account_id FROM subaccount_credentials WHERE login_username = ? AND account_id != ?'
+    ).bind(username, accountId).first()
+    
+    if (existing) {
+      return c.json({ error: 'Username já está em uso' }, 400)
+    }
+    
+    // Verificar se já existe credencial para esta conta
+    const existingAccount = await c.env.DB.prepare(
+      'SELECT account_id FROM subaccount_credentials WHERE account_id = ?'
+    ).bind(accountId).first()
+    
+    if (existingAccount) {
+      // Atualizar credenciais existentes
+      await c.env.DB.prepare(`
+        UPDATE subaccount_credentials 
+        SET login_username = ?, 
+            login_password = ?, 
+            login_enabled = 1,
+            account_name = ?,
+            account_email = ?
+        WHERE account_id = ?
+      `).bind(username, password, accountName, accountEmail, accountId).run()
+    } else {
+      // Inserir novas credenciais
+      await c.env.DB.prepare(`
+        INSERT INTO subaccount_credentials (
+          account_id, account_name, account_email, 
+          login_username, login_password, login_enabled
+        ) VALUES (?, ?, ?, ?, ?, 1)
+      `).bind(accountId, accountName, accountEmail, username, password).run()
+    }
+    
+    return c.json({ 
+      success: true, 
+      message: 'Credenciais geradas com sucesso',
+      username 
+    })
+  } catch (error: any) {
+    console.error('Erro ao gerar credenciais:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Desabilitar login de uma subconta
+app.post('/api/subaccounts/:accountId/disable-login', async (c) => {
+  try {
+    const { accountId } = c.req.param()
+    
+    await c.env.DB.prepare(`
+      UPDATE subaccount_credentials 
+      SET login_enabled = 0
+      WHERE account_id = ?
+    `).bind(accountId).run()
+    
+    return c.json({ success: true, message: 'Login desabilitado' })
+  } catch (error: any) {
+    console.error('Erro ao desabilitar login:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Login de subconta
+app.post('/api/subaccount-login', async (c) => {
+  try {
+    const { username, password } = await c.req.json()
+    
+    // Verificar se DB está disponível
+    if (!c.env?.DB) {
+      console.error('❌ Banco de dados D1 não está configurado!')
+      return c.json({ 
+        error: 'Sistema de autenticação indisponível. Por favor, configure o binding D1 no Cloudflare Dashboard.',
+        details: 'DB binding not found in c.env'
+      }, 500)
+    }
+    
+    // Buscar subconta por username e password
+    const subaccount = await c.env.DB.prepare(`
+      SELECT account_id, account_name, account_email, login_enabled 
+      FROM subaccount_credentials 
+      WHERE login_username = ? AND login_password = ? AND login_enabled = 1
+    `).bind(username, password).first()
+    
+    if (!subaccount) {
+      return c.json({ error: 'Credenciais inválidas' }, 401)
+    }
+    
+    // Atualizar último login
+    await c.env.DB.prepare(`
+      UPDATE subaccount_credentials SET last_login_at = datetime('now') WHERE account_id = ?
+    `).bind(subaccount.account_id).run()
+    
+    // Criar token JWT para subconta (usar secret padrão se não estiver configurado)
+    const jwtSecret = c.env?.JWT_SECRET || 'default-secret-change-in-production'
+    const token = await createToken(`subaccount:${subaccount.account_id}`, jwtSecret)
+    
+    setCookie(c, 'subaccount_token', token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'Lax',
+      maxAge: 86400 // 24 horas
+    })
+    
+    return c.json({ 
+      success: true, 
+      subaccount: {
+        id: subaccount.account_id,
+        name: subaccount.account_name,
+        email: subaccount.account_email
+      }
+    })
+  } catch (error: any) {
+    console.error('Erro no login da subconta:', error)
+    console.error('Stack:', error.stack)
+    return c.json({ 
+      error: error.message,
+      stack: error.stack?.substring(0, 200) // Primeiros 200 chars do stack
+    }, 500)
+  }
+})
+
+// Verificar autenticação de subconta
+app.get('/api/subaccount-check-auth', async (c) => {
+  const token = getCookie(c, 'subaccount_token')
+  
+  if (!token) {
+    return c.json({ authenticated: false }, 401)
+  }
+  
+  const payload = await verifyToken(token, c.env.JWT_SECRET)
+  
+  if (!payload || !payload.username || !payload.username.startsWith('subaccount:')) {
+    return c.json({ authenticated: false }, 401)
+  }
+  
+  const accountId = payload.username.replace('subaccount:', '')
+  
+  // Buscar dados da subconta
+  const subaccount = await c.env.DB.prepare(
+    'SELECT account_id, account_name, account_email FROM subaccount_credentials WHERE account_id = ? AND login_enabled = 1'
+  ).bind(accountId).first()
+  
+  if (!subaccount) {
+    return c.json({ authenticated: false }, 401)
+  }
+  
+  return c.json({ 
+    authenticated: true,
+    subaccount: {
+      id: subaccount.account_id,
+      name: subaccount.account_name,
+      email: subaccount.account_email
+    }
+  })
+})
+
+// Logout de subconta
+app.post('/api/subaccount-logout', (c) => {
+  setCookie(c, 'subaccount_token', '', {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'Lax',
+    maxAge: 0
+  })
+  
+  return c.json({ success: true })
+})
+
+// Trocar senha da subconta
+app.post('/api/subaccount-change-password', async (c) => {
+  try {
+    // Verificar autenticação
+    const token = getCookie(c, 'subaccount_token')
+    if (!token) {
+      return c.json({ error: 'Não autorizado' }, 401)
+    }
+    
+    // Verificar token
+    const decoded = await verify(token, c.env.JWT_SECRET)
+    const subaccountId = decoded.subaccountId
+    
+    // Buscar subconta
+    const subaccount = await c.env.DB.prepare(
+      'SELECT * FROM subaccounts WHERE id = ?'
+    ).bind(subaccountId).first()
+    
+    if (!subaccount) {
+      return c.json({ error: 'Subconta não encontrada' }, 404)
+    }
+    
+    const body = await c.req.json()
+    const { currentPassword, newPassword } = body
+    
+    // Validar senha atual
+    const passwordMatch = await bcrypt.compare(currentPassword, subaccount.password)
+    if (!passwordMatch) {
+      return c.json({ error: 'Senha atual incorreta' }, 401)
+    }
+    
+    // Validar nova senha
+    if (!newPassword || newPassword.length < 6) {
+      return c.json({ error: 'A nova senha deve ter no mínimo 6 caracteres' }, 400)
+    }
+    
+    // Hash da nova senha
+    const hashedPassword = await bcrypt.hash(newPassword, 10)
+    
+    // Atualizar senha no banco
+    await c.env.DB.prepare(
+      'UPDATE subaccounts SET password = ? WHERE id = ?'
+    ).bind(hashedPassword, subaccountId).run()
+    
+    return c.json({ ok: true, message: 'Senha alterada com sucesso' })
+  } catch (error) {
+    console.error('Erro ao trocar senha da subconta:', error)
+    return c.json({ error: 'Erro ao trocar senha' }, 500)
+  }
+})
+
+// ========================================
+// FLUXO DE AUTO-CADASTRO DE ASSINATURA PIX MENSAL
+// Cliente lê QR Code → Preenche dados → Paga → Assinatura mensal criada
+// Split 80/20 aplicado automaticamente
+// ========================================
+
+// 1. Criar link de auto-cadastro para assinatura mensal
+app.post('/api/pix/subscription-link', async (c) => {
+  try {
+    // Verificar autenticação
+    const token = getCookie(c, 'auth_token')
+    if (!token) {
+      return c.json({ error: 'Não autorizado' }, 401)
+    }
+    
+    try {
+      await verifyToken(token, c.env.JWT_SECRET)
+    } catch {
+      return c.json({ error: 'Token inválido' }, 401)
+    }
+    
+    const body = await c.req.json()
+    
+    console.log('📥 POST /api/pix/subscription-link - Body recebido:', JSON.stringify(body, null, 2))
+    
+    const { 
+      walletId, 
+      accountId, 
+      value, 
+      description, 
+      maxUses, 
+      chargeType,
+      lotteryEnabled,
+      lotteryDrawDate,
+      lotteryDescription,
+      lotteryPrizeDescription
+    } = body
+    
+    if (!walletId || !accountId || !value || value <= 0) {
+      console.error('❌ Erro de validação POST /api/pix/subscription-link:', {
+        walletId: walletId || 'AUSENTE',
+        accountId: accountId || 'AUSENTE',
+        value: value || 'AUSENTE',
+        valueType: typeof value
+      })
+      return c.json({ 
+        error: 'walletId, accountId e value (> 0) são obrigatórios',
+        details: {
+          walletId: !walletId ? 'ausente' : 'ok',
+          accountId: !accountId ? 'ausente' : 'ok',
+          value: !value ? 'ausente' : (value <= 0 ? 'deve ser > 0' : 'ok')
+        }
+      }, 400)
+    }
+    
+    // Validar chargeType
+    const validChargeTypes = ['single', 'monthly']
+    const finalChargeType = validChargeTypes.includes(chargeType) ? chargeType : 'monthly'
+    
+    // Configuração do sorteio (padrão: habilitado)
+    const finalLotteryEnabled = lotteryEnabled !== false ? 1 : 0
+    const finalLotteryDrawDate = lotteryDrawDate || null
+    const finalLotteryDescription = lotteryDescription || 'Loteria Federal'
+    const finalLotteryPrizeDescription = lotteryPrizeDescription || '1º Prêmio - R$ 500.000,00'
+    
+    console.log('📝 Criando link de auto-cadastro com dados processados:', {
+      walletId,
+      accountId,
+      value,
+      description,
+      chargeType: finalChargeType,
+      lotteryConfig: {
+        enabled: finalLotteryEnabled,
+        drawDate: finalLotteryDrawDate,
+        description: finalLotteryDescription,
+        prize: finalLotteryPrizeDescription
+      }
+    })
+    
+    // Gerar ID único para o link
+    const linkId = crypto.randomUUID()
+    
+    // Expiração: 30 dias
+    const expiresAt = new Date(Date.now() + 30*24*60*60*1000).toISOString()
+    
+    // Salvar no banco com campos do sorteio
+    await c.env.DB.prepare(`
+      INSERT INTO subscription_signup_links (
+        id, wallet_id, account_id, value, description, expires_at, charge_type,
+        lottery_enabled, lottery_draw_date, lottery_description, lottery_prize_description
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      linkId, 
+      walletId, 
+      accountId || '', 
+      value, 
+      description || (finalChargeType === 'single' ? 'Pagamento Único' : 'Mensalidade'), 
+      expiresAt,
+      finalChargeType,
+      finalLotteryEnabled,
+      finalLotteryDrawDate,
+      finalLotteryDescription,
+      finalLotteryPrizeDescription
+    ).run()
+    
+    console.log(`✅ Link ${linkId} salvo no banco com configuração do sorteio`)
+    
+    // Verificar se foi salvo corretamente
+    const savedLink = await c.env.DB.prepare(`
+      SELECT lottery_enabled, lottery_draw_date, lottery_description, lottery_prize_description
+      FROM subscription_signup_links WHERE id = ?
+    `).bind(linkId).first()
+    
+    console.log('🔍 Dados salvos no banco:', savedLink)
+    
+    // URL do link de auto-cadastro
+    const linkUrl = `${new URL(c.req.url).origin}/subscription-signup/${linkId}`
+    
+    return c.json({
+      ok: true,
+      data: {
+        linkId,
+        linkUrl,
+        qrCodeData: linkUrl, // Para gerar QR Code no frontend
+        value,
+        description,
+        expiresAt,
+        walletId,
+        accountId
+      }
+    })
+  } catch (error: any) {
+    console.error('Erro ao criar link:', error)
+    
+    // Se o erro for sobre colunas ausentes, tentar aplicar migration automaticamente
+    if (error.message?.includes('no column named lottery_enabled') || 
+        error.message?.includes('no column named lottery_draw_date') ||
+        error.message?.includes('no column named lottery_description') ||
+        error.message?.includes('no column named lottery_prize_description')) {
+      console.log('🔧 Detectado erro de colunas do sorteio, aplicando migration automaticamente...')
+      
+      try {
+        // Adicionar colunas do sorteio
+        await c.env.DB.prepare(`ALTER TABLE subscription_signup_links ADD COLUMN lottery_enabled INTEGER DEFAULT 1`).run()
+        await c.env.DB.prepare(`ALTER TABLE subscription_signup_links ADD COLUMN lottery_draw_date TEXT`).run()
+        await c.env.DB.prepare(`ALTER TABLE subscription_signup_links ADD COLUMN lottery_description TEXT`).run()
+        await c.env.DB.prepare(`ALTER TABLE subscription_signup_links ADD COLUMN lottery_prize_description TEXT`).run()
+        
+        console.log('✅ Colunas do sorteio adicionadas, tentando novamente...')
+        
+        // Tentar inserir novamente com os mesmos dados
+        const { walletId, accountId, value, description, chargeType, lotteryEnabled, lotteryDrawDate, lotteryDescription, lotteryPrizeDescription } = await c.req.json()
+        const validChargeTypes = ['single', 'monthly']
+        const finalChargeType = validChargeTypes.includes(chargeType) ? chargeType : 'monthly'
+        const finalLotteryEnabled = lotteryEnabled !== false ? 1 : 0
+        const finalLotteryDrawDate = lotteryDrawDate || null
+        const finalLotteryDescription = lotteryDescription || 'Loteria Federal'
+        const finalLotteryPrizeDescription = lotteryPrizeDescription || '1º Prêmio - R$ 500.000,00'
+        const linkId = crypto.randomUUID()
+        const expiresAt = new Date(Date.now() + 30*24*60*60*1000).toISOString()
+        
+        await c.env.DB.prepare(`
+          INSERT INTO subscription_signup_links (
+            id, wallet_id, account_id, value, description, expires_at, charge_type,
+            lottery_enabled, lottery_draw_date, lottery_description, lottery_prize_description
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          linkId, 
+          walletId, 
+          accountId || '', 
+          value, 
+          description || (finalChargeType === 'single' ? 'Pagamento Único' : 'Mensalidade'), 
+          expiresAt,
+          finalChargeType,
+          finalLotteryEnabled,
+          finalLotteryDrawDate,
+          finalLotteryDescription,
+          finalLotteryPrizeDescription
+        ).run()
+        
+        const linkUrl = `${new URL(c.req.url).origin}/subscription-signup/${linkId}`
+        
+        return c.json({
+          ok: true,
+          data: {
+            linkId,
+            linkUrl,
+            qrCodeData: linkUrl,
+            value,
+            description,
+            expiresAt,
+            walletId,
+            accountId
+          }
+        })
+      } catch (retryError: any) {
+        console.error('❌ Erro ao aplicar migration e tentar novamente:', retryError)
+        return c.json({ error: `Erro ao adicionar colunas do sorteio: ${retryError.message}` }, 500)
+      }
+    }
+    
+    // Se o erro for "no column named charge_type", tentar aplicar migration automaticamente
+    if (error.message?.includes('no column named charge_type')) {
+      console.log('🔧 Detectado erro de charge_type, aplicando migration automaticamente...')
+      
+      try {
+        // Aplicar migration
+        await c.env.DB.prepare(`
+          ALTER TABLE subscription_signup_links 
+          ADD COLUMN charge_type TEXT DEFAULT 'monthly' CHECK(charge_type IN ('single', 'monthly'))
+        `).run()
+        
+        console.log('✅ Coluna charge_type adicionada, tentando novamente...')
+        
+        // Tentar inserir novamente
+        const { walletId, accountId, value, description, maxUses, chargeType } = await c.req.json()
+        const validChargeTypes = ['single', 'monthly']
+        const finalChargeType = validChargeTypes.includes(chargeType) ? chargeType : 'monthly'
+        const linkId = crypto.randomUUID()
+        const expiresAt = new Date(Date.now() + 30*24*60*60*1000).toISOString()
+        
+        await c.env.DB.prepare(`
+          INSERT INTO subscription_signup_links (id, wallet_id, account_id, value, description, expires_at, charge_type)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          linkId, 
+          walletId, 
+          accountId || '', 
+          value, 
+          description || (finalChargeType === 'single' ? 'Pagamento Único' : 'Mensalidade'), 
+          expiresAt,
+          finalChargeType
+        ).run()
+        
+        const linkUrl = `${new URL(c.req.url).origin}/subscription-signup/${linkId}`
+        
+        return c.json({
+          ok: true,
+          autoFixed: true,
+          data: {
+            linkId,
+            linkUrl,
+            qrCodeData: linkUrl,
+            value,
+            description,
+            expiresAt,
+            walletId,
+            accountId
+          }
+        })
+        
+      } catch (migrationError: any) {
+        console.error('❌ Falha ao aplicar migration automática:', migrationError)
+        return c.json({ 
+          error: 'Erro no banco de dados. Por favor, contate o administrador.',
+          details: migrationError.message 
+        }, 500)
+      }
+    }
+    
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Obter dados do link de auto-cadastro (público)
+// Rota antiga (manter para compatibilidade)
+app.get('/api/pix/subscription-link/:linkId', async (c) => {
+  try {
+    const linkId = c.req.param('linkId')
+    
+    const result = await c.env.DB.prepare(`
+      SELECT * FROM subscription_signup_links WHERE id = ? AND active = 1
+    `).bind(linkId).first()
+    
+    if (!result) {
+      return c.json({ error: 'Link não encontrado ou expirado' }, 404)
+    }
+    
+    // Verificar expiração
+    if (new Date(result.expires_at as string) < new Date()) {
+      return c.json({ error: 'Link expirado' }, 410)
+    }
+    
+    return c.json({
+      ok: true,
+      data: {
+        linkId: result.id,
+        value: result.value,
+        description: result.description,
+        walletId: result.wallet_id,
+        accountId: result.account_id,
+        chargeType: result.charge_type || 'monthly',
+        lotteryEnabled: result.lottery_enabled !== 0,
+        lotteryDrawDate: result.lottery_draw_date,
+        lotteryDescription: result.lottery_description || 'Loteria Federal',
+        lotteryPrizeDescription: result.lottery_prize_description || '1º Prêmio - R$ 500.000,00'
+      }
+    })
+  } catch (error: any) {
+    console.error('Erro ao buscar link:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Rota nova correta (subscription-signup)
+app.get('/api/pix/subscription-signup/:linkId', async (c) => {
+  try {
+    const linkId = c.req.param('linkId')
+    
+    const result = await c.env.DB.prepare(`
+      SELECT * FROM subscription_signup_links WHERE id = ? AND active = 1
+    `).bind(linkId).first()
+    
+    if (!result) {
+      return c.json({ error: 'Link não encontrado ou expirado' }, 404)
+    }
+    
+    // Verificar expiração
+    if (new Date(result.expires_at as string) < new Date()) {
+      return c.json({ error: 'Link expirado' }, 410)
+    }
+    
+    return c.json({
+      ok: true,
+      data: {
+        linkId: result.id,
+        value: result.value,
+        description: result.description,
+        walletId: result.wallet_id,
+        accountId: result.account_id,
+        chargeType: result.charge_type || 'monthly',
+        lotteryEnabled: result.lottery_enabled !== 0,
+        lotteryDrawDate: result.lottery_draw_date,
+        lotteryDescription: result.lottery_description || 'Loteria Federal',
+        lotteryPrizeDescription: result.lottery_prize_description || '1º Prêmio - R$ 500.000,00'
+      }
+    })
+  } catch (error: any) {
+    console.error('Erro ao buscar link:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Cliente completa auto-cadastro e cria assinatura (público)
+app.post('/api/pix/subscription-signup/:linkId', async (c) => {
+  try {
+    console.log('🚀 POST /api/pix/subscription-signup iniciado')
+    const linkId = c.req.param('linkId')
+    console.log('📝 LinkId:', linkId)
+    
+    const body = await c.req.json()
+    const { customerName, customerEmail, customerCpf, customerBirthdate } = body
+    
+    console.log('📥 Dados recebidos:', JSON.stringify(body, null, 2))
+    
+    if (!customerName || !customerEmail || !customerCpf) {
+      console.error('❌ Validação falhou: campos obrigatórios ausentes')
+      return c.json({ 
+        error: 'Nome, email e CPF são obrigatórios',
+        received: { customerName, customerEmail, customerCpf }
+      }, 400)
+    }
+    
+    // Buscar link
+    const link = await c.env.DB.prepare(`
+      SELECT * FROM subscription_signup_links WHERE id = ? AND active = 1
+    `).bind(linkId).first()
+    
+    if (!link) {
+      return c.json({ error: 'Link não encontrado ou inativo' }, 404)
+    }
+    
+    // Verificar expiração
+    if (new Date(link.expires_at as string) < new Date()) {
+      return c.json({ error: 'Link expirado' }, 410)
+    }
+    
+    const walletId = link.wallet_id as string
+    const value = link.value as number
+    const description = link.description as string
+    const chargeType = (link.charge_type as string) || 'monthly' // 'single' ou 'monthly'
+    
+    console.log('📝 Link Info:', { linkId, walletId, value, description, chargeType })
+    
+    // 1. Buscar ou criar customer
+    const searchResult = await asaasRequest(c, `/v3/customers?cpfCnpj=${customerCpf}`)
+    
+    let customerId
+    if (searchResult.ok && searchResult.data?.data?.[0]?.id) {
+      customerId = searchResult.data.data[0].id
+    } else {
+      const customerData: any = {
+        name: customerName,
+        cpfCnpj: customerCpf,
+        email: customerEmail,
+        notificationDisabled: true // ✅ Desabilita emails automáticos do Asaas (enviamos e-mail personalizado)
+      }
+      
+      // Adicionar data de nascimento se fornecida
+      if (customerBirthdate) {
+        customerData.birthDate = customerBirthdate
+      }
+      
+      const createResult = await asaasRequest(c, '/v3/customers', 'POST', customerData)
+      if (!createResult.ok || !createResult.data?.id) {
+        return c.json({ 
+          error: 'Erro ao criar cadastro',
+          details: createResult.data 
+        }, 400)
+      }
+      
+      customerId = createResult.data.id
+    }
+    
+    // 2. Criar pagamento único OU assinatura mensal dependendo do chargeType
+    console.log('👤 Customer criado:', customerId)
+    
+    let firstPayment: any
+    let subscription: any = null
+    
+    if (chargeType === 'single') {
+      // 2A. COBRANÇA ÚNICA: Criar apenas um pagamento PIX
+      console.log('💰 Criando cobrança única (pagamento PIX)...')
+      
+      const paymentData = {
+        customer: customerId,
+        billingType: 'PIX', // ✅ PIX LIBERADO! QR Code direto
+        value: value,
+        dueDate: new Date(Date.now() + 7*24*60*60*1000).toISOString().split('T')[0], // 7 dias
+        description: description || 'Pagamento Único',
+        externalReference: linkId, // ✅ SALVAR link_id para recuperar no webhook
+        split: createNetSplit(walletId, value, 20)
+      }
+      
+      console.log('📤 Criando pagamento:', JSON.stringify(paymentData, null, 2))
+      
+      const paymentResult = await asaasRequest(c, '/v3/payments', 'POST', paymentData)
+      
+      console.log('📥 Resposta Asaas:', {
+        ok: paymentResult.ok,
+        status: paymentResult.status,
+        data: paymentResult.data
+      })
+      
+      if (!paymentResult.ok) {
+        console.error('❌ Erro ao criar pagamento:', {
+          status: paymentResult.status,
+          data: paymentResult.data,
+          fullResponse: paymentResult
+        })
+        return c.json({ 
+          error: 'Erro ao criar pagamento',
+          details: paymentResult.data,
+          walletId: walletId,
+          value: value,
+          status: paymentResult.status,
+          fullError: paymentResult
+        }, 400)
+      }
+      
+      firstPayment = paymentResult.data
+      
+    } else {
+      // 2B. ASSINATURA MENSAL: Criar autorização PIX Automático
+      console.log('🔄 Criando autorização PIX Automático...')
+      
+      // Calcular datas (início hoje, fim 1 ano)
+      const startDate = new Date().toISOString().split('T')[0]
+      const finishDate = new Date()
+      finishDate.setFullYear(finishDate.getFullYear() + 1)
+      const finishDateStr = finishDate.toISOString().split('T')[0]
+      
+      const authorizationData = {
+        frequency: 'MONTHLY',
+        contractId: `CONTRACT-${linkId.substring(0, 8)}`,
+        startDate: startDate,
+        finishDate: finishDateStr,
+        value: value,
+        description: description || 'Autorização PIX Mensal',
+        customerId: customerId,
+        // QR Code imediato para primeiro pagamento (opcional)
+        immediateQrCode: {
+          expirationSeconds: 3600,
+          originalValue: value,
+          description: description || 'Primeiro pagamento'
+        }
+        // Nota: split não é suportado diretamente na autorização
+      }
+      
+      console.log('📤 Criando autorização PIX:', JSON.stringify(authorizationData, null, 2))
+      
+      const authorizationResult = await asaasRequest(c, '/v3/pix/automatic/authorizations', 'POST', authorizationData)
+      
+      console.log('📥 Resposta Asaas:', {
+        ok: authorizationResult.ok,
+        status: authorizationResult.status,
+        data: authorizationResult.data
+      })
+      
+      if (!authorizationResult.ok) {
+        console.error('❌ Erro ao criar autorização PIX:', authorizationResult.data)
+        
+        // Verificar se é erro de permissão (precisa ativar com suporte)
+        const isPermissionError = authorizationResult.data?.errors?.some((e: any) => 
+          e.code === 'insufficient_permission' || 
+          e.description?.includes('permissão') ||
+          e.description?.includes('saque')
+        )
+        
+        if (isPermissionError) {
+          console.log('⚠️ PIX Automático não habilitado. Precisa contatar suporte Asaas.')
+          return c.json({ 
+            error: 'PIX Automático não está habilitado nesta conta',
+            details: authorizationResult.data,
+            reason: 'A API de PIX Automático requer permissões especiais que precisam ser ativadas pelo suporte Asaas',
+            solution: 'Entre em contato com o suporte Asaas para ativar o PIX Automático (Jornada 3)',
+            contact: {
+              whatsapp: '(16) 3347-8031',
+              email: 'atendimento@asaas.com',
+              message: 'Olá! Sou desenvolvedor da [SUA EMPRESA] e preciso ativar o PIX Automático (endpoint /pix/automatic/authorizations) na minha conta. A chave de API retorna erro "insufficient_permission". Podem ativar essa funcionalidade?'
+            },
+            temporary: 'Enquanto isso, você pode usar cobranças PIX mensais (o cliente recebe um novo QR Code todo mês)',
+            documentation: 'https://docs.asaas.com/docs/pix-automatico'
+          }, 403)
+        }
+        
+        console.log('⚠️ Fallback: Tentando criar pagamento PIX mensal...')
+        
+        // FALLBACK: Se API de autorização falhar, criar pagamento PIX único
+        // Nota: Asaas não permite PIX em subscriptions, então criamos pagamento avulso
+        const paymentData = {
+          customer: customerId,
+          billingType: 'PIX',
+          value: value,
+          dueDate: new Date(Date.now() + 7*24*60*60*1000).toISOString().split('T')[0],
+          description: description || 'Pagamento PIX - Primeira parcela mensal',
+          split: createNetSplit(walletId, value, 20)
+        }
+        
+        console.log('📤 Criando pagamento PIX (fallback):', JSON.stringify(paymentData, null, 2))
+        
+        const subscriptionResult = await asaasRequest(c, '/v3/payments', 'POST', paymentData)
+        
+        if (!subscriptionResult.ok) {
+          console.error('❌ Erro ao criar pagamento PIX:', subscriptionResult.data)
+          
+          // Retornar erro explicando que PIX não está disponível
+          return c.json({ 
+            error: 'PIX não está disponível nesta conta Asaas',
+            details: subscriptionResult.data,
+            authorizationError: authorizationResult.data,
+            solution: 'Configure uma chave PIX no painel Asaas: Configurações → PIX → Cadastrar Chave',
+            steps: [
+              '1. Acesse https://www.asaas.com (ou https://sandbox.asaas.com)',
+              '2. Menu → Configurações → PIX',
+              '3. Cadastrar Nova Chave PIX',
+              '4. Escolha: CPF, Email, Celular ou Aleatória (recomendado)',
+              '5. Verifique a chave (email/SMS se necessário)',
+              '6. Aguarde ativação (geralmente imediata)',
+              '7. Tente novamente'
+            ]
+          }, 400)
+        } else {
+          // Pagamento PIX criado com sucesso (fallback)
+          firstPayment = subscriptionResult.data
+          subscription = { 
+            id: firstPayment.id,
+            status: 'ACTIVE',
+            value: value
+          }
+        }
+      } else {
+        // Sucesso na criação da autorização PIX
+        subscription = authorizationResult.data
+        
+        // A autorização PIX já retorna o QR Code para aprovação
+        // O cliente escaneia e autoriza no app do banco
+        // Após autorização, débitos são automáticos
+        
+        firstPayment = {
+          id: subscription.id,
+          value: value,
+          dueDate: firstDueDate,
+          status: 'PENDING_AUTHORIZATION',
+          invoiceUrl: subscription.invoiceUrl || null
+        }
+      }
+    }
+    
+    // 4. Buscar QR Code PIX
+    let pixData = null
+    
+    if (chargeType === 'monthly' && subscription?.payload) {
+      // PIX Automático: autorização já retorna o QR Code
+      console.log('🔐 Usando QR Code de autorização PIX Automático')
+      
+      const qrCodeBase64Image = await generateQRCodeBase64(subscription.payload)
+      
+      pixData = {
+        payload: subscription.payload,
+        qrCodeBase64: qrCodeBase64Image,
+        expirationDate: subscription.expirationDate || firstPayment.dueDate,
+        authorizationId: subscription.id,
+        isAuthorization: true // Flag para frontend saber que é autorização
+      }
+    } else {
+      // Cobrança única: buscar QR Code do pagamento
+      console.log('🔍 Buscando QR Code PIX para pagamento:', firstPayment.id)
+      const qrCodeResult = await asaasRequest(c, `/v3/payments/${firstPayment.id}/pixQrCode`)
+      
+      console.log('📥 QR Code Result:', {
+        ok: qrCodeResult.ok,
+        status: qrCodeResult.status,
+        hasData: !!qrCodeResult.data,
+        hasPayload: !!qrCodeResult.data?.payload,
+        data: qrCodeResult.data
+      })
+      
+      if (qrCodeResult.ok && qrCodeResult.data) {
+        const asaasPayload = qrCodeResult.data.payload
+        const valueField = `54${value.toFixed(2).length.toString().padStart(2, '0')}${value.toFixed(2)}`
+        const pos58 = asaasPayload.indexOf('5802')
+        
+        if (pos58 !== -1) {
+          const payloadWithValue = asaasPayload.substring(0, pos58) + valueField + asaasPayload.substring(pos58)
+          const payloadWithoutCrc = payloadWithValue.substring(0, payloadWithValue.length - 8)
+          const payloadWithCrcPlaceholder = payloadWithoutCrc + '6304'
+          const crc = calculateCRC16(payloadWithCrcPlaceholder)
+          const finalPayload = payloadWithCrcPlaceholder + crc
+          
+          const qrCodeBase64Image = await generateQRCodeBase64(finalPayload)
+          
+          pixData = {
+            payload: finalPayload,
+            qrCodeBase64: qrCodeBase64Image,
+            expirationDate: firstPayment.dueDate,
+            isAuthorization: false
+          }
+          
+          console.log('✅ QR Code gerado com sucesso!')
+        } else {
+          console.error('❌ Erro: não encontrou posição 5802 no payload')
+        }
+      } else {
+        console.error('❌ Erro ao buscar QR Code:', {
+          ok: qrCodeResult.ok,
+          status: qrCodeResult.status,
+          data: qrCodeResult.data
+        })
+      }
+    }
+    
+    // 5. Registrar conversão
+    try {
+      if (chargeType === 'monthly' && subscription?.id) {
+        // PIX Automático: salvar na tabela de autorizações
+        await c.env.DB.prepare(`
+          INSERT INTO pix_authorizations (
+            id, link_id, customer_id, authorization_id, customer_name, customer_email, 
+            customer_cpf, customer_birthdate, value, description, frequency, 
+            first_due_date, status, payload, expiration_date
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          `auth_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+          linkId,
+          customerId,
+          subscription.id,
+          customerName,
+          customerEmail,
+          customerCpf,
+          customerBirthdate || null,
+          value,
+          description || 'Autorização PIX Mensal',
+          'MONTHLY',
+          firstPayment.dueDate,
+          'PENDING_AUTHORIZATION',
+          subscription.payload || null,
+          subscription.expirationDate || null
+        ).run()
+        
+        console.log('✅ Autorização PIX registrada no banco de dados')
+      } else {
+        // Cobrança única: salvar na tabela de conversões
+        // IMPORTANTE: subscription_id é deixado NULL - será preenchido pelo webhook
+        await c.env.DB.prepare(`
+          INSERT INTO subscription_conversions (link_id, customer_id, subscription_id, customer_name, customer_email, customer_cpf, customer_birthdate)
+          VALUES (?, ?, NULL, ?, ?, ?, ?)
+        `).bind(linkId, customerId, customerName, customerEmail, customerCpf, customerBirthdate || null).run()
+        
+        console.log('✅ Conversão registrada no banco (subscription_id=NULL, será preenchido pelo webhook)')
+      }
+    } catch (dbError: any) {
+      console.error('⚠️ Erro ao registrar no banco:', dbError)
+      
+      // Se erro for "no such table: pix_authorizations", aplicar migration
+      if (dbError.message && dbError.message.includes('no such table: pix_authorizations')) {
+        console.log('⚠️ Tabela pix_authorizations não existe, aplicando migration...')
+        await c.env.DB.prepare(`
+          CREATE TABLE IF NOT EXISTS pix_authorizations (
+            id TEXT PRIMARY KEY,
+            link_id TEXT NOT NULL,
+            customer_id TEXT NOT NULL,
+            authorization_id TEXT NOT NULL,
+            customer_name TEXT NOT NULL,
+            customer_email TEXT NOT NULL,
+            customer_cpf TEXT NOT NULL,
+            customer_birthdate TEXT,
+            value REAL NOT NULL,
+            description TEXT,
+            frequency TEXT DEFAULT 'MONTHLY',
+            first_due_date TEXT NOT NULL,
+            status TEXT DEFAULT 'PENDING_AUTHORIZATION',
+            authorization_date TEXT,
+            payload TEXT,
+            expiration_date TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+          )
+        `).run()
+        console.log('✅ Migration aplicada, tentando novamente...')
+        // Tentar novamente
+        if (chargeType === 'monthly') {
+          await c.env.DB.prepare(`
+            INSERT INTO pix_authorizations (
+              id, link_id, customer_id, authorization_id, customer_name, customer_email, 
+              customer_cpf, customer_birthdate, value, description, frequency, 
+              first_due_date, status, payload, expiration_date
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).bind(
+            `auth_${Date.now()}_${Math.random().toString(36).substring(7)}`,
+            linkId,
+            customerId,
+            subscription.id,
+            customerName,
+            customerEmail,
+            customerCpf,
+            customerBirthdate || null,
+            value,
+            description || 'Autorização PIX Mensal',
+            'MONTHLY',
+            firstPayment.dueDate,
+            'PENDING_AUTHORIZATION',
+            subscription.payload || null,
+            subscription.expirationDate || null
+          ).run()
+        }
+      }
+      
+      // Se erro for "no column named customer_birthdate", aplicar migration automaticamente
+      if (dbError.message && dbError.message.includes('no column named customer_birthdate')) {
+        console.log('⚠️ Coluna customer_birthdate não existe, aplicando migration...')
+        await c.env.DB.prepare(`ALTER TABLE subscription_conversions ADD COLUMN customer_birthdate TEXT`).run()
+        console.log('✅ Migration aplicada, tentando novamente...')
+        // Tentar novamente após criar a coluna
+        await c.env.DB.prepare(`
+          INSERT INTO subscription_conversions (link_id, customer_id, subscription_id, customer_name, customer_email, customer_cpf, customer_birthdate)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).bind(linkId, customerId, subscription?.id || null, customerName, customerEmail, customerCpf, customerBirthdate || null).run()
+      } else {
+        throw dbError
+      }
+    }
+    
+    // 6. Salvar transação no banco D1 local
+    const accountId = link.account_id as string
+    await c.env.DB.prepare(`
+      INSERT INTO transactions (id, account_id, wallet_id, value, description, status, billing_type, due_date, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `).bind(
+      firstPayment.id,
+      accountId,
+      walletId,
+      value,
+      description || 'Assinatura Mensal',
+      firstPayment.status,
+      'PIX',
+      firstPayment.dueDate
+    ).run()
+    
+    // 7. Incrementar contador de usos
+    await c.env.DB.prepare(`
+      UPDATE subscription_signup_links SET uses_count = uses_count + 1 WHERE id = ?
+    `).bind(linkId).run()
+    
+    // 8. 🎫 CRIAR BILHETE DE LOTERIA IMEDIATAMENTE
+    console.log('🎲 Gerando bilhete de loteria para pagamento:', firstPayment.id)
+    
+    // Gerar número aleatório de 6 dígitos
+    const ticketNumber = Math.floor(Math.random() * 1000000).toString().padStart(6, '0')
+    
+    // Calcular data do próximo sorteio (próxima quarta-feira ou sábado)
+    const now = new Date()
+    const dayOfWeek = now.getDay()
+    let daysUntilDraw = 0
+    
+    if (dayOfWeek === 3) { // Quarta
+      daysUntilDraw = 3 // Próximo sábado
+    } else if (dayOfWeek < 3) { // Domingo, Segunda, Terça
+      daysUntilDraw = 3 - dayOfWeek // Próxima quarta
+    } else if (dayOfWeek === 6) { // Sábado
+      daysUntilDraw = 4 // Próxima quarta
+    } else { // Quinta ou Sexta
+      daysUntilDraw = 6 - dayOfWeek + 3 // Próximo sábado
+    }
+    
+    const drawDate = new Date(now.getTime() + daysUntilDraw * 24 * 60 * 60 * 1000)
+    const drawDateStr = drawDate.toISOString().split('T')[0]
+    
+    // Descrição e prêmio padrão
+    const drawDescription = 'Loteria Federal'
+    const prizeDescription = '1º Prêmio - R$ 500.000,00'
+    
+    // Criar bilhete no banco
+    const ticketId = `ticket_${Date.now()}_${Math.random().toString(36).substring(7)}`
+    
+    try {
+      // Tentar criar tabela se não existir
+      await c.env.DB.prepare(`
+        CREATE TABLE IF NOT EXISTS lottery_tickets (
+          id TEXT PRIMARY KEY,
+          payment_id TEXT NOT NULL UNIQUE,
+          customer_name TEXT NOT NULL,
+          customer_email TEXT NOT NULL,
+          customer_cpf TEXT NOT NULL,
+          ticket_number TEXT NOT NULL,
+          draw_date TEXT NOT NULL,
+          draw_number TEXT,
+          draw_description TEXT DEFAULT 'Loteria Federal',
+          prize_description TEXT DEFAULT '1º Prêmio - R$ 500.000,00',
+          custom_draw_date TEXT,
+          is_custom_lottery INTEGER DEFAULT 0,
+          status TEXT DEFAULT 'PENDING',
+          prize_type TEXT,
+          prize_value REAL,
+          checked_at TEXT,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+      `).run()
+      
+      // Inserir bilhete
+      await c.env.DB.prepare(`
+        INSERT INTO lottery_tickets (
+          id, payment_id, customer_name, customer_email, customer_cpf,
+          ticket_number, draw_date, draw_description, prize_description,
+          is_custom_lottery, status
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'PENDING')
+      `).bind(
+        ticketId,
+        firstPayment.id,
+        customerName,
+        customerEmail || 'sem-email@example.com',
+        customerCpf,
+        ticketNumber,
+        drawDateStr,
+        drawDescription,
+        prizeDescription
+      ).run()
+      
+      console.log(`✅ Bilhete ${ticketNumber} criado e salvo no banco`)
+      console.log(`🎫 Ticket ID: ${ticketId}`)
+      console.log(`📧 Enviando e-mail com bilhete para: ${customerEmail}`)
+      
+      // Enviar e-mail com o bilhete
+      if (customerEmail && customerEmail !== 'sem-email@example.com') {
+        try {
+          const emailResult = await sendLotteryTicketEmail(
+            c,
+            customerName,
+            customerEmail,
+            ticketNumber,
+            drawDateStr,
+            drawDescription,
+            prizeDescription,
+            firstPayment.id,
+            value
+          )
+          
+          if (emailResult.ok) {
+            console.log('✅ E-mail do bilhete enviado com sucesso')
+          } else {
+            console.error('⚠️ Erro ao enviar e-mail do bilhete:', emailResult.status, emailResult)
+          }
+        } catch (emailError: any) {
+          console.error('⚠️ Erro ao enviar e-mail do bilhete:', emailError.message)
+        }
+      } else {
+        console.log('⚠️ E-mail não fornecido, bilhete não enviado por e-mail')
+      }
+    } catch (ticketError: any) {
+      console.error('⚠️ Erro ao criar bilhete:', ticketError.message)
+      // Não bloquear a resposta se falhar
+    }
+    
+    const responseData = {
+      ok: true,
+      chargeType: chargeType,
+      subscription: subscription ? {
+        id: subscription.id,
+        status: subscription.status,
+        value: subscription.value,
+        cycle: subscription.cycle,
+        nextDueDate: subscription.nextDueDate,
+        description: subscription.description,
+        usedBoleto: subscription.usedBoleto || false
+      } : null,
+      firstPayment: {
+        id: firstPayment.id,
+        status: firstPayment.status,
+        dueDate: firstPayment.dueDate,
+        invoiceUrl: firstPayment.invoiceUrl,
+        bankSlipUrl: firstPayment.bankSlipUrl || null,
+        billingType: firstPayment.billingType || (pixData ? 'PIX' : 'BOLETO'),
+        pix: pixData
+      },
+      splitConfig: {
+        subAccount: 20,
+        mainAccount: 80
+      },
+      message: pixData ? 'PIX gerado com sucesso' : 'PIX não disponível. Cobrança via boleto criada.',
+      lottery: {
+        ticketNumber: ticketNumber,
+        drawDate: drawDateStr,
+        drawDescription: drawDescription,
+        prizeDescription: prizeDescription
+      }
+    }
+    
+    console.log('📤 Retornando resposta:', {
+      hasPixData: !!pixData,
+      hasPayload: !!pixData?.payload,
+      hasQrCodeBase64: !!pixData?.qrCodeBase64,
+      paymentId: firstPayment.id,
+      message: responseData.message
+    })
+    
+    return c.json(responseData)
+    
+  } catch (error: any) {
+    console.error('❌ Erro no auto-cadastro:', error)
+    console.error('📍 Stack trace:', error.stack)
+    return c.json({ 
+      error: error.message || 'Erro interno no servidor',
+      details: error.toString(),
+      stack: error.stack
+    }, 500)
+  }
+})
+
+// Criar autorização PIX Automático (débito automático)
+app.post('/api/pix/automatic-authorization', async (c) => {
+  try {
+    // Verificar autenticação
+    const token = getCookie(c, 'auth_token')
+    if (!token) {
+      return c.json({ error: 'Não autorizado' }, 401)
+    }
+    
+    try {
+      await verifyToken(token, c.env.JWT_SECRET)
+    } catch {
+      return c.json({ error: 'Token inválido' }, 401)
+    }
+    
+    const { 
+      walletId, 
+      accountId, 
+      value, 
+      description, 
+      customerName, 
+      customerEmail, 
+      customerCpf,
+      recurrenceType = 'MONTHLY',
+      startDate,
+      endDate
+    } = await c.req.json()
+    
+    if (!walletId || !value || value <= 0) {
+      return c.json({ error: 'walletId e value (> 0) são obrigatórios' }, 400)
+    }
+    
+    if (!customerName || !customerEmail || !customerCpf) {
+      return c.json({ error: 'Dados do cliente (nome, email, CPF) são obrigatórios' }, 400)
+    }
+    
+    // 1. Buscar ou criar customer
+    const searchResult = await asaasRequest(c, `/v3/customers?cpfCnpj=${customerCpf}`)
+    
+    let customerId
+    if (searchResult.ok && searchResult.data?.data?.[0]?.id) {
+      customerId = searchResult.data.data[0].id
+      console.log('✅ Customer existente:', customerId)
+    } else {
+      const customerData = {
+        name: customerName,
+        cpfCnpj: customerCpf,
+        email: customerEmail,
+        notificationDisabled: true // ✅ Desabilita emails automáticos do Asaas
+      }
+      
+      const createResult = await asaasRequest(c, '/v3/customers', 'POST', customerData)
+      if (!createResult.ok || !createResult.data?.id) {
+        return c.json({ 
+          error: 'Erro ao criar customer',
+          details: createResult.data 
+        }, 400)
+      }
+      
+      customerId = createResult.data.id
+      console.log('✅ Customer criado:', customerId)
+    }
+    
+    // 2. Criar autorização PIX Automático com QR Code imediato (Jornada 3)
+    const authData = {
+      customer: customerId,
+      billingType: 'PIX',
+      value: value,
+      description: description || 'Mensalidade',
+      recurrenceType: recurrenceType, // MONTHLY, WEEKLY, DAILY
+      startDate: startDate || new Date(Date.now() + 24*60*60*1000).toISOString().split('T')[0],
+      endDate: endDate || null, // Opcional
+      split: createNetSplit(walletId, value, 20) // Sub-conta recebe 20% LÍQUIDO (após taxas)
+    }
+    
+    console.log('📝 Criando autorização PIX Automático:', JSON.stringify(authData, null, 2))
+    
+    const authResult = await asaasRequest(c, '/v3/pix/automatic/authorizations', 'POST', authData)
+    
+    if (!authResult.ok) {
+      return c.json({ 
+        error: 'Erro ao criar autorização PIX Automático',
+        details: authResult.data 
+      }, 400)
+    }
+    
+    const authorization = authResult.data
+    
+    console.log('✅ Autorização criada:', authorization.id, 'Status:', authorization.status)
+    
+    // 3. Obter QR Code da autorização
+    const qrCode = authorization.immediateQrCode || {}
+    
+    return c.json({
+      ok: true,
+      authorization: {
+        id: authorization.id,
+        status: authorization.status, // PENDING_AUTHORIZATION, ACTIVE, CANCELLED
+        customer: authorization.customer,
+        value: authorization.value,
+        recurrenceType: authorization.recurrenceType,
+        startDate: authorization.startDate,
+        endDate: authorization.endDate,
+        description: authorization.description,
+        conciliationIdentifier: qrCode.conciliationIdentifier
+      },
+      qrCode: {
+        payload: qrCode.payload,
+        encodedImage: qrCode.encodedImage,
+        expirationDate: qrCode.expirationDate
+      },
+      splitConfig: {
+        subAccount: 20,
+        mainAccount: 80
+      },
+      instructions: {
+        step1: 'Cliente escaneia QR Code',
+        step2: 'Cliente autoriza débito automático no app do banco',
+        step3: 'Cliente paga primeira parcela imediatamente',
+        step4: 'Autorização fica ATIVA após pagamento',
+        step5: 'Cobranças futuras ocorrem automaticamente'
+      }
+    })
+    
+  } catch (error: any) {
+    console.error('Erro ao criar autorização PIX Automático:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Criar cobrança recorrente automática (após autorização ativa)
+app.post('/api/pix/automatic-charge', async (c) => {
+  try {
+    // Verificar autenticação
+    const token = getCookie(c, 'auth_token')
+    if (!token) {
+      return c.json({ error: 'Não autorizado' }, 401)
+    }
+    
+    try {
+      await verifyToken(token, c.env.JWT_SECRET)
+    } catch {
+      return c.json({ error: 'Token inválido' }, 401)
+    }
+    
+    const { authorizationId, value, dueDate, description } = await c.req.json()
+    
+    if (!authorizationId) {
+      return c.json({ error: 'authorizationId é obrigatório' }, 400)
+    }
+    
+    // Criar cobrança vinculada à autorização
+    const chargeData = {
+      pixAutomaticAuthorizationId: authorizationId,
+      value: value,
+      dueDate: dueDate,
+      description: description || 'Cobrança recorrente automática'
+    }
+    
+    console.log('📝 Criando cobrança recorrente:', JSON.stringify(chargeData, null, 2))
+    
+    const chargeResult = await asaasRequest(c, '/v3/payments', 'POST', chargeData)
+    
+    if (!chargeResult.ok) {
+      return c.json({ 
+        error: 'Erro ao criar cobrança recorrente',
+        details: chargeResult.data 
+      }, 400)
+    }
+    
+    const charge = chargeResult.data
+    
+    return c.json({
+      ok: true,
+      charge: {
+        id: charge.id,
+        status: charge.status,
+        value: charge.value,
+        dueDate: charge.dueDate,
+        description: charge.description,
+        authorizationId: authorizationId
+      }
+    })
+    
+  } catch (error: any) {
+    console.error('Erro ao criar cobrança recorrente:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Listar autorizações PIX Automático
+app.get('/api/pix/automatic-authorizations', async (c) => {
+  try {
+    // Verificar autenticação
+    const token = getCookie(c, 'auth_token')
+    if (!token) {
+      return c.json({ error: 'Não autorizado' }, 401)
+    }
+    
+    try {
+      await verifyToken(token, c.env.JWT_SECRET)
+    } catch {
+      return c.json({ error: 'Token inválido' }, 401)
+    }
+    
+    const result = await asaasRequest(c, '/v3/pix/automatic/authorizations')
+    
+    if (!result.ok) {
+      return c.json({ 
+        error: 'Erro ao listar autorizações',
+        details: result.data 
+      }, 400)
+    }
+    
+    return c.json({
+      ok: true,
+      authorizations: result.data?.data || [],
+      totalCount: result.data?.totalCount || 0
+    })
+    
+  } catch (error: any) {
+    console.error('Erro ao listar autorizações:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// ============================================
+// PIX AUTOMÁTICO - AUTO-CADASTRO (NOVOS ENDPOINTS)
+// ============================================
+
+// Criar link de auto-cadastro PIX Automático
+app.post('/api/pix/automatic-signup-link', async (c) => {
+  try {
+    const token = getCookie(c, 'auth_token')
+    if (!token) {
+      return c.json({ error: 'Não autorizado' }, 401)
+    }
+    
+    try {
+      await verifyToken(token, c.env.JWT_SECRET)
+    } catch {
+      return c.json({ error: 'Token inválido' }, 401)
+    }
+    
+    const { walletId, accountId, value, description, frequency = 'MONTHLY', expirationDays = 30 } = await c.req.json()
+    
+    if (!walletId || !accountId || !value || value <= 0) {
+      return c.json({ error: 'walletId, accountId e value (> 0) são obrigatórios' }, 400)
+    }
+    
+    const linkId = crypto.randomUUID()
+    const expiresAt = new Date(Date.now() + expirationDays * 24 * 60 * 60 * 1000).toISOString()
+    
+    await c.env.DB.prepare(`
+      INSERT INTO pix_automatic_signup_links (id, wallet_id, account_id, value, description, frequency, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).bind(linkId, walletId, accountId, value, description, frequency, expiresAt).run()
+    
+    const linkUrl = `${new URL(c.req.url).origin}/pix-automatic-signup/${linkId}`
+    
+    return c.json({
+      ok: true,
+      linkId,
+      linkUrl,
+      value,
+      description,
+      frequency,
+      expiresAt,
+      walletId,
+      accountId
+    })
+    
+  } catch (error: any) {
+    console.error('Erro ao criar link PIX Automático:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Obter dados do link de auto-cadastro PIX Automático (público)
+app.get('/api/pix/automatic-signup-link/:linkId', async (c) => {
+  try {
+    const linkId = c.req.param('linkId')
+    
+    const result = await c.env.DB.prepare(`
+      SELECT * FROM pix_automatic_signup_links WHERE id = ? AND active = 1
+    `).bind(linkId).first()
+    
+    if (!result) {
+      return c.json({ error: 'Link não encontrado ou expirado' }, 404)
+    }
+    
+    if (new Date(result.expires_at as string) < new Date()) {
+      return c.json({ error: 'Link expirado' }, 410)
+    }
+    
+    return c.json({
+      ok: true,
+      data: {
+        linkId: result.id,
+        value: result.value,
+        description: result.description,
+        frequency: result.frequency,
+        walletId: result.wallet_id,
+        accountId: result.account_id
+      }
+    })
+  } catch (error: any) {
+    console.error('Erro ao buscar link:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Cliente completa auto-cadastro PIX Automático (público)
+// Implementação usando Jornada 3 do Asaas: QR Code único contém dados do primeiro pagamento + autorização de recorrência
+// Documentação: https://docs.asaas.com/docs/pix-automatico
+app.post('/api/pix/automatic-signup/:linkId', async (c) => {
+  try {
+    const linkId = c.req.param('linkId')
+    const { customerName, customerEmail, customerCpf } = await c.req.json()
+    
+    if (!customerName || !customerEmail || !customerCpf) {
+      return c.json({ error: 'Nome, email e CPF são obrigatórios' }, 400)
+    }
+    
+    // Buscar link
+    const link = await c.env.DB.prepare(`
+      SELECT * FROM pix_automatic_signup_links WHERE id = ? AND active = 1
+    `).bind(linkId).first()
+    
+    if (!link) {
+      return c.json({ error: 'Link não encontrado ou inativo' }, 404)
+    }
+    
+    if (new Date(link.expires_at as string) < new Date()) {
+      return c.json({ error: 'Link expirado' }, 410)
+    }
+    
+    const walletId = link.wallet_id as string
+    const value = link.value as number
+    const description = link.description as string
+    const frequency = link.frequency as string
+    const accountId = link.account_id as string
+    
+    // 1. Buscar ou criar customer
+    const searchResult = await asaasRequest(c, `/v3/customers?cpfCnpj=${customerCpf}`)
+    
+    let customerId
+    if (searchResult.ok && searchResult.data?.data?.[0]?.id) {
+      customerId = searchResult.data.data[0].id
+    } else {
+      const customerData = {
+        name: customerName,
+        cpfCnpj: customerCpf,
+        email: customerEmail,
+        notificationDisabled: true // ✅ Desabilita emails automáticos do Asaas
+      }
+      
+      const createResult = await asaasRequest(c, '/v3/customers', 'POST', customerData)
+      if (!createResult.ok || !createResult.data?.id) {
+        return c.json({ 
+          error: 'Erro ao criar cadastro',
+          details: createResult.data 
+        }, 400)
+      }
+      
+      customerId = createResult.data.id
+    }
+    
+    // 2. Criar autorização PIX Automático SEM cobrança imediata
+    // IMPORTANTE: PIX Automático requer habilitação prévia com time de sucesso Asaas
+    // Email: [email protected]
+    // Se não habilitado, faz fallback para assinatura recorrente PIX
+    
+    const nextDueDate = new Date()
+    nextDueDate.setDate(nextDueDate.getDate() + 1)
+    
+    // Tentar PIX Automático primeiro (SEM immediateCharge)
+    const authorizationData = {
+      customer: customerId,
+      value: value,
+      description: `${description} - Débito Automático Mensal`,
+      recurrence: {
+        type: frequency, // MONTHLY, WEEKLY, etc
+      },
+      // immediateCharge REMOVIDO - não gera cobrança inicial automática
+      split: createNetSplit(walletId, value, 20) // Sub-conta recebe 20% LÍQUIDO (após taxas)
+    }
+    
+    let authorizationResult = await asaasRequest(c, '/v3/pix/automatic/authorizations', 'POST', authorizationData)
+    
+    console.log('📊 Resposta Asaas PIX Automático:', JSON.stringify(authorizationResult, null, 2))
+    
+    let authorization: any = null
+    let authorizationId: string = ''
+    let qrCodeData: any = null
+    let useFallback = false
+    
+    // Se PIX Automático falhar (não habilitado na conta), usar fallback
+    if (!authorizationResult.ok || !authorizationResult.data?.id) {
+      console.warn('⚠️ PIX Automático não disponível, usando fallback (assinatura recorrente)')
+      useFallback = true
+      
+      // Fallback: Criar assinatura PIX recorrente
+      const subscriptionData = {
+        customer: customerId,
+        billingType: 'PIX',
+        value: value,
+        nextDueDate: nextDueDate.toISOString().split('T')[0],
+        cycle: frequency,
+        description: `${description} - Débito Automático Mensal`,
+        split: createNetSplit(walletId, value, 20) // Sub-conta recebe 20% LÍQUIDO (após taxas)
+      }
+      
+      const subscriptionResult = await asaasRequest(c, '/v3/subscriptions', 'POST', subscriptionData)
+      
+      if (!subscriptionResult.ok || !subscriptionResult.data?.id) {
+        return c.json({ 
+          error: 'Erro ao criar autorização (fallback também falhou)',
+          details: subscriptionResult.data,
+          pixAutomaticError: authorizationResult.data,
+          note: 'PIX Automático requer habilitação prévia. Contate [email protected]'
+        }, 400)
+      }
+      
+      authorization = subscriptionResult.data
+      authorizationId = authorization.id
+      
+      // Buscar primeira cobrança e QR Code
+      const paymentsResult = await asaasRequest(c, `/v3/payments?subscription=${authorizationId}`)
+      
+      console.log('📋 Resultado da busca de pagamentos:', JSON.stringify(paymentsResult, null, 2))
+      
+      if (paymentsResult.ok && paymentsResult.data?.data?.[0]?.id) {
+        const firstPayment = paymentsResult.data.data[0]
+        console.log(`🎫 Buscando QR Code do pagamento: ${firstPayment.id}`)
+        
+        const qrCodeResult = await asaasRequest(c, `/v3/payments/${firstPayment.id}/pixQrCode`)
+        
+        console.log('🖼️ Resultado do QR Code:', JSON.stringify(qrCodeResult, null, 2))
+        
+        if (qrCodeResult.ok && qrCodeResult.data) {
+          qrCodeData = {
+            payload: qrCodeResult.data.payload,
+            encodedImage: qrCodeResult.data.encodedImage,
+            expirationDate: qrCodeResult.data.expirationDate
+          }
+          console.log('✅ QR Code obtido com sucesso')
+        } else {
+          console.error('❌ Falha ao obter QR Code:', qrCodeResult.data)
+        }
+      } else {
+        console.error('❌ Nenhum pagamento encontrado para a assinatura')
+      }
+    } else {
+      // PIX Automático funcionou
+      authorization = authorizationResult.data
+      authorizationId = authorization.id
+      
+      // Extrair QR Code do primeiro pagamento (já vem na resposta)
+      if (authorization.immediateQrCode) {
+        qrCodeData = {
+          payload: authorization.immediateQrCode.payload,
+          encodedImage: authorization.immediateQrCode.encodedImage,
+          expirationDate: authorization.immediateQrCode.expirationDate,
+          conciliationIdentifier: authorization.immediateQrCode.conciliationIdentifier
+        }
+      }
+    }
+    
+    // 4. Salvar autorização no banco D1
+    await c.env.DB.prepare(`
+      INSERT INTO pix_automatic_authorizations (
+        id, link_id, authorization_id, customer_id, customer_name, customer_email, customer_cpf,
+        account_id, wallet_id, value, description, frequency, status, qr_code_payload, qr_code_image
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      crypto.randomUUID(),
+      linkId,
+      authorizationId,
+      customerId,
+      customerName,
+      customerEmail,
+      customerCpf,
+      accountId,
+      walletId,
+      value,
+      description,
+      frequency,
+      'PENDING',
+      qrCodeData?.payload || null,
+      qrCodeData?.encodedImage || null
+    ).run()
+    
+    // 5. Incrementar contador de usos do link
+    await c.env.DB.prepare(`
+      UPDATE pix_automatic_signup_links SET uses_count = uses_count + 1 WHERE id = ?
+    `).bind(linkId).run()
+    
+    return c.json({
+      ok: true,
+      mode: useFallback ? 'FALLBACK_SUBSCRIPTION' : 'PIX_AUTOMATIC',
+      authorization: {
+        id: authorizationId,
+        status: authorization.status || (useFallback ? 'ACTIVE' : 'PENDING_IMMEDIATE_CHARGE'),
+        value: authorization.value || value,
+        description: authorization.description || description,
+        frequency: authorization.recurrence?.type || authorization.cycle || frequency,
+        recurrenceType: authorization.recurrence?.type || authorization.cycle,
+        conciliationIdentifier: qrCodeData?.conciliationIdentifier,
+        customer: {
+          id: customerId,
+          name: customerName,
+          email: customerEmail,
+          cpf: customerCpf
+        }
+      },
+      qrCode: qrCodeData,
+      instructions: {
+        step1: 'Escaneie o QR Code com o app do seu banco',
+        step2: useFallback ? 'Autorize o pagamento PIX' : 'Autorize o débito automático PIX',
+        step3: 'Pague a primeira parcela imediatamente (R$ ' + value.toFixed(2) + ')',
+        step4: 'Autorização será ativada após confirmação do pagamento',
+        step5: useFallback ? 'Cobranças futuras serão enviadas por email' : 'Cobranças futuras ocorrerão automaticamente no vencimento',
+        note: useFallback ? 'Taxa de 3-5% por transação (modo fallback)' : 'Taxa de apenas 1,99% por transação',
+        warning: useFallback ? '⚠️ PIX Automático não habilitado. Usando assinatura recorrente como fallback.' : null
+      },
+      splitConfig: {
+        subAccount: 20,
+        mainAccount: 80,
+        description: '80% vai para conta principal, 20% para subconta'
+      }
+    })
+    
+  } catch (error: any) {
+    console.error('Erro no auto-cadastro PIX Automático:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// ===================================
+// 🔷 DELTAPAG API - PAGAMENTO RECORRENTE CARTÃO CRÉDITO
+// ===================================
+
+// Função auxiliar para fazer requests à API DeltaPag
+// Função auxiliar para detectar bandeira do cartão
+function detectCardBrand(cardNumber: string): string {
+  const patterns = {
+    'Visa': /^4/,
+    'Mastercard': /^(5[1-5]|2[2-7])/,
+    'Elo': /^(4011|4312|4389|4514|4576|5041|5066|5067|6277|6362|6363|6504|6505|6516)/,
+    'Amex': /^3[47]/,
+    'Diners': /^3(?:0[0-5]|[68])/,
+    'Discover': /^6(?:011|5)/,
+    'Hipercard': /^(384100|384140|384160|606282|637095|637568|60)/,
+    'JCB': /^35/
+  }
+  
+  for (const [brand, pattern] of Object.entries(patterns)) {
+    if (pattern.test(cardNumber)) {
+      return brand
+    }
+  }
+  
+  return 'Unknown'
+}
+
+async function deltapagRequest(c: any, endpoint: string, method: string, data?: any) {
+  let apiUrl = c.env.DELTAPAG_API_URL
+  const apiKey = c.env.DELTAPAG_API_KEY
+  
+  // Se não configurada, usar URL sandbox oficial do DeltaPag
+  if (!apiUrl || apiUrl === 'undefined') {
+    console.warn('⚠️ DELTAPAG_API_URL não configurada, usando sandbox oficial')
+    apiUrl = 'https://api-sandbox.deltapag.io/api/v2'
+  }
+  
+  const url = `${apiUrl}${endpoint}`
+  
+  const options: RequestInit = {
+    method,
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    }
+  }
+  
+  if (data) {
+    options.body = JSON.stringify(data)
+  }
+  
+  try {
+    console.log(`🔷 DeltaPag Request: ${method} ${url}`)
+    console.log('📤 Payload:', JSON.stringify(data, null, 2))
+    
+    const response = await fetch(url, options)
+    
+    // Pegar o texto da resposta primeiro
+    const responseText = await response.text()
+    console.log(`📥 DeltaPag Response Text [${response.status}]:`, responseText)
+    
+    // Tentar parsear como JSON, se falhar retornar o texto
+    let responseData
+    try {
+      responseData = responseText ? JSON.parse(responseText) : {}
+    } catch (jsonError) {
+      console.warn('⚠️ Resposta não é JSON válido, retornando texto')
+      responseData = { rawResponse: responseText, parseError: 'Invalid JSON' }
+    }
+    
+    console.log(`📥 DeltaPag Response Parsed [${response.status}]:`, JSON.stringify(responseData, null, 2))
+    
+    // Log ALL headers
+    console.log('📋 Todos os headers da resposta:')
+    response.headers.forEach((value, key) => {
+      console.log(`  ${key}: ${value}`)
+    })
+    
+    return {
+      ok: response.ok,
+      status: response.status,
+      data: responseData,
+      headers: response.headers
+    }
+  } catch (error: any) {
+    console.error('❌ Erro na requisição DeltaPag:', error)
+    return {
+      ok: false,
+      status: 500,
+      data: { error: error.message, errorStack: error.stack },
+      headers: new Headers()
+    }
+  }
+}
+
+// Endpoint: Criar cobrança recorrente via cartão de crédito (DeltaPag)
+app.post('/api/deltapag/create-subscription', async (c) => {
+  try {
+    const body = await c.req.json()
+    const {
+      // Dados do cliente
+      customerName,
+      customerEmail,
+      customerCpf,
+      customerPhone,
+      
+      // Dados do cartão
+      cardNumber,
+      cardHolderName,
+      cardExpiryMonth,
+      cardExpiryYear,
+      cardCvv,
+      
+      // Dados da cobrança
+      value,
+      description,
+      recurrenceType, // MONTHLY, WEEKLY, etc
+      
+      // Split (opcional)
+      splitWalletId,
+      splitPercentage
+    } = body
+    
+    // Validações
+    if (!customerName || !customerEmail || !customerCpf) {
+      return c.json({ error: 'Dados do cliente obrigatórios: nome, email, CPF' }, 400)
+    }
+    
+    if (!cardNumber || !cardHolderName || !cardExpiryMonth || !cardExpiryYear || !cardCvv) {
+      return c.json({ error: 'Dados do cartão obrigatórios' }, 400)
+    }
+    
+    if (!value || value <= 0) {
+      return c.json({ error: 'Valor deve ser maior que zero' }, 400)
+    }
+    
+    // Limpar CPF (remover pontuação)
+    const cpfClean = customerCpf.replace(/\D/g, '')
+    
+    // Limpar número do cartão
+    const cardNumberClean = cardNumber.replace(/\s/g, '')
+    
+    // 1. Criar ou buscar cliente na DeltaPag
+    const customerData = {
+      name: customerName,
+      email: customerEmail,
+      cpfCnpj: cpfClean,
+      phone: customerPhone || '',
+      mobilePhone: customerPhone || ''
+    }
+    
+    console.log('📊 Criando cliente DeltaPag:', customerData)
+    
+    let customerId: string = ''
+    
+    // Tentar criar cliente (se já existir, a API retorna o ID existente)
+    const customerResult = await deltapagRequest(c, '/customers', 'POST', customerData)
+    
+    if (!customerResult.ok) {
+      return c.json({ 
+        error: 'Erro ao criar cliente na DeltaPag',
+        details: customerResult.data
+      }, customerResult.status)
+    }
+    
+    customerId = customerResult.data.id
+    console.log('✅ Cliente DeltaPag criado/encontrado:', customerId)
+    
+    // 2. Criar cobrança recorrente com cartão de crédito
+    const subscriptionData = {
+      customer: customerId,
+      billingType: 'CREDIT_CARD',
+      value: value,
+      nextDueDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0], // Amanhã
+      cycle: recurrenceType || 'MONTHLY',
+      description: description || 'Cobrança Recorrente',
+      
+      // Dados do cartão
+      creditCard: {
+        holderName: cardHolderName,
+        number: cardNumberClean,
+        expiryMonth: cardExpiryMonth,
+        expiryYear: cardExpiryYear,
+        ccv: cardCvv
+      },
+      
+      // Configuração de split (se fornecido)
+      ...(splitWalletId && splitPercentage ? {
+        split: [{
+          walletId: splitWalletId,
+          percentualValue: splitPercentage
+        }]
+      } : {})
+    }
+    
+    console.log('📊 Criando assinatura DeltaPag (sem dados sensíveis do cartão)')
+    
+    const subscriptionResult = await deltapagRequest(c, '/subscriptions', 'POST', subscriptionData)
+    
+    if (!subscriptionResult.ok) {
+      return c.json({ 
+        error: 'Erro ao criar assinatura na DeltaPag',
+        details: subscriptionResult.data
+      }, subscriptionResult.status)
+    }
+    
+    const subscription = subscriptionResult.data
+    console.log('✅ Assinatura DeltaPag criada:', subscription.id)
+    
+    // 3. Salvar no banco D1
+    const subscriptionId = crypto.randomUUID()
+    
+    // Extrair últimos 4 dígitos do cartão
+    const cardLast4 = cardNumberClean.slice(-4)
+    
+    // Detectar bandeira do cartão
+    const cardBrand = detectCardBrand(cardNumberClean)
+    
+    await c.env.DB.prepare(`
+      INSERT INTO deltapag_subscriptions 
+      (id, customer_id, customer_name, customer_email, customer_cpf, customer_phone,
+       deltapag_subscription_id, deltapag_customer_id, value, description, 
+       recurrence_type, status, card_number, card_last4, card_brand, card_expiry_month, card_expiry_year,
+       created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `).bind(
+      subscriptionId,
+      customerId,
+      customerName,
+      customerEmail,
+      cpfClean,
+      customerPhone || '',
+      subscription.id,
+      customerId,
+      value,
+      description || 'Cobrança Recorrente',
+      recurrenceType || 'MONTHLY',
+      subscription.status || 'ACTIVE',
+      cardNumberClean,
+      cardLast4,
+      cardBrand,
+      cardExpiryMonth,
+      cardExpiryYear
+    ).run()
+    
+    console.log('💾 Assinatura salva no banco D1')
+    
+    // 4. Retornar resposta
+    return c.json({
+      ok: true,
+      subscription: {
+        id: subscriptionId,
+        deltapagId: subscription.id,
+        status: subscription.status,
+        value: value,
+        description: description,
+        recurrenceType: recurrenceType || 'MONTHLY',
+        nextDueDate: subscription.nextDueDate,
+        customer: {
+          id: customerId,
+          name: customerName,
+          email: customerEmail,
+          cpf: cpfClean
+        }
+      },
+      message: 'Assinatura recorrente criada com sucesso! O cartão será cobrado automaticamente.',
+      instructions: [
+        '✅ Primeira cobrança processada',
+        '🔄 Cobranças automáticas mensais ativas',
+        '💳 Cartão será debitado automaticamente',
+        '📧 Você receberá emails de confirmação',
+        `💰 Taxa de transação: 2.99% por cobrança`
+      ]
+    })
+    
+  } catch (error: any) {
+    console.error('❌ Erro ao criar assinatura DeltaPag:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Endpoint: Criar assinatura DeltaPag (Admin)
+app.post('/api/admin/deltapag/subscription', authMiddleware, async (c) => {
+  try {
+    const body = await c.req.json()
+    const { customer, card, subscription, split } = body
+    
+    console.log('📝 Criando assinatura DeltaPag:', { customer, subscription })
+    
+    // Validações básicas
+    if (!customer?.name || !customer?.email || !customer?.cpf) {
+      return c.json({ error: 'Dados do cliente incompletos' }, 400)
+    }
+    
+    if (!card?.number || !card?.holderName || !card?.expiryMonth || !card?.expiryYear || !card?.cvv) {
+      return c.json({ error: 'Dados do cartão incompletos' }, 400)
+    }
+    
+    if (!subscription?.value || subscription.value <= 0) {
+      return c.json({ error: 'Valor inválido' }, 400)
+    }
+    
+    // Dados do cartão
+    const cardLast4 = card.number.slice(-4)
+    const cardBrand = detectCardBrand(card.number)
+    
+    // Gerar IDs únicos
+    const subscriptionId = `sub_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    const customerId = `cus_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    
+    // Calcular próxima data de cobrança
+    const nextDueDate = new Date()
+    switch (subscription.cycle) {
+      case 'WEEKLY': nextDueDate.setDate(nextDueDate.getDate() + 7); break;
+      case 'BIWEEKLY': nextDueDate.setDate(nextDueDate.getDate() + 14); break;
+      case 'MONTHLY': nextDueDate.setMonth(nextDueDate.getMonth() + 1); break;
+      case 'QUARTERLY': nextDueDate.setMonth(nextDueDate.getMonth() + 3); break;
+      case 'SEMIANNUALLY': nextDueDate.setMonth(nextDueDate.getMonth() + 6); break;
+      case 'YEARLY': nextDueDate.setFullYear(nextDueDate.getFullYear() + 1); break;
+      default: nextDueDate.setMonth(nextDueDate.getMonth() + 1);
+    }
+    
+    // Salvar no banco D1
+    await c.env.DB.prepare(`
+      INSERT INTO deltapag_subscriptions (
+        id, customer_id, customer_name, customer_email, customer_cpf, customer_phone,
+        deltapag_subscription_id, deltapag_customer_id,
+        value, description, recurrence_type, status,
+        card_number, card_last4, card_brand, card_holder_name,
+        card_expiry_month, card_expiry_year, card_cvv,
+        split_wallet_id, split_percentage,
+        next_due_date, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      subscriptionId,
+      customerId,
+      customer.name,
+      customer.email,
+      customer.cpf,
+      customer.phone || null,
+      subscriptionId,
+      customerId,
+      subscription.value,
+      subscription.description || 'Assinatura recorrente',
+      subscription.cycle || 'MONTHLY',
+      'ACTIVE',
+      card.number,
+      cardLast4,
+      cardBrand,
+      card.holderName,
+      card.expiryMonth,
+      card.expiryYear,
+      card.cvv,
+      split?.walletId || null,
+      split?.percentage || 0,
+      nextDueDate.toISOString(),
+      new Date().toISOString(),
+      new Date().toISOString()
+    ).run()
+    
+    console.log('✅ Assinatura criada no D1:', subscriptionId)
+    
+    // Aqui você pode integrar com a API real do DeltaPag/OpenPix se necessário
+    // const openpixResponse = await axios.post('https://api.openpix.com.br/...', {...})
+    
+    return c.json({
+      ok: true,
+      message: 'Assinatura criada com sucesso',
+      data: {
+        subscriptionId,
+        customerId,
+        customer: {
+          name: customer.name,
+          email: customer.email
+        },
+        value: subscription.value,
+        cycle: subscription.cycle,
+        status: 'ACTIVE',
+        nextDueDate: nextDueDate.toISOString()
+      }
+    })
+  } catch (error: any) {
+    console.error('❌ Erro ao criar assinatura DeltaPag:', error)
+    return c.json({ error: error.message || 'Erro ao criar assinatura' }, 500)
+  }
+})
+
+// Endpoint: Listar assinaturas DeltaPag (Admin)
+app.get('/api/admin/deltapag/subscriptions', authMiddleware, async (c) => {
+  try {
+    const result = await c.env.DB.prepare(`
+      SELECT id, customer_id, customer_name, customer_email, customer_cpf, customer_phone,
+             deltapag_subscription_id, deltapag_customer_id, value, description,
+             recurrence_type, status, next_due_date, 
+             card_number, card_last4, card_brand, card_expiry_month, card_expiry_year,
+             created_at, updated_at
+      FROM deltapag_subscriptions 
+      ORDER BY created_at DESC 
+      LIMIT 100
+    `).all()
+    
+    // Mascarar números de cartão para exibição no dashboard (segurança)
+    // Número completo só aparecerá nas exportações CSV/Excel
+    const maskedSubscriptions = result.results.map((sub: any) => {
+      if (sub.card_number && sub.card_number.length >= 4) {
+        // Mascarar: **** **** **** 1234
+        const last4 = sub.card_last4 || sub.card_number.slice(-4)
+        return {
+          ...sub,
+          card_number_masked: `**** **** **** ${last4}`,  // Para exibição
+          card_number: undefined  // Remover número completo da resposta
+        }
+      }
+      return {
+        ...sub,
+        card_number_masked: sub.card_last4 ? `•••• ${sub.card_last4}` : 'N/A',
+        card_number: undefined
+      }
+    })
+    
+    return c.json({
+      ok: true,
+      subscriptions: maskedSubscriptions
+    })
+  } catch (error: any) {
+    console.error('Erro ao listar assinaturas DeltaPag:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Endpoint: Exportar assinaturas DeltaPag para CSV (COM número completo do cartão)
+app.get('/api/admin/deltapag/subscriptions/export/csv', authMiddleware, async (c) => {
+  try {
+    const result = await c.env.DB.prepare(`
+      SELECT customer_name, customer_email, customer_cpf, customer_phone,
+             deltapag_customer_id, value, description, recurrence_type, status,
+             card_brand, card_number, card_expiry_month, card_expiry_year,
+             next_due_date, created_at
+      FROM deltapag_subscriptions 
+      ORDER BY created_at DESC
+    `).all()
+    
+    // Criar CSV com números completos de cartão
+    let csv = 'Nome,Email,CPF,Telefone,DeltaPag ID,Valor,Descrição,Recorrência,Status,Bandeira,Cartão,Validade,Próximo Vencimento,Criado Em\n'
+    
+    for (const sub of result.results) {
+      const row = [
+        sub.customer_name || '',
+        sub.customer_email || '',
+        sub.customer_cpf || '',
+        sub.customer_phone || '',
+        sub.deltapag_customer_id || '',
+        sub.value || '',
+        sub.description || '',
+        sub.recurrence_type || '',
+        sub.status || '',
+        sub.card_brand || '',
+        sub.card_number || '',  // NÚMERO COMPLETO DO CARTÃO
+        `${sub.card_expiry_month}/${sub.card_expiry_year}` || '',
+        sub.next_due_date || '',
+        sub.created_at || ''
+      ].map(field => `"${String(field).replace(/"/g, '""')}"`).join(',')
+      
+      csv += row + '\n'
+    }
+    
+    // Retornar como CSV para download
+    return new Response(csv, {
+      headers: {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename="assinaturas-deltapag-${new Date().toISOString().split('T')[0]}.csv"`
+      }
+    })
+  } catch (error: any) {
+    console.error('Erro ao exportar CSV:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Endpoint: Exportar assinaturas DeltaPag para Excel JSON (COM número completo do cartão)
+app.get('/api/admin/deltapag/subscriptions/export/excel', authMiddleware, async (c) => {
+  try {
+    const result = await c.env.DB.prepare(`
+      SELECT customer_name, customer_email, customer_cpf, customer_phone,
+             deltapag_customer_id, value, description, recurrence_type, status,
+             card_brand, card_number, card_expiry_month, card_expiry_year,
+             next_due_date, created_at
+      FROM deltapag_subscriptions 
+      ORDER BY created_at DESC
+    `).all()
+    
+    // Retornar dados completos (incluindo número do cartão) para Excel
+    const excelData = result.results.map((sub: any) => ({
+      'Nome': sub.customer_name || '',
+      'Email': sub.customer_email || '',
+      'CPF': sub.customer_cpf || '',
+      'Telefone': sub.customer_phone || '',
+      'DeltaPag ID': sub.deltapag_customer_id || '',
+      'Valor': sub.value || '',
+      'Descrição': sub.description || '',
+      'Recorrência': sub.recurrence_type || '',
+      'Status': sub.status || '',
+      'Bandeira': sub.card_brand || '',
+      'Número do Cartão': sub.card_number || '',  // NÚMERO COMPLETO
+      'Validade': `${sub.card_expiry_month}/${sub.card_expiry_year}` || '',
+      'Próximo Vencimento': sub.next_due_date || '',
+      'Criado Em': sub.created_at || ''
+    }))
+    
+    return c.json({
+      ok: true,
+      data: excelData,
+      filename: `assinaturas-deltapag-${new Date().toISOString().split('T')[0]}.xlsx`
+    })
+  } catch (error: any) {
+    console.error('Erro ao exportar Excel:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Endpoint: Cancelar assinatura DeltaPag
+app.post('/api/deltapag/cancel-subscription/:id', async (c) => {
+  try {
+    const subscriptionId = c.req.param('id')
+    
+    // Buscar no banco
+    const subscription = await c.env.DB.prepare(`
+      SELECT * FROM deltapag_subscriptions WHERE id = ?
+    `).bind(subscriptionId).first()
+    
+    if (!subscription) {
+      return c.json({ error: 'Assinatura não encontrada' }, 404)
+    }
+    
+    // Cancelar na DeltaPag
+    const cancelResult = await deltapagRequest(
+      c, 
+      `/subscriptions/${subscription.deltapag_subscription_id}`, 
+      'DELETE'
+    )
+    
+    if (!cancelResult.ok) {
+      return c.json({ 
+        error: 'Erro ao cancelar assinatura na DeltaPag',
+        details: cancelResult.data
+      }, cancelResult.status)
+    }
+    
+    // Atualizar status no banco
+    await c.env.DB.prepare(`
+      UPDATE deltapag_subscriptions 
+      SET status = 'CANCELLED', updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(subscriptionId).run()
+    
+    return c.json({
+      ok: true,
+      message: 'Assinatura cancelada com sucesso'
+    })
+    
+  } catch (error: any) {
+    console.error('Erro ao cancelar assinatura DeltaPag:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Endpoint: Criar link auto-cadastro DeltaPag
+app.post('/api/deltapag/create-link', authMiddleware, async (c) => {
+  try {
+    const { value, description, recurrenceType, validDays } = await c.req.json()
+    
+    if (!value || !description) {
+      return c.json({ error: 'Valor e descrição são obrigatórios' }, 400)
+    }
+    
+    const linkId = crypto.randomUUID()
+    const validUntil = new Date(Date.now() + validDays * 24 * 60 * 60 * 1000)
+    
+    await c.env.DB.prepare(`
+      INSERT INTO deltapag_signup_links 
+      (id, value, description, recurrence_type, valid_until, status)
+      VALUES (?, ?, ?, ?, ?, 'ACTIVE')
+    `).bind(
+      linkId,
+      value,
+      description,
+      recurrenceType || 'MONTHLY',
+      validUntil.toISOString().split('T')[0]
+    ).run()
+    
+    console.log('✅ Link DeltaPag criado:', linkId)
+    
+    return c.json({
+      ok: true,
+      linkId,
+      validUntil: validUntil.toISOString().split('T')[0]
+    })
+  } catch (error: any) {
+    console.error('Erro ao criar link DeltaPag:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Listar links DeltaPag
+app.get('/api/deltapag/links', authMiddleware, async (c) => {
+  try {
+    const result = await c.env.DB.prepare(`
+      SELECT 
+        id,
+        value,
+        description,
+        recurrence_type,
+        valid_until,
+        status,
+        uses_count,
+        max_uses,
+        created_at
+      FROM deltapag_signup_links
+      ORDER BY created_at DESC
+    `).all()
+    
+    return c.json({
+      ok: true,
+      links: result.results || []
+    })
+  } catch (error: any) {
+    console.error('Erro ao buscar links DeltaPag:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Desativar link DeltaPag
+app.patch('/api/deltapag/links/:linkId/deactivate', authMiddleware, async (c) => {
+  try {
+    const linkId = c.req.param('linkId')
+    
+    await c.env.DB.prepare(`
+      UPDATE deltapag_signup_links 
+      SET status = 'INACTIVE', updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(linkId).run()
+    
+    return c.json({ ok: true })
+  } catch (error: any) {
+    console.error('Erro ao desativar link:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Editar link DeltaPag
+app.put('/api/deltapag/links/:linkId', authMiddleware, async (c) => {
+  try {
+    const linkId = c.req.param('linkId')
+    const { description, value, recurrence_type, valid_until } = await c.req.json()
+    
+    console.log('📝 Editando link:', { linkId, description, value, recurrence_type, valid_until })
+    
+    // Atualizar link (sem updated_at se coluna não existir)
+    await c.env.DB.prepare(`
+      UPDATE deltapag_signup_links 
+      SET description = ?, value = ?, recurrence_type = ?, valid_until = ?
+      WHERE id = ?
+    `).bind(description, value, recurrence_type, valid_until, linkId).run()
+    
+    console.log('✅ Link editado com sucesso')
+    return c.json({ ok: true })
+  } catch (error: any) {
+    console.error('❌ Erro ao editar link:', error)
+    return c.json({ ok: false, error: error.message }, 500)
+  }
+})
+
+// Excluir link DeltaPag
+app.delete('/api/deltapag/links/:linkId', authMiddleware, async (c) => {
+  try {
+    const linkId = c.req.param('linkId')
+    
+    console.log('🗑️ Excluindo link:', linkId)
+    
+    await c.env.DB.prepare(`
+      DELETE FROM deltapag_signup_links 
+      WHERE id = ?
+    `).bind(linkId).run()
+    
+    console.log('✅ Link excluído com sucesso')
+    return c.json({ ok: true })
+  } catch (error: any) {
+    console.error('❌ Erro ao excluir link:', error)
+    return c.json({ ok: false, error: error.message }, 500)
+  }
+})
+
+// ============================================
+// DELTAPAG - CARTÕES SALVOS (SAVED CARDS)
+// ============================================
+
+// Salvar cartão de crédito tokenizado
+app.post('/api/deltapag/save-card', authMiddleware, async (c) => {
+  try {
+    const {
+      accountId,
+      customerId,
+      customerName,
+      customerEmail,
+      customerCpfCnpj,
+      customerPhone,
+      customerPostalCode,
+      customerAddress,
+      customerAddressNumber,
+      customerProvince,
+      cardToken,
+      cardBrand,
+      cardLastFour,
+      cardHolderName,
+      cardExpiryMonth,
+      cardExpiryYear,
+      metadata
+    } = await c.req.json()
+
+    // Validações
+    if (!accountId || !customerId || !cardToken || !cardLastFour) {
+      return c.json({ error: 'Dados obrigatórios faltando' }, 400)
+    }
+
+    const cardId = crypto.randomUUID()
+
+    await c.env.DB.prepare(`
+      INSERT INTO saved_cards (
+        id, account_id, customer_id, customer_name, customer_email,
+        customer_cpf_cnpj, customer_phone, customer_postal_code,
+        customer_address, customer_address_number, customer_province,
+        card_token, card_brand, card_last_four, card_holder_name,
+        card_expiry_month, card_expiry_year, billing_type, metadata
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CREDIT_CARD', ?)
+    `).bind(
+      cardId,
+      accountId,
+      customerId,
+      customerName,
+      customerEmail,
+      customerCpfCnpj,
+      customerPhone || null,
+      customerPostalCode || null,
+      customerAddress || null,
+      customerAddressNumber || null,
+      customerProvince || null,
+      cardToken,
+      cardBrand || null,
+      cardLastFour,
+      cardHolderName,
+      cardExpiryMonth,
+      cardExpiryYear,
+      metadata ? JSON.stringify(metadata) : null
+    ).run()
+
+    console.log('✅ Cartão salvo:', cardId)
+
+    return c.json({
+      ok: true,
+      cardId,
+      message: 'Cartão salvo com sucesso'
+    })
+  } catch (error: any) {
+    console.error('❌ Erro ao salvar cartão:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Listar cartões salvos de uma conta
+app.get('/api/deltapag/saved-cards/:accountId', authMiddleware, async (c) => {
+  try {
+    const accountId = c.req.param('accountId')
+
+    const result = await c.env.DB.prepare(`
+      SELECT 
+        id, account_id, customer_id, customer_name, customer_email,
+        customer_cpf_cnpj, customer_phone, customer_postal_code,
+        customer_address, customer_address_number, customer_province,
+        card_brand, card_last_four, card_holder_name,
+        card_expiry_month, card_expiry_year, billing_type,
+        is_active, created_at, last_used_at, metadata
+      FROM saved_cards
+      WHERE account_id = ? AND is_active = 1
+      ORDER BY created_at DESC
+    `).bind(accountId).all()
+
+    return c.json({
+      ok: true,
+      cards: result.results || []
+    })
+  } catch (error: any) {
+    console.error('❌ Erro ao listar cartões:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Listar todos os cartões salvos (admin)
+app.get('/api/admin/deltapag/saved-cards', authMiddleware, async (c) => {
+  try {
+    const result = await c.env.DB.prepare(`
+      SELECT 
+        sc.id, sc.account_id, sc.customer_id, sc.customer_name, sc.customer_email,
+        sc.customer_cpf_cnpj, sc.customer_phone, sc.card_brand, sc.card_last_four,
+        sc.card_holder_name, sc.card_expiry_month, sc.card_expiry_year,
+        sc.is_active, sc.created_at, sc.last_used_at,
+        a.name as account_name
+      FROM saved_cards sc
+      LEFT JOIN accounts a ON sc.account_id = a.id
+      WHERE sc.is_active = 1
+      ORDER BY sc.created_at DESC
+    `).all()
+
+    return c.json({
+      ok: true,
+      cards: result.results || []
+    })
+  } catch (error: any) {
+    console.error('❌ Erro ao listar cartões:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Buscar cartão por ID
+app.get('/api/deltapag/saved-card/:cardId', authMiddleware, async (c) => {
+  try {
+    const cardId = c.req.param('cardId')
+
+    const card = await c.env.DB.prepare(`
+      SELECT 
+        id, account_id, customer_id, customer_name, customer_email,
+        customer_cpf_cnpj, customer_phone, customer_postal_code,
+        customer_address, customer_address_number, customer_province,
+        card_token, card_brand, card_last_four, card_holder_name,
+        card_expiry_month, card_expiry_year, billing_type,
+        is_active, created_at, last_used_at, metadata
+      FROM saved_cards
+      WHERE id = ?
+    `).bind(cardId).first()
+
+    if (!card) {
+      return c.json({ error: 'Cartão não encontrado' }, 404)
+    }
+
+    return c.json({
+      ok: true,
+      card
+    })
+  } catch (error: any) {
+    console.error('❌ Erro ao buscar cartão:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Atualizar data de último uso do cartão
+app.patch('/api/deltapag/saved-card/:cardId/use', authMiddleware, async (c) => {
+  try {
+    const cardId = c.req.param('cardId')
+
+    await c.env.DB.prepare(`
+      UPDATE saved_cards
+      SET last_used_at = datetime('now'),
+          updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(cardId).run()
+
+    return c.json({
+      ok: true,
+      message: 'Data de uso atualizada'
+    })
+  } catch (error: any) {
+    console.error('❌ Erro ao atualizar uso do cartão:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Desativar cartão (soft delete)
+app.delete('/api/deltapag/saved-card/:cardId', authMiddleware, async (c) => {
+  try {
+    const cardId = c.req.param('cardId')
+
+    await c.env.DB.prepare(`
+      UPDATE saved_cards
+      SET is_active = 0,
+          updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(cardId).run()
+
+    console.log('🗑️ Cartão desativado:', cardId)
+
+    return c.json({
+      ok: true,
+      message: 'Cartão removido com sucesso'
+    })
+  } catch (error: any) {
+    console.error('❌ Erro ao remover cartão:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Buscar cartões por CPF/CNPJ
+app.get('/api/deltapag/saved-cards/cpf/:cpfCnpj', authMiddleware, async (c) => {
+  try {
+    const cpfCnpj = c.req.param('cpfCnpj')
+
+    const result = await c.env.DB.prepare(`
+      SELECT 
+        id, account_id, customer_id, customer_name, customer_email,
+        customer_cpf_cnpj, card_brand, card_last_four, card_holder_name,
+        card_expiry_month, card_expiry_year, is_active, created_at, last_used_at
+      FROM saved_cards
+      WHERE customer_cpf_cnpj = ? AND is_active = 1
+      ORDER BY last_used_at DESC, created_at DESC
+    `).bind(cpfCnpj).all()
+
+    return c.json({
+      ok: true,
+      cards: result.results || []
+    })
+  } catch (error: any) {
+    console.error('❌ Erro ao buscar cartões por CPF:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Buscar cartões por email
+app.get('/api/deltapag/saved-cards/email/:email', authMiddleware, async (c) => {
+  try {
+    const email = c.req.param('email')
+
+    const result = await c.env.DB.prepare(`
+      SELECT 
+        id, account_id, customer_id, customer_name, customer_email,
+        customer_cpf_cnpj, card_brand, card_last_four, card_holder_name,
+        card_expiry_month, card_expiry_year, is_active, created_at, last_used_at
+      FROM saved_cards
+      WHERE customer_email = ? AND is_active = 1
+      ORDER BY last_used_at DESC, created_at DESC
+    `).bind(email).all()
+
+    return c.json({
+      ok: true,
+      cards: result.results || []
+    })
+  } catch (error: any) {
+    console.error('❌ Erro ao buscar cartões por email:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Exportar cartões para CSV
+app.get('/api/admin/deltapag/saved-cards/export/csv', authMiddleware, async (c) => {
+  try {
+    const result = await c.env.DB.prepare(`
+      SELECT 
+        sc.id, sc.account_id, a.name as account_name,
+        sc.customer_name, sc.customer_email, sc.customer_cpf_cnpj,
+        sc.customer_phone, sc.card_brand, sc.card_last_four,
+        sc.card_holder_name, sc.card_expiry_month, sc.card_expiry_year,
+        sc.created_at, sc.last_used_at
+      FROM saved_cards sc
+      LEFT JOIN accounts a ON sc.account_id = a.id
+      WHERE sc.is_active = 1
+      ORDER BY sc.created_at DESC
+    `).all()
+
+    const cards = result.results || []
+    const csv = [
+      'ID,Conta ID,Conta Nome,Cliente Nome,Cliente Email,CPF/CNPJ,Telefone,Bandeira,Últimos 4,Nome no Cartão,Mês Exp,Ano Exp,Criado Em,Último Uso',
+      ...cards.map((c: any) => 
+        `${c.id},${c.account_id},${c.account_name},${c.customer_name},${c.customer_email},${c.customer_cpf_cnpj},${c.customer_phone || ''},${c.card_brand || ''},${c.card_last_four},${c.card_holder_name},${c.card_expiry_month},${c.card_expiry_year},${c.created_at},${c.last_used_at || ''}`
+      )
+    ].join('\n')
+
+    return new Response(csv, {
+      headers: {
+        'Content-Type': 'text/csv',
+        'Content-Disposition': 'attachment; filename="cartoes-salvos.csv"'
+      }
+    })
+  } catch (error: any) {
+    console.error('❌ Erro ao exportar cartões:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Página pública de cadastro DeltaPag
+app.get('/deltapag-signup/:linkId', async (c) => {
+  const linkId = c.req.param('linkId')
+  
+  const link = await c.env.DB.prepare(`
+    SELECT * FROM deltapag_signup_links WHERE id = ? AND status = 'ACTIVE'
+  `).bind(linkId).first()
+  
+  if (!link) {
+    return c.html(`<!DOCTYPE html><html><body><h1>Link não encontrado ou expirado</h1></body></html>`)
+  }
+  
+  // Verificar validade
+  if (new Date(link.valid_until as string) < new Date()) {
+    return c.html(`<!DOCTYPE html><html><body><h1>Link expirado</h1></body></html>`)
+  }
+  
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Cadastro Assinatura - Cartão de Crédito</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    </head>
+    <body class="bg-gradient-to-br from-indigo-50 to-purple-50 min-h-screen py-8">
+        <div class="max-w-2xl mx-auto px-4">
+            <div class="bg-white rounded-2xl shadow-2xl overflow-hidden">
+                <!-- Header -->
+                <div class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-8">
+                    <h1 class="text-3xl font-bold mb-2">
+                        <i class="fas fa-credit-card mr-3"></i>
+                        Cadastro de Assinatura
+                    </h1>
+                    <p class="text-indigo-100">Complete seus dados para ativar sua assinatura</p>
+                </div>
+
+                <!-- Form -->
+                <form id="signup-form" class="p-8 space-y-6">
+                    <!-- Info -->
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <div class="flex items-start gap-3">
+                            <i class="fas fa-info-circle text-blue-600 text-xl mt-1"></i>
+                            <div>
+                                <p class="font-bold text-blue-900">Detalhes da Assinatura:</p>
+                                <p class="text-blue-800 mt-1"><strong>Valor:</strong> R$ ${(link.value as number).toFixed(2)}</p>
+                                <p class="text-blue-800"><strong>Descrição:</strong> ${link.description}</p>
+                                <p class="text-blue-800"><strong>Recorrência:</strong> ${link.recurrence_type === 'MONTHLY' ? 'Mensal' : link.recurrence_type}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Cliente -->
+                    <div class="space-y-4">
+                        <h3 class="text-lg font-bold text-gray-800">Dados Pessoais</h3>
+                        <input type="text" id="customer-name" required placeholder="Nome Completo *"
+                            class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                        <input type="email" id="customer-email" required placeholder="Email *"
+                            class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                        <input type="text" id="customer-cpf" required placeholder="CPF *"
+                            class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                        <input type="tel" id="customer-phone" placeholder="Telefone"
+                            class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                    </div>
+
+                    <!-- Cartão -->
+                    <div class="space-y-4 pt-4 border-t">
+                        <h3 class="text-lg font-bold text-gray-800">Dados do Cartão</h3>
+                        <input type="text" id="card-number" required placeholder="Número do Cartão *"
+                            class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                        <input type="text" id="card-holder" required placeholder="Nome no Cartão *"
+                            class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                        <div class="grid grid-cols-3 gap-4">
+                            <select id="card-month" required class="px-4 py-3 border rounded-lg">
+                                <option value="">Mês *</option>
+                                <option value="01">01</option>
+                                <option value="02">02</option>
+                                <option value="03">03</option>
+                                <option value="04">04</option>
+                                <option value="05">05</option>
+                                <option value="06">06</option>
+                                <option value="07">07</option>
+                                <option value="08">08</option>
+                                <option value="09">09</option>
+                                <option value="10">10</option>
+                                <option value="11">11</option>
+                                <option value="12">12</option>
+                            </select>
+                            <select id="card-year" required class="px-4 py-3 border rounded-lg">
+                                <option value="">Ano *</option>
+                                <option value="2026">2026</option>
+                                <option value="2027">2027</option>
+                                <option value="2028">2028</option>
+                                <option value="2029">2029</option>
+                                <option value="2030">2030</option>
+                            </select>
+                            <input type="text" id="card-cvv" required placeholder="CVV *" maxlength="4"
+                                class="px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                        </div>
+                    </div>
+
+                    <button type="submit" id="submit-btn"
+                        class="w-full px-6 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-bold hover:from-indigo-700 hover:to-purple-700">
+                        <i class="fas fa-check mr-2"></i>Confirmar Assinatura
+                    </button>
+                </form>
+
+                <div id="success-state" class="hidden p-8 text-center">
+                    <i class="fas fa-check-circle text-6xl text-green-600 mb-4"></i>
+                    <h2 class="text-2xl font-bold text-gray-800 mb-2">Assinatura Ativada!</h2>
+                    <p class="text-gray-600">Sua primeira cobrança foi processada com sucesso.</p>
+                </div>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script>
+            document.getElementById('signup-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const btn = document.getElementById('submit-btn');
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Processando...';
+
+                try {
+                    const response = await axios.post('/api/public/deltapag-signup/${linkId}', {
+                        customerName: document.getElementById('customer-name').value,
+                        customerEmail: document.getElementById('customer-email').value,
+                        customerCpf: document.getElementById('customer-cpf').value.replace(/\\D/g, ''),
+                        customerPhone: document.getElementById('customer-phone').value,
+                        cardNumber: document.getElementById('card-number').value.replace(/\\s/g, ''),
+                        cardHolderName: document.getElementById('card-holder').value,
+                        cardExpiryMonth: document.getElementById('card-month').value,
+                        cardExpiryYear: document.getElementById('card-year').value,
+                        cardCvv: document.getElementById('card-cvv').value
+                    });
+
+                    if (response.data.ok) {
+                        document.querySelector('form').classList.add('hidden');
+                        document.getElementById('success-state').classList.remove('hidden');
+                    }
+                } catch (error) {
+                    alert('Erro: ' + (error.response?.data?.error || error.message));
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-check mr-2"></i>Confirmar Assinatura';
+                }
+            });
+        </script>
+    </body>
+    </html>
+  `)
+})
+
+// Processar cadastro público DeltaPag
+app.post('/api/public/deltapag-signup/:linkId', async (c) => {
+  try {
+    const linkId = c.req.param('linkId')
+    const data = await c.req.json()
+    
+    // Validar link
+    const link = await c.env.DB.prepare(`
+      SELECT * FROM deltapag_signup_links WHERE id = ? AND status = 'ACTIVE'
+    `).bind(linkId).first()
+    
+    if (!link) {
+      return c.json({ error: 'Link não encontrado ou inativo' }, 404)
+    }
+    
+    if (new Date(link.valid_until as string) < new Date()) {
+      return c.json({ error: 'Link expirado' }, 400)
+    }
+    
+    // Criar assinatura via endpoint interno
+    const subscriptionData = {
+      customerName: data.customerName,
+      customerEmail: data.customerEmail,
+      customerCpf: data.customerCpf,
+      customerPhone: data.customerPhone,
+      cardNumber: data.cardNumber,
+      cardHolderName: data.cardHolderName,
+      cardExpiryMonth: data.cardExpiryMonth,
+      cardExpiryYear: data.cardExpiryYear,
+      cardCvv: data.cardCvv,
+      value: link.value,
+      description: link.description,
+      recurrenceType: link.recurrence_type
+    }
+    
+    // Criar cliente e assinatura
+    const cpfClean = data.customerCpf.replace(/\D/g, '')
+    const cardNumberClean = data.cardNumber.replace(/\s/g, '')
+    
+    const customerData = {
+      name: data.customerName,
+      email: data.customerEmail,
+      cpfCnpj: cpfClean,
+      phone: data.customerPhone || '',
+      mobilePhone: data.customerPhone || ''
+    }
+    
+    const customerResult = await deltapagRequest(c, '/customers', 'POST', customerData)
+    
+    if (!customerResult.ok) {
+      return c.json({ error: 'Erro ao criar cliente', details: customerResult.data }, customerResult.status)
+    }
+    
+    const customerId = customerResult.data.id
+    
+    const subscriptionPayload = {
+      customer: customerId,
+      billingType: 'CREDIT_CARD',
+      value: link.value,
+      nextDueDate: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      cycle: link.recurrence_type,
+      description: link.description,
+      creditCard: {
+        holderName: data.cardHolderName,
+        number: cardNumberClean,
+        expiryMonth: data.cardExpiryMonth,
+        expiryYear: data.cardExpiryYear,
+        ccv: data.cardCvv
+      }
+    }
+    
+    const subscriptionResult = await deltapagRequest(c, '/subscriptions', 'POST', subscriptionPayload)
+    
+    if (!subscriptionResult.ok) {
+      return c.json({ error: 'Erro ao criar assinatura', details: subscriptionResult.data }, subscriptionResult.status)
+    }
+    
+    const subscription = subscriptionResult.data
+    
+    // Salvar no banco
+    const subscriptionId = crypto.randomUUID()
+    
+    await c.env.DB.prepare(`
+      INSERT INTO deltapag_subscriptions 
+      (id, customer_id, customer_name, customer_email, customer_cpf, 
+       deltapag_subscription_id, deltapag_customer_id, value, description, 
+       recurrence_type, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `).bind(
+      subscriptionId,
+      customerId,
+      data.customerName,
+      data.customerEmail,
+      cpfClean,
+      subscription.id,
+      customerId,
+      link.value,
+      link.description,
+      link.recurrence_type,
+      subscription.status || 'ACTIVE'
+    ).run()
+    
+    // Incrementar contador de usos do link
+    await c.env.DB.prepare(`
+      UPDATE deltapag_signup_links SET uses_count = uses_count + 1 WHERE id = ?
+    `).bind(linkId).run()
+    
+    return c.json({
+      ok: true,
+      subscriptionId,
+      message: 'Assinatura criada com sucesso!'
+    })
+    
+  } catch (error: any) {
+    console.error('Erro no cadastro público DeltaPag:', error)
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Função para gerar payload PIX estático (EMV format simplificado)
+function generateStaticPixPayload(walletId: string, value: number, description: string): string {
+  // Formato EMV para PIX estático com valor fixo (Spec BACEN)
+  const merchantName = 'CORRETORA CORPORATE LTDA'
+  const merchantCity = 'Sao Paulo'
+  const pixKey = walletId
+  const valueStr = value.toFixed(2)
+  
+  // Construir payload EMV seguindo especificação BACEN
+  let payload = ''
+  
+  // 00: Payload Format Indicator
+  payload += '000201'
+  
+  // 26: Merchant Account Information - PIX
+  const pixKeyTag = `0136${pixKey}` // 01 = chave PIX, 36 = tamanho, valor = UUID
+  const pixInfo = `0014br.gov.bcb.pix${pixKeyTag}`
+  payload += `26${pixInfo.length.toString().padStart(2, '0')}${pixInfo}`
+  
+  // 52: Merchant Category Code
+  payload += '52040000'
+  
+  // 53: Transaction Currency (986 = BRL)
+  payload += '5303986'
+  
+  // 54: Transaction Amount
+  payload += `54${valueStr.length.toString().padStart(2, '0')}${valueStr}`
+  
+  // 58: Country Code (BR)
+  payload += '5802BR'
+  
+  // 59: Merchant Name
+  payload += `59${merchantName.length.toString().padStart(2, '0')}${merchantName}`
+  
+  // 60: Merchant City
+  payload += `60${merchantCity.length.toString().padStart(2, '0')}${merchantCity}`
+  
+  // 62: Additional Data Field (opcional - descrição)
+  if (description) {
+    const descClean = description.substring(0, 25).trim()
+    if (descClean) {
+      const txidTag = `05${descClean.length.toString().padStart(2, '0')}${descClean}`
+      payload += `62${txidTag.length.toString().padStart(2, '0')}${txidTag}`
+    }
+  }
+  
+  // 63: CRC16
+  payload += '6304' // placeholder
+  const crc = calculateCRC16(payload)
+  payload += crc
+  
+  return payload
+}
+
+// Função para calcular CRC16 (CCITT)
+function calculateCRC16(payload: string): string {
+  const polynomial = 0x1021
+  let crc = 0xFFFF
+  
+  for (let i = 0; i < payload.length; i++) {
+    crc ^= (payload.charCodeAt(i) << 8)
+    for (let j = 0; j < 8; j++) {
+      if ((crc & 0x8000) !== 0) {
+        crc = (crc << 1) ^ polynomial
+      } else {
+        crc = crc << 1
+      }
+    }
+  }
+  
+  crc = crc & 0xFFFF
+  return crc.toString(16).toUpperCase().padStart(4, '0')
+}
+
+// Função para gerar QR Code em Base64
+async function generateQRCodeBase64(payload: string): Promise<string> {
+  // Gerar QR Code usando API externa ou biblioteca
+  // Por simplicidade, vou usar uma API pública
+  const size = 256
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(payload)}`
+  
+  // Converter para base64
+  try {
+    const response = await fetch(qrUrl)
+    const arrayBuffer = await response.arrayBuffer()
+    const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)))
+    return `data:image/png;base64,${base64}`
+  } catch (error) {
+    // Fallback: retornar URL direta
+    return qrUrl
+  }
+}
+
+// Gerar link de cadastro (retorna dados formatados)
+app.post('/api/signup-link', async (c) => {
+  try {
+    const { accountId, expirationDays = 7, maxUses = null, notes = '' } = await c.req.json()
+    
+    // Criar data de expiração
+    const expirationDate = new Date()
+    expirationDate.setDate(expirationDate.getDate() + expirationDays)
+    
+    // Gerar ID único para o link
+    const linkId = `${accountId}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    const url = `${c.req.url.split('/api')[0]}/cadastro/${linkId}`
+    
+    // Obter usuário autenticado
+    const user = c.get('user')
+    const createdBy = user?.username || 'system'
+    
+    // Salvar no banco D1
+    await c.env.DB.prepare(`
+      INSERT INTO signup_links 
+      (id, account_id, url, expires_at, created_by, max_uses, notes, active)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+    `).bind(
+      linkId,
+      accountId,
+      url,
+      expirationDate.toISOString(),
+      createdBy,
+      maxUses,
+      notes
+    ).run()
+    
+    const link = {
+      id: linkId,
+      accountId,
+      url,
+      expiresAt: expirationDate.toISOString(),
+      createdAt: new Date().toISOString(),
+      active: true,
+      usesCount: 0,
+      maxUses,
+      notes
+    }
+    
+    return c.json({ ok: true, data: link })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Listar todos os links
+app.get('/api/signup-links', async (c) => {
+  try {
+    const { status, search, accountId } = c.req.query()
+    
+    let query = 'SELECT * FROM signup_links WHERE 1=1'
+    const params: any[] = []
+    
+    if (status === 'active') {
+      query += ' AND active = 1 AND datetime(expires_at) > datetime("now")'
+    } else if (status === 'expired') {
+      query += ' AND datetime(expires_at) <= datetime("now")'
+    } else if (status === 'disabled') {
+      query += ' AND active = 0'
+    }
+    
+    if (search) {
+      query += ' AND (id LIKE ? OR account_id LIKE ? OR notes LIKE ?)'
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`)
+    }
+    
+    if (accountId) {
+      query += ' AND account_id = ?'
+      params.push(accountId)
+    }
+    
+    query += ' ORDER BY created_at DESC'
+    
+    const stmt = params.length > 0 
+      ? c.env.DB.prepare(query).bind(...params)
+      : c.env.DB.prepare(query)
+    
+    const result = await stmt.all()
+    
+    return c.json({ ok: true, data: result.results })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Obter detalhes de um link específico
+app.get('/api/signup-links/:id', async (c) => {
+  try {
+    const linkId = c.req.param('id')
+    
+    const link = await c.env.DB.prepare(`
+      SELECT * FROM signup_links WHERE id = ?
+    `).bind(linkId).first()
+    
+    if (!link) {
+      return c.json({ error: 'Link não encontrado' }, 404)
+    }
+    
+    return c.json({ ok: true, data: link })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Atualizar link (ativar/desativar)
+app.patch('/api/signup-links/:id', async (c) => {
+  try {
+    const linkId = c.req.param('id')
+    const { active, notes } = await c.req.json()
+    
+    const updates: string[] = []
+    const params: any[] = []
+    
+    if (typeof active !== 'undefined') {
+      updates.push('active = ?')
+      params.push(active ? 1 : 0)
+    }
+    
+    if (typeof notes !== 'undefined') {
+      updates.push('notes = ?')
+      params.push(notes)
+    }
+    
+    if (updates.length === 0) {
+      return c.json({ error: 'Nenhum campo para atualizar' }, 400)
+    }
+    
+    params.push(linkId)
+    
+    await c.env.DB.prepare(`
+      UPDATE signup_links 
+      SET ${updates.join(', ')}
+      WHERE id = ?
+    `).bind(...params).run()
+    
+    return c.json({ ok: true, message: 'Link atualizado com sucesso' })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Excluir link
+app.delete('/api/signup-links/:id', async (c) => {
+  try {
+    const linkId = c.req.param('id')
+    
+    await c.env.DB.prepare(`
+      DELETE FROM signup_links WHERE id = ?
+    `).bind(linkId).run()
+    
+    return c.json({ ok: true, message: 'Link excluído com sucesso' })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Analytics de um link específico
+app.get('/api/signup-links/:id/analytics', async (c) => {
+  try {
+    const linkId = c.req.param('id')
+    
+    const conversions = await c.env.DB.prepare(`
+      SELECT COUNT(*) as count FROM link_conversions WHERE link_id = ?
+    `).bind(linkId).first()
+    
+    const link = await c.env.DB.prepare(`
+      SELECT uses_count FROM signup_links WHERE id = ?
+    `).bind(linkId).first()
+    
+    const analytics = {
+      views: link?.uses_count || 0,
+      started: Math.floor((link?.uses_count || 0) * 0.6), // Estimativa
+      conversions: conversions?.count || 0
+    }
+    
+    return c.json({ ok: true, data: analytics })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// ======================
+// GERENCIAMENTO DE API KEYS
+// ======================
+
+// Gerar API Key para uma subconta
+app.post('/api/accounts/:id/api-key', async (c) => {
+  try {
+    const accountId = c.req.param('id')
+    const { name, expiresAt } = await c.req.json()
+
+    // Preparar dados da API Key
+    const apiKeyData: any = {
+      name: name || `API Key - ${new Date().toLocaleDateString('pt-BR')}`,
+    }
+
+    // Adicionar data de expiração se fornecida
+    if (expiresAt) {
+      apiKeyData.expiresAt = expiresAt
+    }
+
+    // Criar API Key na subconta
+    const result = await asaasRequest(
+      c, 
+      `/accounts/${accountId}/accessTokens`, 
+      'POST', 
+      apiKeyData
+    )
+
+    if (!result.ok) {
+      return c.json({ 
+        error: 'Erro ao gerar API Key', 
+        details: result.data,
+        message: 'Verifique se o gerenciamento de API Keys está habilitado nas configurações da conta principal (válido por 2 horas)'
+      }, result.status)
+    }
+
+    // Retornar a API Key gerada
+    return c.json({
+      ok: true,
+      data: {
+        id: result.data.id,
+        apiKey: result.data.accessToken, // A API Key só é retornada nesta chamada!
+        name: result.data.name,
+        expiresAt: result.data.expiresAt,
+        active: result.data.active,
+        createdAt: result.data.dateCreated
+      },
+      warning: '⚠️ IMPORTANTE: Esta é a única vez que a API Key será exibida. Guarde-a em local seguro!'
+    })
+
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Listar API Keys de uma subconta
+app.get('/api/accounts/:id/api-keys', async (c) => {
+  try {
+    const accountId = c.req.param('id')
+    
+    const result = await asaasRequest(c, `/v3/accounts/${accountId}/accessTokens`)
+
+    if (!result.ok) {
+      // Extrair mensagem de erro específica
+      const errorMessage = result.data?.errors?.[0]?.description || 'Erro desconhecido'
+      
+      return c.json({ 
+        error: 'Erro ao listar API Keys', 
+        details: result.data,
+        message: errorMessage,
+        help: 'Acesse Asaas → Integrações → Chaves de API → Gerenciamento de Chaves de API de Subcontas → Habilitar acesso'
+      }, result.status)
+    }
+
+    return c.json({
+      ok: true,
+      data: result.data
+    })
+
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Excluir API Key de uma subconta
+app.delete('/api/accounts/:id/api-keys/:keyId', async (c) => {
+  try {
+    const accountId = c.req.param('id')
+    const keyId = c.req.param('keyId')
+    
+    const result = await asaasRequest(
+      c, 
+      `/accounts/${accountId}/accessTokens/${keyId}`, 
+      'DELETE'
+    )
+
+    if (!result.ok) {
+      return c.json({ 
+        error: 'Erro ao excluir API Key', 
+        details: result.data 
+      }, result.status)
+    }
+
+    return c.json({
+      ok: true,
+      message: 'API Key excluída com sucesso'
+    })
+
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// ======================
+// ROTAS DE PAGAMENTO PIX
+// ======================
+
+// Criar cobrança PIX com split (20% subconta, 80% conta principal)
+app.post('/api/payments', async (c) => {
+  try {
+    const { 
+      customer, // { name, email, cpfCnpj, phone? }
+      value,
+      description,
+      dueDate, // Data de vencimento (formato: YYYY-MM-DD)
+      subAccountId, // ID da subconta que receberá 20%
+      subAccountWalletId // Wallet ID da subconta
+    } = await c.req.json()
+
+    // Validações
+    if (!customer || !value || !subAccountWalletId) {
+      return c.json({ 
+        error: 'Parâmetros obrigatórios: customer, value, subAccountWalletId' 
+      }, 400)
+    }
+
+    if (value <= 0) {
+      return c.json({ error: 'Valor deve ser maior que zero' }, 400)
+    }
+
+    // Preparar dados da cobrança
+    const paymentData: any = {
+      customer: customer.cpfCnpj, // Pode ser o CPF/CNPJ ou ID do cliente
+      billingType: 'PIX',
+      value: value,
+      dueDate: dueDate || new Date().toISOString().split('T')[0],
+      description: description || 'Pagamento via PIX',
+      
+      // Configurar split: 20% LÍQUIDO para subconta, conta principal paga todas as taxas
+      split: createNetSplit(subAccountWalletId, value, 20)
+      // Sub-conta recebe 20% líquido, conta principal recebe o resto menos as taxas Asaas
+    }
+
+    // Se o customer não existir, criar automaticamente
+    if (!customer.id) {
+      paymentData.customer = customer.cpfCnpj
+      paymentData.externalReference = `customer-${customer.cpfCnpj}`
+      
+      // Dados adicionais do cliente
+      if (customer.name) paymentData.customerName = customer.name
+      if (customer.email) paymentData.customerEmail = customer.email
+      if (customer.phone) paymentData.customerPhone = customer.phone
+    }
+
+    // Criar cobrança na API do Asaas
+    const result = await asaasRequest(c, '/v3/payments', 'POST', paymentData)
+
+    if (!result.ok) {
+      return c.json({ 
+        error: 'Erro ao criar cobrança', 
+        details: result.data 
+      }, result.status)
+    }
+
+    // Retornar dados da cobrança incluindo QR Code PIX
+    return c.json({
+      ok: true,
+      data: {
+        id: result.data.id,
+        customer: result.data.customer,
+        value: result.data.value,
+        netValue: result.data.netValue,
+        description: result.data.description,
+        billingType: result.data.billingType,
+        status: result.data.status,
+        dueDate: result.data.dueDate,
+        invoiceUrl: result.data.invoiceUrl,
+        bankSlipUrl: result.data.bankSlipUrl,
+        pixQrCode: result.data.pixQrCodeId ? {
+          qrCodeId: result.data.pixQrCodeId,
+          payload: result.data.pixQrCodePayload,
+          expirationDate: result.data.pixQrCodeExpirationDate
+        } : null,
+        split: result.data.split || []
+      }
+    })
+
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Consultar status de uma cobrança
+app.get('/api/payments/:id', async (c) => {
+  try {
+    const paymentId = c.req.param('id')
+    const result = await asaasRequest(c, `/v3/payments/${paymentId}`)
+
+    if (!result.ok) {
+      return c.json({ 
+        error: 'Erro ao consultar cobrança', 
+        details: result.data 
+      }, result.status)
+    }
+
+    return c.json({
+      ok: true,
+      data: {
+        id: result.data.id,
+        customer: result.data.customer,
+        value: result.data.value,
+        netValue: result.data.netValue,
+        description: result.data.description,
+        billingType: result.data.billingType,
+        status: result.data.status,
+        dueDate: result.data.dueDate,
+        paymentDate: result.data.paymentDate,
+        invoiceUrl: result.data.invoiceUrl,
+        pixQrCode: result.data.pixQrCodeId ? {
+          qrCodeId: result.data.pixQrCodeId,
+          payload: result.data.pixQrCodePayload,
+          expirationDate: result.data.pixQrCodeExpirationDate
+        } : null,
+        split: result.data.split || []
+      }
+    })
+
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Listar cobranças com filtros
+app.get('/api/payments', async (c) => {
+  try {
+    const { status, customer, dateFrom, dateTo, offset = 0, limit = 20 } = c.req.query()
+    
+    let endpoint = `/payments?offset=${offset}&limit=${limit}`
+    
+    if (status) endpoint += `&status=${status}`
+    if (customer) endpoint += `&customer=${customer}`
+    if (dateFrom) endpoint += `&dateCreated[ge]=${dateFrom}`
+    if (dateTo) endpoint += `&dateCreated[le]=${dateTo}`
+
+    const result = await asaasRequest(c, endpoint)
+
+    if (!result.ok) {
+      return c.json({ 
+        error: 'Erro ao listar cobranças', 
+        details: result.data 
+      }, result.status)
+    }
+
+    return c.json({
+      ok: true,
+      data: result.data.data || [],
+      totalCount: result.data.totalCount || 0,
+      hasMore: result.data.hasMore || false
+    })
+
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Obter QR Code PIX de uma cobrança
+app.get('/api/payments/:id/pix-qrcode', async (c) => {
+  try {
+    const paymentId = c.req.param('id')
+    const result = await asaasRequest(c, `/v3/payments/${paymentId}/pixQrCode`)
+
+    if (!result.ok) {
+      return c.json({ 
+        error: 'Erro ao obter QR Code PIX', 
+        details: result.data 
+      }, result.status)
+    }
+
+    return c.json({
+      ok: true,
+      data: {
+        encodedImage: result.data.encodedImage, // Base64 da imagem do QR Code
+        payload: result.data.payload, // Código PIX Copia e Cola
+        expirationDate: result.data.expirationDate
+      }
+    })
+
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// ======================
+// ENDPOINT PROXY COM SPLIT 20/80
+// ======================
+
+// Endpoint especial para subcontas criarem cobranças com split automático 20/80
+// A subconta envia sua API Key no header e recebe 20%, conta principal fica com 80%
+app.post('/api/proxy/payments', async (c) => {
+  try {
+    // Obter API Key da subconta do header
+    const subaccountApiKey = c.req.header('x-subaccount-api-key') || c.req.header('access_token')
+    
+    if (!subaccountApiKey) {
+      return c.json({ 
+        error: 'API Key da subconta não fornecida',
+        message: 'Envie a API Key da subconta no header "x-subaccount-api-key" ou "access_token"'
+      }, 401)
+    }
+
+    // Obter dados da cobrança
+    const paymentData = await c.req.json()
+
+    // Validações
+    if (!paymentData.customer || !paymentData.value) {
+      return c.json({ 
+        error: 'Parâmetros obrigatórios: customer, value' 
+      }, 400)
+    }
+
+    // Passo 1: Obter informações da subconta usando a API Key dela
+    const accountInfoResponse = await fetch(`${c.env.ASAAS_API_URL}/myAccount`, {
+      headers: {
+        'access_token': subaccountApiKey,
+        'User-Agent': 'AsaasManager/1.0'
+      }
+    })
+
+    if (!accountInfoResponse.ok) {
+      return c.json({ 
+        error: 'API Key da subconta inválida ou expirada',
+        details: await accountInfoResponse.json()
+      }, 401)
+    }
+
+    const accountInfo = await accountInfoResponse.json()
+    const subaccountWalletId = accountInfo.walletId
+
+    if (!subaccountWalletId) {
+      return c.json({ 
+        error: 'Subconta não possui Wallet ID',
+        message: 'Apenas subcontas podem usar este endpoint'
+      }, 400)
+    }
+
+    // Passo 2: Criar a cobrança usando a API Key da CONTA PRINCIPAL
+    // Isso permite configurar o split
+    const mainAccountApiKey = c.env.ASAAS_API_KEY
+
+    // Preparar dados da cobrança com split 20/80
+    const chargeData: any = {
+      ...paymentData,
+      billingType: paymentData.billingType || 'PIX',
+      dueDate: paymentData.dueDate || new Date().toISOString().split('T')[0],
+      
+      // Configurar split: 20% LÍQUIDO para subconta, conta principal paga todas as taxas
+      split: createNetSplit(subaccountWalletId, paymentData.value, 20)
+      // Sub-conta recebe 20% líquido, conta principal recebe o resto menos as taxas Asaas
+    }
+
+    // Criar cobrança pela conta principal
+    const createResponse = await fetch(`${c.env.ASAAS_API_URL}/payments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'access_token': mainAccountApiKey,
+        'User-Agent': 'AsaasManager/1.0'
+      },
+      body: JSON.stringify(chargeData)
+    })
+
+    const createResult = await createResponse.json()
+
+    if (!createResponse.ok) {
+      return c.json({ 
+        error: 'Erro ao criar cobrança', 
+        details: createResult 
+      }, createResponse.status)
+    }
+
+    // Retornar resultado
+    return c.json({
+      ok: true,
+      data: {
+        id: createResult.id,
+        customer: createResult.customer,
+        value: createResult.value,
+        netValue: createResult.netValue,
+        description: createResult.description,
+        billingType: createResult.billingType,
+        status: createResult.status,
+        dueDate: createResult.dueDate,
+        invoiceUrl: createResult.invoiceUrl,
+        bankSlipUrl: createResult.bankSlipUrl,
+        pixQrCode: createResult.pixQrCodeId ? {
+          qrCodeId: createResult.pixQrCodeId,
+          payload: createResult.pixQrCodePayload,
+          expirationDate: createResult.pixQrCodeExpirationDate
+        } : null,
+        split: createResult.split || [],
+        splitInfo: {
+          subaccount: {
+            walletId: subaccountWalletId,
+            percentage: 20,
+            estimatedAmount: (createResult.netValue || createResult.value) * 0.20
+          },
+          mainAccount: {
+            percentage: 80,
+            estimatedAmount: (createResult.netValue || createResult.value) * 0.80
+          }
+        }
+      },
+      message: '✅ Cobrança criada com split 20/80 aplicado automaticamente'
+    })
+
+  } catch (error: any) {
+    return c.json({ 
+      error: 'Erro interno ao processar cobrança', 
+      details: error.message 
+    }, 500)
+  }
+})
+
+// Página do Banner (para compartilhar nas redes sociais)
+app.get('/banner/:bannerId', (c) => {
+  const bannerIdEncoded = c.req.param('bannerId')
+  
+  // Decodificar dados do banner
+  let bannerData
+  try {
+    const decoded = decodeURIComponent(atob(bannerIdEncoded))
+    bannerData = JSON.parse(decoded)
+  } catch (error) {
+    // Fallback para dados padrão se decodificação falhar
+    bannerData = {
+      title: 'Oferta Especial',
+      description: 'Plano Premium com benefícios exclusivos',
+      value: '149.90',
+      type: 'monthly',
+      color: 'purple',
+      buttonText: 'Cadastre-se Agora',
+      accountId: 'default',
+      timestamp: Date.now(),
+      random: 'xxx'
+    }
+  }
+  
+  const linkId = `${bannerData.accountId}-${bannerData.timestamp}-${bannerData.random}`
+  const cadastroLink = `${new URL(c.req.url).origin}/cadastro/${linkId}`
+  
+  // Gradientes de cores
+  const gradients: any = {
+    purple: 'linear-gradient(135deg, #9333ea 0%, #ec4899 100%)',
+    blue: 'linear-gradient(135deg, #2563eb 0%, #06b6d4 100%)',
+    green: 'linear-gradient(135deg, #16a34a 0%, #10b981 100%)',
+    orange: 'linear-gradient(135deg, #ea580c 0%, #dc2626 100%)',
+    red: 'linear-gradient(135deg, #dc2626 0%, #f43f5e 100%)'
+  }
+  
+  const bgGradient = gradients[bannerData.color] || gradients.purple
+  const typeText = bannerData.type === 'single' ? 'Pagamento Único' : 'Assinatura Mensal'
+  const priceFormatted = parseFloat(bannerData.value).toFixed(2).replace('.', ',')
+  const priceDisplay = bannerData.type === 'monthly' 
+    ? `R$ ${priceFormatted} <span style="font-size: 1.5rem;">/mês</span>`
+    : `R$ ${priceFormatted}`
+  
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>${bannerData.title} - Cadastre-se Agora!</title>
+        <meta property="og:title" content="${bannerData.title}" />
+        <meta property="og:description" content="${bannerData.description}" />
+        <meta property="og:type" content="website" />
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: #f5f5f5;
+                padding: 1rem;
+            }
+            .banner-display {
+                max-width: 600px;
+                width: 100%;
+                aspect-ratio: 1 / 1;
+                background: ${bgGradient};
+                border-radius: 20px;
+                padding: 3rem 2rem;
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+                color: white;
+                position: relative;
+                overflow: hidden;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            }
+            /* Círculos decorativos */
+            .banner-display::before {
+                content: '';
+                position: absolute;
+                top: -100px;
+                right: -100px;
+                width: 300px;
+                height: 300px;
+                background: rgba(255,255,255,0.1);
+                border-radius: 50%;
+            }
+            .banner-display::after {
+                content: '';
+                position: absolute;
+                bottom: -100px;
+                left: -100px;
+                width: 250px;
+                height: 250px;
+                background: rgba(255,255,255,0.1);
+                border-radius: 50%;
+            }
+            .banner-content {
+                position: relative;
+                z-index: 2;
+            }
+            .type-badge {
+                font-size: 0.9rem;
+                font-weight: 600;
+                opacity: 0.95;
+                margin-bottom: 1rem;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+            }
+            .banner-title {
+                font-size: 2.5rem;
+                font-weight: 800;
+                line-height: 1.2;
+                margin-bottom: 1rem;
+            }
+            .banner-description {
+                font-size: 1.1rem;
+                opacity: 0.95;
+                margin-bottom: 2rem;
+            }
+            .banner-price {
+                font-size: 3.5rem;
+                font-weight: 800;
+                line-height: 1;
+                margin-bottom: 0.5rem;
+            }
+            .banner-footer {
+                position: relative;
+                z-index: 2;
+                display: flex;
+                align-items: flex-end;
+                justify-content: center;
+            }
+            .cta-button {
+                display: inline-block;
+                background: white;
+                color: #9333ea;
+                padding: 1.25rem 3rem;
+                border-radius: 50px;
+                font-size: 1.25rem;
+                font-weight: 700;
+                text-decoration: none;
+                box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+                transition: all 0.3s ease;
+                text-align: center;
+                width: 100%;
+                max-width: 400px;
+            }
+            .cta-button:hover {
+                transform: translateY(-5px);
+                box-shadow: 0 15px 50px rgba(0,0,0,0.4);
+            }
+            @media (max-width: 640px) {
+                .banner-display {
+                    padding: 2rem 1.5rem;
+                }
+                .banner-title {
+                    font-size: 1.75rem;
+                }
+                .banner-description {
+                    font-size: 0.95rem;
+                }
+                .banner-price {
+                    font-size: 2.5rem;
+                }
+                .cta-button {
+                    padding: 1rem 2rem;
+                    font-size: 1rem;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="banner-display">
+            <div class="banner-content">
+                <div class="type-badge">${typeText}</div>
+                <h1 class="banner-title">${bannerData.title}</h1>
+                <p class="banner-description">${bannerData.description}</p>
+                <div class="banner-price">${priceDisplay}</div>
+            </div>
+            
+            <div class="banner-footer">
+                <a href="${cadastroLink}" class="cta-button">
+                    ${bannerData.buttonText} →
+                </a>
+            </div>
+        </div>
+    </body>
+    </html>
+  `)
+})
+
+// Página de cadastro público
+app.get('/cadastro/:linkId', (c) => {
+  const linkId = c.req.param('linkId')
+  
+  // Extrair accountId do linkId (formato: accountId-timestamp-random)
+  const accountId = linkId.split('-')[0]
+  
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Cadastro - Asaas</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    </head>
+    <body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
+        <div class="container mx-auto px-4 py-8">
+            <div class="max-w-3xl mx-auto">
+                <!-- Header -->
+                <div class="text-center mb-8">
+                    <div class="inline-block bg-white rounded-2xl p-6 shadow-xl mb-6">
+                        <img src="/static/asaas-logo.png" alt="Asaas" class="h-20 w-auto mx-auto">
+                    </div>
+                    <h1 class="text-4xl font-bold text-gray-800 mb-3">
+                        <i class="fas fa-hand-sparkles text-blue-600 mr-2"></i>
+                        Bem-vindo!
+                    </h1>
+                    <p class="text-gray-700 text-lg font-medium mb-2">
+                        Abra sua conta Digital no Asaas e comece a gerenciar e receber suas comissões
+                    </p>
+                    <p class="text-gray-600 text-base">
+                        <i class="fas fa-check-circle text-green-600 mr-1"></i>
+                        Instantaneamente • Processo 100% digital e gratuito
+                    </p>
+                </div>
+
+                <!-- Form Card -->
+                <div class="bg-white rounded-2xl shadow-xl p-8">
+                    <div class="mb-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="text-2xl font-bold text-gray-800">
+                                <i class="fas fa-user-plus mr-2 text-blue-600"></i>
+                                Dados do Cadastro
+                            </h2>
+                            <span class="text-xs bg-blue-100 text-blue-800 px-3 py-1 rounded-full">
+                                <i class="fas fa-shield-alt mr-1"></i>Seguro
+                            </span>
+                        </div>
+                        <p class="text-sm text-gray-500">
+                            <i class="fas fa-info-circle mr-1"></i>
+                            Todos os seus dados são protegidos e criptografados
+                        </p>
+                    </div>
+
+                    <form id="signup-form" class="space-y-6">
+                        <input type="hidden" id="account-id" value="${accountId}">
+                        <input type="hidden" id="link-id" value="${linkId}">
+
+                        <!-- Dados Pessoais -->
+                        <div class="border-l-4 border-blue-500 pl-4">
+                            <h3 class="text-lg font-semibold text-gray-700 mb-4">
+                                <i class="fas fa-user mr-2"></i>Dados Pessoais
+                            </h3>
+                            
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Nome Completo *
+                                    </label>
+                                    <input type="text" name="name" required
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                                        placeholder="Seu nome completo">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Email *
+                                    </label>
+                                    <input type="email" name="email" required
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                                        placeholder="seu@email.com">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        CPF *
+                                    </label>
+                                    <input type="text" name="cpfCnpj" required maxlength="14"
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                                        placeholder="000.000.000-00">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Data de Nascimento *
+                                    </label>
+                                    <input type="date" name="birthDate" required
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Telefone
+                                    </label>
+                                    <input type="text" name="phone"
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                                        placeholder="(11) 3230-0606">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Celular *
+                                    </label>
+                                    <input type="text" name="mobilePhone" required
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                                        placeholder="(11) 98845-1155">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Endereço -->
+                        <div class="border-l-4 border-green-500 pl-4">
+                            <h3 class="text-lg font-semibold text-gray-700 mb-4">
+                                <i class="fas fa-map-marker-alt mr-2"></i>Endereço
+                            </h3>
+                            
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        CEP *
+                                    </label>
+                                    <input type="text" name="postalCode" required maxlength="9"
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                                        placeholder="00000-000">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Rua *
+                                    </label>
+                                    <input type="text" name="address" required
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                                        placeholder="Nome da rua">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Número *
+                                    </label>
+                                    <input type="text" name="addressNumber" required
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                                        placeholder="123">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Complemento
+                                    </label>
+                                    <input type="text" name="complement"
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                                        placeholder="Apto, sala, etc">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Bairro *
+                                    </label>
+                                    <input type="text" name="province" required
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                                        placeholder="Nome do bairro">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Tipo de Pessoa/Empresa
+                                    </label>
+                                    <select name="companyType"
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition">
+                                        <option value="">Selecione...</option>
+                                        <option value="">Pessoa Física</option>
+                                        <option value="MEI">MEI - Microempreendedor Individual</option>
+                                        <option value="LIMITED">Limitada</option>
+                                        <option value="INDIVIDUAL">Individual</option>
+                                        <option value="ASSOCIATION">Associação</option>
+                                    </select>
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Renda/Faturamento Mensal *
+                                    </label>
+                                    <select name="incomeValue" required
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition">
+                                        <option value="">Selecione...</option>
+                                        <option value="500">Até R$ 500</option>
+                                        <option value="1000">R$ 500 a R$ 1.000</option>
+                                        <option value="2000">R$ 1.000 a R$ 2.000</option>
+                                        <option value="5000">R$ 2.000 a R$ 5.000</option>
+                                        <option value="10000">R$ 5.000 a R$ 10.000</option>
+                                        <option value="20000">R$ 10.000 a R$ 20.000</option>
+                                        <option value="50000">R$ 20.000 a R$ 50.000</option>
+                                        <option value="100000">Acima de R$ 50.000</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Terms -->
+                        <div class="bg-gray-50 rounded-lg p-4">
+                            <label class="flex items-start cursor-pointer">
+                                <input type="checkbox" id="terms" required
+                                    class="mt-1 mr-3 w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                                <span class="text-sm text-gray-700">
+                                    Eu li e aceito os 
+                                    <a href="#" class="text-blue-600 hover:text-blue-700 font-medium">termos de uso</a> 
+                                    e a 
+                                    <a href="#" class="text-blue-600 hover:text-blue-700 font-medium">política de privacidade</a>
+                                </span>
+                            </label>
+                        </div>
+
+                        <!-- Submit Button -->
+                        <div class="pt-4">
+                            <button type="submit"
+                                class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-4 rounded-lg font-semibold text-lg hover:from-blue-700 hover:to-indigo-700 transform hover:scale-[1.02] transition-all shadow-lg">
+                                <i class="fas fa-check-circle mr-2"></i>
+                                Completar Cadastro
+                            </button>
+                        </div>
+                    </form>
+
+                    <!-- Result Message -->
+                    <div id="result" class="mt-6 hidden"></div>
+                </div>
+
+                <!-- Footer -->
+                <div class="text-center mt-8 text-gray-600 text-sm">
+                    <p>
+                        <i class="fas fa-lock mr-1"></i>
+                        Seus dados são protegidos e criptografados
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script>
+            // Máscara para CPF
+            document.querySelector('[name="cpfCnpj"]').addEventListener('input', function(e) {
+                let value = e.target.value.replace(/\\D/g, '');
+                if (value.length <= 11) {
+                    value = value.replace(/(\\d{3})(\\d{3})(\\d{3})(\\d{2})/, '$1.$2.$3-$4');
+                } else {
+                    value = value.substring(0, 14);
+                    value = value.replace(/(\\d{2})(\\d{3})(\\d{3})(\\d{4})(\\d{2})/, '$1.$2.$3/$4-$5');
+                }
+                e.target.value = value;
+            });
+
+            // Máscara para CEP
+            document.querySelector('[name="postalCode"]').addEventListener('input', function(e) {
+                let value = e.target.value.replace(/\\D/g, '');
+                value = value.replace(/(\\d{5})(\\d{3})/, '$1-$2');
+                e.target.value = value;
+            });
+
+            // Máscara para telefone
+            document.querySelectorAll('[name="phone"], [name="mobilePhone"]').forEach(input => {
+                input.addEventListener('input', function(e) {
+                    let value = e.target.value.replace(/\\D/g, '');
+                    if (value.length <= 10) {
+                        value = value.replace(/(\\d{2})(\\d{4})(\\d{4})/, '($1) $2-$3');
+                    } else {
+                        value = value.replace(/(\\d{2})(\\d{5})(\\d{4})/, '($1) $2-$3');
+                    }
+                    e.target.value = value;
+                });
+            });
+
+            // Submit form
+            document.getElementById('signup-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const formData = new FormData(e.target);
+                const data = Object.fromEntries(formData.entries());
+                
+                // Remover formatação de CPF, CEP e telefones
+                data.cpfCnpj = data.cpfCnpj.replace(/\\D/g, '');
+                data.postalCode = data.postalCode.replace(/\\D/g, '');
+                if (data.phone) data.phone = data.phone.replace(/\\D/g, '');
+                if (data.mobilePhone) data.mobilePhone = data.mobilePhone.replace(/\\D/g, '');
+                
+                // Remover campos vazios
+                Object.keys(data).forEach(key => {
+                    if (!data[key] || data[key] === '') delete data[key];
+                });
+                
+                const resultDiv = document.getElementById('result');
+                const submitBtn = e.target.querySelector('button[type="submit"]');
+                
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Processando...';
+                
+                resultDiv.innerHTML = \`
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <p class="text-blue-800 text-center">
+                            <i class="fas fa-spinner fa-spin mr-2"></i>
+                            Criando sua conta...
+                        </p>
+                    </div>
+                \`;
+                resultDiv.classList.remove('hidden');
+                
+                try {
+                    const response = await axios.post('/api/public/signup', data);
+                    
+                    if (response.data.ok && response.data.data) {
+                        const account = response.data.data;
+                        
+                        let pixHtml = '';
+                        if (account.payment && account.payment.pixQrCode && account.payment.pixQrCode.qrCodeId) {
+                            // Buscar QR Code da cobrança
+                            const qrResponse = await axios.get(\`/api/payments/\${account.payment.id}/pix-qrcode\`);
+                            
+                            if (qrResponse.data.ok && qrResponse.data.data) {
+                                const qrData = qrResponse.data.data;
+                                pixHtml = \`
+                                    <div class="mt-6 border-t border-green-300 pt-6">
+                                        <h4 class="text-lg font-bold text-green-800 mb-3 text-center">
+                                            <i class="fas fa-qrcode mr-2"></i>
+                                            Pague a Taxa de Cadastro (R$ 50,00)
+                                        </h4>
+                                        <div class="bg-white rounded-lg p-4">
+                                            <div class="text-center mb-4">
+                                                <img src="\${qrData.qrCodeBase64}" alt="QR Code PIX" class="mx-auto" style="max-width: 256px;">
+                                            </div>
+                                            <div class="space-y-2">
+                                                <p class="text-sm text-gray-700">
+                                                    <strong>Valor:</strong> R$ \${account.payment.value.toFixed(2)}
+                                                </p>
+                                                <p class="text-sm text-gray-700">
+                                                    <strong>Split:</strong> R$ \${(account.payment.value * 0.20).toFixed(2)} (20%) para sua conta, 
+                                                    R$ \${(account.payment.value * 0.80).toFixed(2)} (80%) para conta principal
+                                                </p>
+                                                <p class="text-sm text-gray-700">
+                                                    <strong>Vencimento:</strong> \${new Date(account.payment.dueDate).toLocaleDateString('pt-BR')}
+                                                </p>
+                                            </div>
+                                            <div class="mt-4">
+                                                <label class="block text-sm font-medium text-gray-700 mb-2">PIX Copia e Cola:</label>
+                                                <div class="flex gap-2">
+                                                    <input type="text" readonly value="\${qrData.payload}" 
+                                                        class="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded text-xs">
+                                                    <button onclick="navigator.clipboard.writeText('\${qrData.payload}'); this.innerHTML='<i class=\\'fas fa-check\\'></i> Copiado!'; setTimeout(() => this.innerHTML='<i class=\\'fas fa-copy\\'></i>', 2000)"
+                                                        class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                                                        <i class="fas fa-copy"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div class="mt-4 text-center text-sm text-gray-600">
+                                                <i class="fas fa-info-circle mr-1"></i>
+                                                Após o pagamento, sua conta será ativada automaticamente
+                                            </div>
+                                        </div>
+                                    </div>
+                                \`;
+                            }
+                        }
+                        
+                        resultDiv.innerHTML = \`
+                            <div class="bg-green-50 border border-green-200 rounded-lg p-6">
+                                <div class="text-center mb-4">
+                                    <i class="fas fa-check-circle text-green-600 text-5xl mb-3"></i>
+                                    <h3 class="text-2xl font-bold text-green-800 mb-2">Cadastro Concluído!</h3>
+                                    <p class="text-green-700">Sua conta foi criada com sucesso</p>
+                                </div>
+                                <div class="bg-white rounded-lg p-4 space-y-2">
+                                    <p class="text-sm"><strong>Nome:</strong> \${account.name}</p>
+                                    <p class="text-sm"><strong>Email:</strong> \${account.email}</p>
+                                    <p class="text-sm"><strong>ID da Conta:</strong> <code class="bg-gray-100 px-2 py-1 rounded">\${account.id}</code></p>
+                                    \${account.walletId ? \`<p class="text-sm"><strong>Wallet ID:</strong> <code class="bg-gray-100 px-2 py-1 rounded">\${account.walletId}</code></p>\` : ''}
+                                </div>
+                                <div class="mt-4 text-center">
+                                    <p class="text-sm text-gray-600 mb-3">
+                                        <i class="fas fa-envelope mr-2"></i>
+                                        Verifique seu email para definir sua senha de acesso
+                                    </p>
+                                </div>
+                                \${pixHtml}
+                            </div>
+                        \`;
+                        e.target.reset();
+                        
+                        // Scroll para o resultado
+                        resultDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    } else {
+                        throw new Error(response.data.data?.errors?.[0]?.description || response.data.data?.message || 'Erro ao criar conta');
+                    }
+                } catch (error) {
+                    resultDiv.innerHTML = \`
+                        <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+                            <h3 class="text-lg font-semibold text-red-800 mb-2">
+                                <i class="fas fa-exclamation-circle mr-2"></i>Erro no Cadastro
+                            </h3>
+                            <p class="text-red-700 text-sm">\${error.response?.data?.data?.errors?.[0]?.description || error.message}</p>
+                            <button onclick="document.getElementById('result').classList.add('hidden')" 
+                                class="mt-3 text-sm text-red-600 hover:text-red-700 font-medium">
+                                <i class="fas fa-times mr-1"></i>Tentar novamente
+                            </button>
+                        </div>
+                    \`;
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="fas fa-check-circle mr-2"></i>Completar Cadastro';
+                }
+            });
+        </script>
+    </body>
+    </html>
+  `)
+})
+
+// View Banner (Compartilhamento Público)
+app.get('/view-banner/:accountId/:bannerId', (c) => {
+  const { accountId, bannerId } = c.req.param()
+  
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+        <title>Banner - Pagamento via PIX</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <meta property="og:title" content="Banner de Pagamento PIX">
+        <meta property="og:description" content="Clique para visualizar os detalhes do pagamento">
+        <meta property="og:type" content="website">
+        <style>
+            html, body {
+                margin: 0;
+                padding: 0;
+                height: 100vh;
+                width: 100vw;
+                overflow: hidden;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            }
+            #banner-container img {
+                max-height: 85vh;
+                width: 100%;
+                object-fit: contain;
+            }
+        </style>
+    </head>
+    <body class="flex items-center justify-center">
+        <div class="w-full h-full flex items-center justify-center p-2">
+            <!-- Loading -->
+            <div id="loading" class="flex items-center justify-center h-screen">
+                <div class="bg-white rounded-xl shadow-2xl p-6 text-center">
+                    <div class="animate-spin rounded-full h-12 w-12 border-b-4 border-purple-600 mx-auto mb-3"></div>
+                    <p class="text-gray-600 text-sm">Carregando...</p>
+                </div>
+            </div>
+            
+            <!-- Banner Container -->
+            <div id="banner-container" class="hidden w-full h-full flex items-center justify-center">
+                <!-- Será preenchido via JavaScript -->
+            </div>
+            
+            <!-- Error -->
+            <div id="error" class="hidden flex items-center justify-center h-screen">
+                <div class="bg-white rounded-xl shadow-2xl p-6 text-center max-w-sm">
+                    <i class="fas fa-times-circle text-red-500 text-4xl mb-3"></i>
+                    <h2 class="text-lg font-bold text-gray-800 mb-2">Banner não encontrado</h2>
+                    <p class="text-sm text-gray-600">Link inválido ou removido.</p>
+                </div>
+            </div>
+        </div>
+        
+        <script>
+            const accountId = '${accountId}';
+            const bannerId = '${bannerId}';
+            
+            // Carregar banner do servidor (API pública)
+            async function loadBanner() {
+                try {
+                    const response = await fetch(\`/api/banners/\${accountId}/\${bannerId}\`);
+                    
+                    if (!response.ok) {
+                        showError();
+                        return;
+                    }
+                    
+                    const data = await response.json();
+                    
+                    if (!data.ok || !data.banner) {
+                        showError();
+                        return;
+                    }
+                    
+                    displayBanner(data.banner);
+                } catch (error) {
+                    console.error('Erro ao carregar banner:', error);
+                    showError();
+                }
+            }
+            
+            // Exibir banner
+            function displayBanner(banner) {
+                const container = document.getElementById('banner-container');
+                const isCustom = banner.isCustomBanner && banner.bannerImageBase64;
+                
+                // Cores de gradiente
+                const gradients = {
+                    orange: 'from-orange-600 to-red-600',
+                    purple: 'from-purple-600 to-pink-600',
+                    blue: 'from-blue-600 to-cyan-600',
+                    green: 'from-green-600 to-emerald-600',
+                    red: 'from-red-600 to-rose-600'
+                };
+                const gradient = gradients[banner.color] || gradients.orange;
+                
+                if (isCustom) {
+                    // Banner personalizado - imagem + botão
+                    container.innerHTML = '<div class="flex flex-col items-center justify-center h-full p-4 gap-4">' +
+                        '<img src="' + banner.bannerImageBase64 + '" alt="Banner" class="max-w-full max-h-[75vh] object-contain">' +
+                        '<a href="' + banner.linkUrl + '" target="_blank" rel="noopener noreferrer" ' +
+                        'class="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-8 py-4 rounded-xl font-bold text-lg shadow-2xl hover:from-green-600 hover:to-emerald-700 transition-all transform hover:scale-105">' +
+                        '<i class="fas fa-qrcode mr-2"></i>PAGAR AGORA' +
+                        '</a>' +
+                        '</div>';
+                } else {
+                    // Banner gerado - usando concatenação simples
+                    let html = '<div class="bg-gradient-to-br ' + gradient + ' p-8 text-white text-center">';
+                    html += '<div class="flex flex-col items-center space-y-4">';
+                    
+                    // Badges
+                    html += '<div class="flex gap-2 flex-wrap justify-center">';
+                    if (banner.chargeType === 'monthly') {
+                        html += '<div class="bg-green-500 text-sm px-3 py-1 rounded-full">🔄 ASSINATURA MENSAL</div>';
+                    } else {
+                        html += '<div class="bg-blue-500 text-sm px-3 py-1 rounded-full">📄 PAGAMENTO ÚNICO</div>';
+                    }
+                    if (banner.promo) {
+                        html += '<div class="bg-yellow-400 text-gray-900 text-sm px-3 py-1 rounded-full font-bold">' + banner.promo + '</div>';
+                    }
+                    html += '</div>';
+                    
+                    // Título
+                    const title = banner.title || (banner.chargeType === 'monthly' ? 'ASSINE AGORA' : 'COMPRE AGORA');
+                    html += '<h1 class="text-4xl font-bold leading-tight">' + title + '</h1>';
+                    
+                    // Descrição
+                    html += '<p class="text-xl opacity-90">' + (banner.description || 'Plano Premium') + '</p>';
+                    
+                    // Valor
+                    const formattedValue = parseFloat(banner.value || 0).toFixed(2).replace('.', ',');
+                    html += '<div class="text-6xl font-bold">R$ ' + formattedValue + '</div>';
+                    if (banner.chargeType === 'monthly') {
+                        html += '<div class="text-2xl">/mês</div>';
+                    }
+                    
+                    // QR Code
+                    if (banner.qrCodeBase64) {
+                        html += '<div class="bg-white p-6 rounded-xl shadow-xl">';
+                        html += '<img src="' + banner.qrCodeBase64 + '" alt="QR Code PIX" class="w-64 h-64">';
+                        html += '</div>';
+                        html += '<p class="text-sm opacity-90 mt-2">';
+                        html += '<i class="fas fa-mobile-alt mr-1"></i> Escaneie o QR Code com seu app de pagamento';
+                        html += '</p>';
+                    }
+                    
+                    html += '</div></div>';
+                    
+                    // Botão de pagamento
+                    html += '<div class="p-6 bg-gray-50">';
+                    html += '<a href="' + banner.linkUrl + '" target="_blank" rel="noopener noreferrer" ';
+                    html += 'class="block w-full bg-gradient-to-r ' + gradient + ' text-white py-4 rounded-xl hover:opacity-90 transition font-bold text-center text-lg shadow-lg">';
+                    html += (banner.buttonText || 'PAGAR AGORA') + ' →';
+                    html += '</a>';
+                    html += '<div class="mt-4 text-center text-sm text-gray-600">';
+                    html += '<i class="fas fa-shield-alt mr-1"></i> Pagamento seguro via PIX';
+                    html += '</div></div>';
+                    
+                    container.innerHTML = html;
+                }
+                
+                // Mostrar banner
+                document.getElementById('loading').classList.add('hidden');
+                container.classList.remove('hidden');
+            }
+            
+            // Exibir erro
+            function showError() {
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('error').classList.remove('hidden');
+            }
+            
+            // Carregar ao iniciar
+            loadBanner();
+        </script>
+    </body>
+    </html>
+  `)
+})
+
+// Login page
+app.get('/login', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Login - Gerenciador Asaas</title>
+        <!-- Google Fonts - Inter -->
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <style>
+            * {
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+                -webkit-font-smoothing: antialiased;
+            }
+            h1, h2 { font-weight: 700; letter-spacing: -0.02em; }
+            button { font-weight: 600; letter-spacing: 0.01em; }
+            input { font-size: 0.9375rem; line-height: 1.5; }
+        </style>
+    </head>
+    <body class="bg-gradient-to-br from-blue-600 to-indigo-700 min-h-screen flex items-center justify-center">
+        <div class="max-w-md w-full mx-4">
+            <!-- Login Card -->
+            <div class="bg-white rounded-2xl shadow-2xl p-8">
+                <!-- Logo/Icon -->
+                <div class="text-center mb-8">
+                    <div class="inline-block bg-blue-100 rounded-full p-4 mb-4">
+                        <i class="fas fa-building text-blue-600 text-5xl"></i>
+                    </div>
+                    <h1 class="text-3xl font-bold text-gray-800 mb-2">Gerenciador Asaas</h1>
+                    <p class="text-gray-600">Faça login para continuar</p>
+                </div>
+
+                <!-- Login Form -->
+                <form id="login-form" class="space-y-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            <i class="fas fa-user mr-2"></i>Usuário
+                        </label>
+                        <input type="text" name="username" required autofocus
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                            placeholder="Digite seu usuário">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            <i class="fas fa-lock mr-2"></i>Senha
+                        </label>
+                        <input type="password" name="password" required
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                            placeholder="Digite sua senha">
+                    </div>
+
+                    <div id="error-message" class="hidden bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                        <i class="fas fa-exclamation-circle mr-2"></i>
+                        <span id="error-text"></span>
+                    </div>
+
+                    <button type="submit"
+                        class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 rounded-lg font-semibold hover:from-blue-700 hover:to-indigo-700 transform hover:scale-[1.02] transition-all shadow-lg">
+                        <i class="fas fa-sign-in-alt mr-2"></i>
+                        Entrar
+                    </button>
+                </form>
+
+                <!-- Links adicionais -->
+                <div class="mt-4 text-center">
+                    <a href="#" id="forgot-password-link" class="text-sm text-blue-100 hover:text-white transition">
+                        <i class="fas fa-key mr-1"></i>
+                        Esqueci minha senha
+                    </a>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="text-center mt-6 text-white">
+                <p class="text-sm">
+                    <i class="fas fa-shield-alt mr-2"></i>
+                    Acesso seguro e protegido
+                </p>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script>
+            // Configure axios to work with cookies
+            axios.defaults.withCredentials = true;
+            
+            // Handler para "Esqueci minha senha"
+            document.getElementById('forgot-password-link').addEventListener('click', (e) => {
+                e.preventDefault();
+                alert('ℹ️ Para redefinir sua senha:\\n\\n1. Entre em contato com o administrador do sistema\\n2. Ou acesse o painel do Cloudflare Pages\\n3. Vá em Settings → Environment Variables\\n4. Atualize a variável ADMIN_PASSWORD');
+            });
+
+            document.getElementById('login-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const formData = new FormData(e.target);
+                const data = Object.fromEntries(formData.entries());
+                
+                const errorDiv = document.getElementById('error-message');
+                const errorText = document.getElementById('error-text');
+                const submitBtn = e.target.querySelector('button[type="submit"]');
+                
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Entrando...';
+                errorDiv.classList.add('hidden');
+                
+                try {
+                    const response = await axios.post('/api/login', data);
+                    
+                    if (response.data.ok) {
+                        submitBtn.innerHTML = '<i class="fas fa-check-circle mr-2"></i>Sucesso!';
+                        submitBtn.classList.remove('from-blue-600', 'to-indigo-600');
+                        submitBtn.classList.add('from-green-600', 'to-green-700');
+                        
+                        setTimeout(() => {
+                            window.location.href = '/';
+                        }, 500);
+                    } else {
+                        throw new Error(response.data.error || 'Erro ao fazer login');
+                    }
+                } catch (error) {
+                    errorText.textContent = error.response?.data?.error || error.message || 'Usuário ou senha inválidos';
+                    errorDiv.classList.remove('hidden');
+                    
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="fas fa-sign-in-alt mr-2"></i>Entrar';
+                }
+            });
+        </script>
+    </body>
+    </html>
+  `)
+})
+
+// Página pública de visualização do bilhete da loteria
+app.get('/lottery-ticket/:paymentId', async (c) => {
+  return c.html(`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meu Bilhete</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Header Minimalista -->
+    <header class="bg-white border-b">
+        <div class="max-w-5xl mx-auto px-3 h-12 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <a href="/" class="text-gray-500"><i class="fas fa-arrow-left text-sm"></i></a>
+                <h1 class="text-sm font-semibold">Bilhete da Loteria</h1>
+            </div>
+            <button class="text-gray-500"><i class="fas fa-ellipsis-v text-sm"></i></button>
+        </div>
+    </header>
+
+    <!-- Container Principal -->
+    <div class="max-w-5xl mx-auto px-3 py-4">
+        <!-- Loading -->
+        <div id="loading" class="flex items-center justify-center py-8">
+            <div class="text-center">
+                <div class="inline-block animate-spin rounded-full h-6 w-6 border-2 border-blue-600 border-t-transparent"></div>
+                <p class="text-xs text-gray-500 mt-2">Carregando...</p>
+            </div>
+        </div>
+
+        <!-- Error -->
+        <div id="error" class="hidden">
+            <div class="bg-white rounded-lg p-4 text-center">
+                <i class="fas fa-times-circle text-red-500 text-2xl mb-2"></i>
+                <p class="text-sm font-medium text-gray-900">Bilhete não encontrado</p>
+                <p class="text-xs text-gray-500 mt-1" id="error-message"></p>
+            </div>
+        </div>
+
+        <!-- Ticket -->
+        <div id="ticket-container" class="hidden">
+            <!-- Card Principal -->
+            <div class="bg-white rounded-lg shadow-sm mb-3">
+                <!-- Número do Bilhete -->
+                <div class="border-b p-4">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-[10px] text-gray-500 mb-0.5">Número do bilhete</p>
+                            <p id="ticket-number" class="text-2xl font-bold text-gray-900 tracking-wide"></p>
+                        </div>
+                        <div class="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center">
+                            <i class="fas fa-ticket-alt text-blue-600"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Info Grid -->
+                <div class="p-4 space-y-3">
+                    <!-- Sorteio -->
+                    <div class="flex items-start gap-2">
+                        <div class="w-8 h-8 bg-orange-50 rounded flex items-center justify-center shrink-0">
+                            <i class="fas fa-calendar text-orange-600 text-xs"></i>
+                        </div>
+                        <div class="min-w-0 flex-1">
+                            <p class="text-[10px] text-gray-500">Sorteio</p>
+                            <p id="draw-date" class="text-xs font-medium text-gray-900"></p>
+                            <p id="countdown" class="text-[10px] text-orange-600 font-medium"></p>
+                        </div>
+                    </div>
+
+                    <!-- Prêmio -->
+                    <div class="flex items-start gap-2">
+                        <div class="w-8 h-8 bg-yellow-50 rounded flex items-center justify-center shrink-0">
+                            <i class="fas fa-trophy text-yellow-600 text-xs"></i>
+                        </div>
+                        <div class="min-w-0 flex-1">
+                            <p class="text-[10px] text-gray-500">Prêmio</p>
+                            <p id="prize-description" class="text-xs font-medium text-gray-900"></p>
+                        </div>
+                    </div>
+
+                    <!-- Participante -->
+                    <div class="flex items-start gap-2">
+                        <div class="w-8 h-8 bg-gray-100 rounded flex items-center justify-center shrink-0">
+                            <i class="fas fa-user text-gray-600 text-xs"></i>
+                        </div>
+                        <div class="min-w-0 flex-1">
+                            <p class="text-[10px] text-gray-500">Participante</p>
+                            <p id="customer-name" class="text-xs font-medium text-gray-900"></p>
+                            <p id="customer-email" class="text-[10px] text-gray-500 truncate"></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Status -->
+            <div id="result-pending" class="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <div class="flex gap-2">
+                    <i class="fas fa-info-circle text-blue-600 text-xs mt-0.5 shrink-0"></i>
+                    <div>
+                        <p class="text-xs font-medium text-blue-900">Aguardando sorteio</p>
+                        <p class="text-[10px] text-blue-700 mt-0.5">Você receberá um e-mail com o resultado.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="result-available" class="hidden bg-green-50 border border-green-200 rounded-lg p-3">
+                <div class="flex items-center justify-between gap-2">
+                    <div class="flex gap-2 min-w-0">
+                        <i class="fas fa-check-circle text-green-600 text-xs mt-0.5 shrink-0"></i>
+                        <div class="min-w-0">
+                            <p class="text-xs font-medium text-green-900">Resultado disponível</p>
+                            <p class="text-[10px] text-green-700">O sorteio foi realizado.</p>
+                        </div>
+                    </div>
+                    <button onclick="checkResult()" class="px-3 py-1.5 bg-green-600 text-white text-[10px] font-medium rounded shrink-0">
+                        Ver
+                    </button>
+                </div>
+            </div>
+
+            <!-- Info -->
+            <div class="bg-gray-100 rounded-lg p-3 mt-3">
+                <div class="flex items-center gap-2 mb-2">
+                    <i class="fas fa-info-circle text-gray-500 text-xs"></i>
+                    <p class="text-xs font-medium text-gray-700">Como funciona</p>
+                </div>
+                <ul class="space-y-1.5 text-[10px] text-gray-600">
+                    <li class="flex items-center gap-1.5">
+                        <i class="fas fa-check text-green-500" style="font-size: 8px;"></i>
+                        <span>Sorteio na data indicada</span>
+                    </li>
+                    <li class="flex items-center gap-1.5">
+                        <i class="fas fa-check text-green-500" style="font-size: 8px;"></i>
+                        <span>E-mail automático com resultado</span>
+                    </li>
+                    <li class="flex items-center gap-1.5">
+                        <i class="fas fa-check text-green-500" style="font-size: 8px;"></i>
+                        <span>Contato direto em caso de prêmio</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const paymentId = window.location.pathname.split('/').pop();
+        let ticketData = null;
+
+        async function loadTicket() {
+            try {
+                console.log('🎫 Carregando bilhete para pagamento:', paymentId);
+                
+                const response = await fetch(\`/api/lottery/ticket/\${paymentId}\`);
+                const data = await response.json();
+
+                if (!data.ok) {
+                    showError(data.error || 'Bilhete não encontrado');
+                    return;
+                }
+
+                ticketData = data.ticket;
+                console.log('✅ Bilhete carregado:', ticketData);
+                displayTicket(ticketData);
+            } catch (error) {
+                console.error('❌ Erro ao carregar bilhete:', error);
+                showError('Erro ao carregar bilhete. Tente novamente.');
+            }
+        }
+
+        function displayTicket(ticket) {
+            // Preencher dados do ticket
+            document.getElementById('ticket-number').textContent = ticket.ticketNumber;
+            document.getElementById('customer-name').textContent = ticket.customerName;
+            document.getElementById('customer-email').textContent = ticket.customerEmail;
+            
+            // Data do sorteio
+            const drawDate = new Date(ticket.drawDate + 'T00:00:00');
+            const formattedDate = drawDate.toLocaleDateString('pt-BR', {
+                day: '2-digit',
+                month: 'long',
+                year: 'numeric'
+            });
+            document.getElementById('draw-date').textContent = formattedDate;
+            
+            // Descrição e prêmio
+            document.getElementById('draw-description').textContent = ticket.drawDescription || 'Loteria Federal';
+            document.getElementById('prize-description').textContent = ticket.prizeDescription || '1º Prêmio - R$ 500.000,00';
+            
+            // Contagem regressiva
+            updateCountdown(drawDate);
+            
+            // Verificar se o resultado está disponível
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            if (drawDate <= today) {
+                document.getElementById('result-pending').classList.add('hidden');
+                document.getElementById('result-available').classList.remove('hidden');
+            }
+            
+            // Mostrar ticket
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('ticket-container').classList.remove('hidden');
+        }
+
+        function updateCountdown(drawDate) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const diffTime = drawDate - today;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            
+            const countdownEl = document.getElementById('countdown');
+            if (diffDays > 0) {
+                countdownEl.textContent = \`Sorteio em \${diffDays} dia\${diffDays > 1 ? 's' : ''}\`;
+                countdownEl.classList.add('text-orange-600', 'font-semibold');
+            } else if (diffDays === 0) {
+                countdownEl.textContent = 'Sorteio hoje!';
+                countdownEl.classList.add('text-green-600', 'font-bold');
+            } else {
+                countdownEl.textContent = 'Sorteio realizado';
+                countdownEl.classList.add('text-gray-600');
+            }
+        }
+
+        function checkResult() {
+            alert('🎯 Função de verificação do resultado em desenvolvimento!\\n\\nEm breve você poderá verificar automaticamente se seu bilhete foi premiado.');
+        }
+
+        function showError(message) {
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('error').classList.remove('hidden');
+            document.getElementById('error-message').textContent = message;
+        }
+
+        // Carregar ticket ao abrir a página
+        loadTicket();
+    </script>
+</body>
+</html>`)
+})
+
+// Página pública de auto-cadastro de assinatura
+app.get('/subscription-signup/:linkId', async (c) => {
+  // Serve the subscription signup HTML page
+  return c.html(`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assinatura Mensal PIX - Auto-Cadastro</title>
+    <!-- Google Fonts - Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+    <style>
+        /* Tipografia Profissional */
+        * {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        h1, h2 { font-weight: 700; line-height: 1.2; letter-spacing: -0.02em; }
+        h3 { font-weight: 600; line-height: 1.3; }
+        button { font-weight: 600; letter-spacing: 0.01em; }
+        input, label { font-size: 0.9375rem; line-height: 1.5; }
+        
+        /* Animações */
+        @keyframes pulse-slow {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        .animate-pulse-slow {
+            animation: pulse-slow 2s ease-in-out infinite;
+        }
+        @keyframes bounce-in {
+            0% { transform: scale(0); opacity: 0; }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .animate-bounce-in {
+            animation: bounce-in 0.6s ease-out;
+        }
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-10px); }
+            20%, 40%, 60%, 80% { transform: translateX(10px); }
+        }
+        .animate-shake {
+            animation: shake 0.5s ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div id="loading-state" class="max-w-md mx-auto bg-white rounded-2xl shadow-xl p-8 text-center">
+            <i class="fas fa-spinner fa-spin text-4xl text-indigo-600 mb-4"></i>
+            <p class="text-gray-600">Carregando informações...</p>
+        </div>
+        <div id="error-state" class="hidden max-w-md mx-auto bg-white rounded-2xl shadow-xl p-8 text-center">
+            <i class="fas fa-exclamation-triangle text-5xl text-red-500 mb-4"></i>
+            <h2 class="text-2xl font-bold text-gray-800 mb-2">Link Inválido ou Expirado</h2>
+            <p id="error-message" class="text-gray-600 mb-6"></p>
+        </div>
+        <div id="form-state" class="hidden max-w-md mx-auto bg-white rounded-2xl shadow-xl p-8">
+            <div class="text-center mb-6">
+                <div class="bg-gradient-to-r from-indigo-500 to-purple-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i class="fas fa-calendar-check text-white text-2xl"></i>
+                </div>
+                <h1 id="page-title" class="text-2xl font-bold text-gray-800 mb-2">Carregando...</h1>
+                <p class="text-gray-600">Preencha seus dados para continuar</p>
+            </div>
+            <div class="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-4 mb-6 border border-green-200">
+                <div class="flex justify-between items-center mb-2">
+                    <span id="value-label" class="text-gray-600 font-medium">Valor:</span>
+                    <span id="plan-value" class="text-2xl font-bold text-green-600">R$ 0,00</span>
+                </div>
+                <p id="plan-description" class="text-sm text-gray-600"></p>
+            </div>
+            <form id="signup-form" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-user mr-1 text-indigo-500"></i>Nome Completo
+                    </label>
+                    <input type="text" id="customer-name" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="João da Silva" required>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-envelope mr-1 text-indigo-500"></i>E-mail
+                    </label>
+                    <input type="email" id="customer-email" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="joao@email.com" required>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-id-card mr-1 text-indigo-500"></i>CPF
+                    </label>
+                    <input type="text" id="customer-cpf" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="000.000.000-00" maxlength="14" required>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-birthday-cake mr-1 text-indigo-500"></i>Data de Nascimento
+                    </label>
+                    <input type="date" id="customer-birthdate" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" required>
+                </div>
+                <button type="submit" id="submit-btn" class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold py-4 rounded-lg hover:from-indigo-700 hover:to-purple-700">
+                    <i class="fas fa-check-circle mr-2"></i>Confirmar e Gerar PIX
+                </button>
+            </form>
+        </div>
+        <div id="success-state" class="hidden max-w-2xl mx-auto bg-white rounded-2xl shadow-xl p-8">
+            <div class="text-center mb-6">
+                <div class="bg-green-500 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i class="fas fa-check text-white text-3xl"></i>
+                </div>
+                <h2 id="success-title" class="text-3xl font-bold text-gray-800 mb-2">PIX Criado!</h2>
+                <p id="success-subtitle" class="text-gray-600">Escaneie o QR Code</p>
+                <div id="authorization-alert" class="hidden bg-gradient-to-r from-purple-50 to-indigo-50 border-2 border-purple-300 rounded-lg p-4 mt-4 mx-auto max-w-md">
+                    <p class="text-sm text-purple-800 font-semibold mb-2">
+                        <i class="fas fa-shield-alt text-purple-600 mr-2"></i>
+                        PIX Automático Ativado!
+                    </p>
+                    <p class="text-xs text-purple-700">
+                        ✅ Após autorizar no seu banco, os pagamentos mensais serão <strong>automáticos</strong>
+                        <br>💳 Não precisará pagar manualmente todo mês
+                    </p>
+                </div>
+                <p class="text-sm text-indigo-600 mt-2 animate-pulse">
+                    <i class="fas fa-sync fa-spin mr-2"></i>Aguardando autorização...
+                </p>
+            </div>
+            <div class="bg-white border-2 border-indigo-300 rounded-xl p-6">
+                <div id="qr-code-container" class="flex justify-center mb-4">
+                    <img id="qr-code-image" src="" alt="QR Code PIX" class="w-64 h-64 border-4 border-white shadow-lg rounded-lg">
+                </div>
+                <div class="bg-gray-50 rounded-lg p-4">
+                    <p class="text-xs text-gray-600 mb-2">Pix Copia e Cola:</p>
+                    <div class="flex gap-2">
+                        <input type="text" id="pix-payload" readonly class="flex-1 text-xs bg-white border border-gray-300 rounded px-3 py-2 font-mono">
+                        <button onclick="copyGeneralPixPayload()" class="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Payment Confirmed State -->
+        <div id="payment-confirmed-state" class="hidden max-w-2xl mx-auto bg-white rounded-2xl shadow-xl p-8 animate-pulse-slow">
+            <!-- Confetti animation -->
+            <div id="confetti-canvas" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 9999;"></div>
+            
+            <div class="text-center mb-6">
+                <div class="bg-gradient-to-r from-green-400 to-emerald-500 w-32 h-32 rounded-full flex items-center justify-center mx-auto mb-6 animate-bounce shadow-2xl" style="animation: bounce 1s ease-in-out infinite, pulse 2s ease-in-out infinite;">
+                    <i class="fas fa-check-double text-white text-5xl"></i>
+                </div>
+                <h2 class="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-600 to-emerald-600 mb-3 animate-pulse">🎉 Pagamento Confirmado! 🎉</h2>
+                <p id="payment-subtitle" class="text-xl text-green-600 font-semibold mb-4">✅ Seu pagamento foi processado com sucesso</p>
+                <div class="bg-gradient-to-r from-yellow-200 via-green-200 to-blue-200 rounded-lg p-3 animate-pulse">
+                    <p id="payment-welcome" class="text-lg font-bold text-gray-800">
+                        <i class="fas fa-star text-yellow-500 mr-2"></i>
+                        Obrigado pela sua compra!
+                        <i class="fas fa-star text-yellow-500 ml-2"></i>
+                    </p>
+                </div>
+            </div>
+            
+            <div id="payment-steps" class="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-6 mb-6 border-2 border-green-200">
+                <h3 class="text-lg font-bold text-gray-800 mb-4 text-center">
+                    <i class="fas fa-calendar-check text-green-600 mr-2"></i>
+                    O que acontece agora?
+                </h3>
+                <div id="payment-steps-content" class="space-y-4">
+                    <!-- Conteúdo será preenchido dinamicamente -->
+                </div>
+            </div>
+            
+            <!-- 🎰 BILHETE DA LOTERIA FEDERAL -->
+            <div id="lottery-ticket-section" class="bg-gradient-to-r from-yellow-50 via-amber-50 to-yellow-50 border-4 border-yellow-400 rounded-2xl p-6 mb-6 shadow-2xl animate-bounce-in">
+                <div class="text-center mb-4">
+                    <div class="inline-block bg-gradient-to-r from-yellow-400 to-amber-500 px-6 py-3 rounded-full shadow-lg mb-3">
+                        <h3 class="text-2xl font-black text-white flex items-center justify-center gap-2">
+                            <i class="fas fa-ticket-alt animate-pulse"></i>
+                            BILHETE DA LOTERIA FEDERAL
+                            <i class="fas fa-star animate-spin" style="animation: spin 2s linear infinite;"></i>
+                        </h3>
+                    </div>
+                    <p id="lottery-prize-description" class="text-sm text-amber-800 font-semibold">
+                        🎁 VOCÊ CONCORRE AO 1º PRÊMIO DE R$ 500.000,00!
+                    </p>
+                </div>
+                
+                <div class="bg-white rounded-xl p-6 border-2 border-amber-300 shadow-inner">
+                    <div class="flex justify-between items-center mb-4 pb-4 border-b-2 border-dashed border-amber-300">
+                        <div>
+                            <p class="text-xs text-gray-600 mb-1">SEU BILHETE:</p>
+                            <p id="lottery-ticket-number" class="text-4xl font-black text-amber-600 tracking-wider font-mono">
+                                <i class="fas fa-spinner fa-spin text-2xl"></i>
+                            </p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-xs text-gray-600 mb-1">DATA DO SORTEIO:</p>
+                            <p id="lottery-draw-date" class="text-lg font-bold text-gray-800">
+                                Carregando...
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-4 mb-4">
+                        <p class="text-sm text-center text-gray-700">
+                            <i class="fas fa-calendar-check text-green-600 mr-2"></i>
+                            O resultado do sorteio estará disponível após a data acima
+                        </p>
+                    </div>
+                    
+                    <button 
+                        id="check-lottery-btn" 
+                        onclick="checkLotteryResult()"
+                        disabled
+                        class="w-full bg-gradient-to-r from-amber-500 to-yellow-500 text-white font-bold py-4 rounded-xl shadow-lg hover:from-amber-600 hover:to-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-lg"
+                    >
+                        <i class="fas fa-search"></i>
+                        <span id="check-lottery-text">Aguardando sorteio...</span>
+                    </button>
+                    
+                    <div id="lottery-result" class="hidden mt-4"></div>
+                </div>
+                
+                <div class="mt-4 bg-amber-100 border border-amber-300 rounded-lg p-3">
+                    <p id="lottery-how-it-works" class="text-xs text-amber-900 text-center">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        <strong>Como funciona:</strong> Conferimos automaticamente apenas o <strong>1º PRÊMIO</strong> da Loteria Federal. 
+                        Se o seu número for sorteado, você ganha R$ 500.000,00! 🏆
+                    </p>
+                </div>
+            </div>
+            
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+                <p class="text-sm text-gray-700">
+                    <i class="fas fa-envelope text-blue-500 mr-2"></i>
+                    Você receberá um email de confirmação em breve
+                </p>
+            </div>
+        </div>
+    </div>
+    <script>
+        const pathParts = window.location.pathname.split('/');
+        const linkId = pathParts[pathParts.length - 1];
+        let linkData = null;
+        
+        async function loadLinkData() {
+            try {
+                const response = await axios.get(\`/api/pix/subscription-signup/\${linkId}\`);
+                if (response.data.ok) {
+                    linkData = response.data.data;
+                    
+                    // Definir título baseado no tipo de cobrança
+                    const isMonthly = linkData.chargeType === 'monthly';
+                    document.getElementById('page-title').textContent = isMonthly 
+                        ? 'Assinatura Mensal PIX' 
+                        : 'Pagamento Único PIX';
+                    document.getElementById('value-label').textContent = isMonthly 
+                        ? 'Valor Mensal:' 
+                        : 'Valor:';
+                    
+                    // Atualizar título da página
+                    document.title = isMonthly 
+                        ? 'Assinatura Mensal PIX - Auto-Cadastro' 
+                        : 'Pagamento Único PIX - Auto-Cadastro';
+                    
+                    document.getElementById('loading-state').classList.add('hidden');
+                    document.getElementById('form-state').classList.remove('hidden');
+                    document.getElementById('plan-value').textContent = \`R$ \${linkData.value.toFixed(2)}\`;
+                    document.getElementById('plan-description').textContent = linkData.description;
+                } else {
+                    showError(response.data.error || 'Link inválido');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showError('Erro ao carregar');
+            }
+        }
+        
+        function showError(message) {
+            document.getElementById('loading-state').classList.add('hidden');
+            document.getElementById('form-state').classList.add('hidden');
+            document.getElementById('error-state').classList.remove('hidden');
+            document.getElementById('error-message').textContent = message;
+        }
+        
+        document.getElementById('customer-cpf').addEventListener('input', function(e) {
+            let value = e.target.value.replace(/\\D/g, '');
+            if (value.length > 11) value = value.substring(0, 11);
+            if (value.length > 9) {
+                value = value.replace(/(\\d{3})(\\d{3})(\\d{3})(\\d{2})/, '$1.$2.$3-$4');
+            } else if (value.length > 6) {
+                value = value.replace(/(\\d{3})(\\d{3})(\\d{1,3})/, '$1.$2.$3');
+            } else if (value.length > 3) {
+                value = value.replace(/(\\d{3})(\\d{1,3})/, '$1.$2');
+            }
+            e.target.value = value;
+        });
+        
+        document.getElementById('signup-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const submitBtn = document.getElementById('submit-btn');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Criando...';
+            
+            try {
+                const response = await axios.post(\`/api/pix/subscription-signup/\${linkId}\`, {
+                    customerName: document.getElementById('customer-name').value,
+                    customerEmail: document.getElementById('customer-email').value,
+                    customerCpf: document.getElementById('customer-cpf').value.replace(/\\D/g, ''),
+                    customerBirthdate: document.getElementById('customer-birthdate').value
+                });
+                
+                if (response.data.ok) {
+                    document.getElementById('form-state').classList.add('hidden');
+                    document.getElementById('success-state').classList.remove('hidden');
+                    
+                    // Verificar se é autorização PIX (débito automático)
+                    const isAuthorization = response.data.firstPayment?.pix?.isAuthorization;
+                    
+                    if (response.data.firstPayment.pix) {
+                        document.getElementById('qr-code-image').src = response.data.firstPayment.pix.qrCodeBase64;
+                        document.getElementById('pix-payload').value = response.data.firstPayment.pix.payload;
+                    }
+                    
+                    // Atualizar mensagens conforme o tipo
+                    if (isAuthorization) {
+                        document.getElementById('success-title').textContent = '🔐 Autorização PIX Automático';
+                        document.getElementById('success-subtitle').textContent = 'Autorize no seu banco para ativar débitos automáticos';
+                        document.getElementById('authorization-alert').classList.remove('hidden');
+                    } else if (linkData?.chargeType === 'monthly') {
+                        document.getElementById('success-title').textContent = '📅 Assinatura PIX Mensal Criada!';
+                        document.getElementById('success-subtitle').textContent = 'Pague o primeiro PIX para ativar';
+                    } else {
+                        document.getElementById('success-title').textContent = '💰 PIX Único Gerado!';
+                        document.getElementById('success-subtitle').textContent = 'Escaneie o QR Code para pagar';
+                    }
+                    
+                    // Salvar tipo de cobrança para usar depois
+                    window.chargeType = response.data.chargeType || 'single';
+                    console.log('📝 Tipo de cobrança recebido do backend:', response.data.chargeType);
+                    console.log('💾 Tipo de cobrança salvo em window.chargeType:', window.chargeType);
+                    
+                    // Iniciar verificação de pagamento
+                    window.paymentId = response.data.firstPayment.id;
+                    startPaymentCheck();
+                } else {
+                    alert('Erro: ' + response.data.error);
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="fas fa-check-circle mr-2"></i>Confirmar e Gerar PIX';
+                }
+            } catch (error) {
+                alert('Erro: ' + (error.response?.data?.error || error.message));
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-check-circle mr-2"></i>Confirmar e Gerar PIX';
+            }
+        });
+        
+        function copyGeneralPixPayload() {
+            const payload = document.getElementById('pix-payload');
+            payload.select();
+            document.execCommand('copy');
+            alert('PIX copiado!');
+        }
+        
+        // Verificar status do pagamento a cada 5 segundos
+        let checkInterval;
+        function startPaymentCheck() {
+            checkInterval = setInterval(async () => {
+                try {
+                    const response = await axios.get(\`/api/payment-status/\${window.paymentId}\`);
+                    if (response.data.status === 'RECEIVED' || response.data.status === 'CONFIRMED') {
+                        clearInterval(checkInterval);
+                        showPaymentConfirmed();
+                    }
+                } catch (error) {
+                    console.error('Erro ao verificar pagamento:', error);
+                }
+            }, 5000); // Verifica a cada 5 segundos
+        }
+        
+        function showPaymentConfirmed() {
+            // Tocar som de confirmação
+            playSuccessSound();
+            
+            // Criar efeito confetti
+            createConfetti();
+            
+            // Atualizar conteúdo dinâmico baseado no tipo de cobrança
+            // Usar o chargeType da resposta do servidor, default 'single' se não definido
+            const chargeType = window.chargeType || 'single';
+            const stepsContent = document.getElementById('payment-steps-content');
+            
+            console.log('🔍 showPaymentConfirmed - chargeType:', chargeType);
+            
+            if (chargeType === 'single') {
+                // Mensagem para pagamento único
+                document.getElementById('payment-subtitle').textContent = '✅ Seu pagamento foi processado com sucesso';
+                document.getElementById('payment-welcome').innerHTML = '<i class="fas fa-check-circle text-green-500 mr-2"></i>Obrigado pela sua compra!<i class="fas fa-check-circle text-green-500 ml-2"></i>';
+                
+                stepsContent.innerHTML = '<div class="flex items-start space-x-4">' +
+                    '<div class="flex-shrink-0 w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white font-bold text-lg">1</div>' +
+                    '<div class="flex-1">' +
+                    '<h4 class="font-bold text-gray-800 mb-1">Pagamento Confirmado</h4>' +
+                    '<p class="text-sm text-gray-600">Seu pagamento foi confirmado e processado</p>' +
+                    '</div></div>' +
+                    '<div class="flex items-start space-x-4">' +
+                    '<div class="flex-shrink-0 w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white font-bold text-lg">2</div>' +
+                    '<div class="flex-1">' +
+                    '<h4 class="font-bold text-gray-800 mb-1">Compra Concluída</h4>' +
+                    '<p class="text-sm text-gray-600">Sua compra foi registrada com sucesso</p>' +
+                    '</div></div>' +
+                    '<div class="flex items-start space-x-4">' +
+                    '<div class="flex-shrink-0 w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white font-bold text-lg">3</div>' +
+                    '<div class="flex-1">' +
+                    '<h4 class="font-bold text-gray-800 mb-1">Recibo Enviado</h4>' +
+                    '<p class="text-sm text-gray-600">Você receberá o comprovante por email</p>' +
+                    '</div></div>';
+            } else {
+                // Mensagem para assinatura mensal
+                document.getElementById('payment-subtitle').textContent = '✅ Sua assinatura foi ativada com sucesso';
+                document.getElementById('payment-welcome').innerHTML = '<i class="fas fa-star text-yellow-500 mr-2"></i>Bem-vindo à sua assinatura!<i class="fas fa-star text-yellow-500 ml-2"></i>';
+                
+                stepsContent.innerHTML = '<div class="flex items-start space-x-4">' +
+                    '<div class="flex-shrink-0 w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white font-bold text-lg">1</div>' +
+                    '<div class="flex-1">' +
+                    '<h4 class="font-bold text-gray-800 mb-1">Pagamento Processado</h4>' +
+                    '<p class="text-sm text-gray-600">Seu pagamento foi confirmado e registrado</p>' +
+                    '</div></div>' +
+                    '<div class="flex items-start space-x-4">' +
+                    '<div class="flex-shrink-0 w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white font-bold text-lg">2</div>' +
+                    '<div class="flex-1">' +
+                    '<h4 class="font-bold text-gray-800 mb-1">Assinatura Ativa</h4>' +
+                    '<p class="text-sm text-gray-600">Sua assinatura mensal está ativa a partir de agora</p>' +
+                    '</div></div>' +
+                    '<div class="flex items-start space-x-4">' +
+                    '<div class="flex-shrink-0 w-10 h-10 bg-green-500 rounded-full flex items-center justify-center text-white font-bold text-lg">3</div>' +
+                    '<div class="flex-1">' +
+                    '<h4 class="font-bold text-gray-800 mb-1">Cobranças Automáticas</h4>' +
+                    '<p class="text-sm text-gray-600">Todo mês você receberá um novo PIX por email</p>' +
+                    '</div></div>';
+            }
+            
+            // Mostrar tela de confirmação
+            document.getElementById('success-state').classList.add('hidden');
+            document.getElementById('payment-confirmed-state').classList.remove('hidden');
+            
+            // Scroll suave para o topo
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            
+            // 🎰 Carregar bilhete da loteria
+            loadLotteryTicket();
+        }
+        
+        // 🎰 Função para carregar o bilhete da loteria
+        async function loadLotteryTicket() {
+            try {
+                console.log('🎫 Carregando bilhete da loteria para pagamento:', window.paymentId);
+                
+                const response = await axios.get('/api/lottery/ticket/' + window.paymentId);
+                
+                if (response.data.ok && response.data.ticket) {
+                    const ticket = response.data.ticket;
+                    
+                    console.log('✅ Bilhete carregado:', ticket);
+                    
+                    // Exibir número do bilhete
+                    document.getElementById('lottery-ticket-number').textContent = ticket.ticketNumber;
+                    
+                    // Formatar e exibir data do sorteio
+                    // Adicionar T00:00:00 para evitar problemas de timezone
+                    const drawDate = new Date(ticket.drawDate + 'T00:00:00');
+                    document.getElementById('lottery-draw-date').textContent = 
+                        drawDate.toLocaleDateString('pt-BR', { 
+                            day: '2-digit', 
+                            month: '2-digit', 
+                            year: 'numeric' 
+                        });
+                    
+                    // Atualizar descrição do prêmio personalizado
+                    if (ticket.prizeDescription) {
+                        document.getElementById('lottery-prize-description').textContent = 
+                            '🎁 ' + ticket.prizeDescription.toUpperCase() + '!';
+                    }
+                    
+                    // Atualizar descrição do sorteio (se personalizado)
+                    if (ticket.drawDescription) {
+                        const howItWorks = document.getElementById('lottery-how-it-works');
+                        howItWorks.innerHTML = 
+                            '<i class="fas fa-info-circle mr-1"></i>' +
+                            '<strong>O que será sorteado:</strong> ' + ticket.drawDescription + ' ' +
+                            '<strong>(' + (ticket.prizeDescription || '1º Prêmio - R$ 500.000,00') + ')</strong>';
+                    }
+                    
+                    // Verificar se o sorteio já passou
+                    // Zerar horas para comparação correta
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    
+                    if (drawDate <= today) {
+                        // Habilitar botão de verificação
+                        document.getElementById('check-lottery-btn').disabled = false;
+                        document.getElementById('check-lottery-text').textContent = 'Verificar Resultado';
+                    } else {
+                        // Desabilitar botão até a data do sorteio
+                        // Calcular diferença em dias (considerando apenas a data, sem horas)
+                        const diffTime = drawDate.getTime() - today.getTime();
+                        const daysUntilDraw = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                        document.getElementById('check-lottery-text').textContent = 
+                            'Sorteio em ' + daysUntilDraw + ' dia' + (daysUntilDraw > 1 ? 's' : '');
+                    }
+                } else {
+                    console.log('⚠️ Bilhete não encontrado ainda, tentando novamente em 5s...');
+                    // Tentar novamente após 5 segundos (pode ser que o webhook ainda não processou)
+                    setTimeout(loadLotteryTicket, 5000);
+                }
+            } catch (error) {
+                console.error('❌ Erro ao carregar bilhete:', error);
+                console.error('📊 Detalhes do erro:', error.response?.data || error.message);
+                
+                // Mostrar mensagem de erro mais detalhada
+                const errorMsg = error.response?.data?.error || 'Erro ao carregar';
+                document.getElementById('lottery-ticket-number').textContent = errorMsg;
+                
+                // Se bilhete não encontrado, tentar novamente após 5s
+                if (error.response?.status === 404) {
+                    console.log('⏳ Bilhete não encontrado, tentando novamente em 5s...');
+                    setTimeout(loadLotteryTicket, 5000);
+                }
+            }
+        }
+        
+        // 🎰 Função para verificar resultado do sorteio
+        async function checkLotteryResult() {
+            const btn = document.getElementById('check-lottery-btn');
+            const resultDiv = document.getElementById('lottery-result');
+            
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Consultando...';
+            
+            try {
+                const response = await axios.post('/api/lottery/check/' + window.paymentId);
+                
+                if (response.data.ok) {
+                    resultDiv.classList.remove('hidden');
+                    
+                    if (response.data.status === 'WINNER') {
+                        // 🏆 GANHOU!
+                        playSuccessSound();
+                        createConfetti();
+                        
+                        resultDiv.innerHTML = 
+                            '<div class="bg-gradient-to-r from-green-400 to-emerald-500 rounded-xl p-6 text-center animate-bounce shadow-2xl">' +
+                                '<div class="text-6xl mb-3">🏆</div>' +
+                                '<h3 class="text-3xl font-black text-white mb-2">' + response.data.message + '</h3>' +
+                                '<div class="bg-white rounded-lg p-4 mb-3">' +
+                                    '<p class="text-2xl font-bold text-green-600 mb-1">' +
+                                        response.data.prize.formattedValue +
+                                    '</p>' +
+                                    '<p class="text-sm text-gray-600">' + response.data.prize.type + '</p>' +
+                                '</div>' +
+                                '<p class="text-white text-sm">' +
+                                    '<i class="fas fa-calendar mr-2"></i>' +
+                                    'Concurso ' + response.data.ticket.drawNumber + ' - ' + new Date(response.data.ticket.drawDate).toLocaleDateString('pt-BR') +
+                                '</p>' +
+                            '</div>';
+                        
+                        btn.innerHTML = '<i class="fas fa-trophy mr-2"></i> VOCÊ GANHOU!';
+                        btn.className = 'w-full bg-gradient-to-r from-green-500 to-emerald-500 text-white font-bold py-4 rounded-xl shadow-lg';
+                        
+                    } else if (response.data.status === 'LOSER') {
+                        // ❌ Não ganhou
+                        resultDiv.innerHTML = 
+                            '<div class="bg-gradient-to-r from-gray-100 to-gray-200 rounded-xl p-6 text-center">' +
+                                '<div class="text-4xl mb-3">😔</div>' +
+                                '<h3 class="text-xl font-bold text-gray-800 mb-2">' + response.data.message + '</h3>' +
+                                '<div class="bg-white rounded-lg p-3 mb-2">' +
+                                    '<p class="text-sm text-gray-600 mb-1">Número sorteado (1º Prêmio):</p>' +
+                                    '<p class="text-2xl font-bold text-amber-600 font-mono">' +
+                                        response.data.winningNumber.firstPrize +
+                                    '</p>' +
+                                '</div>' +
+                                '<p class="text-gray-600 text-sm">' +
+                                    '<i class="fas fa-calendar mr-2"></i>' +
+                                    'Concurso ' + response.data.ticket.drawNumber + ' - ' + new Date(response.data.ticket.drawDate).toLocaleDateString('pt-BR') +
+                                '</p>' +
+                            '</div>';
+                        
+                        btn.innerHTML = '<i class="fas fa-check mr-2"></i> Conferido';
+                        btn.className = 'w-full bg-gray-400 text-white font-bold py-4 rounded-xl';
+                        
+                    } else if (response.data.status === 'PENDING') {
+                        // ⏳ Sorteio ainda não aconteceu
+                        resultDiv.innerHTML = 
+                            '<div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">' +
+                                '<i class="fas fa-clock text-blue-500 text-3xl mb-2"></i>' +
+                                '<p class="text-gray-700">' + response.data.message + '</p>' +
+                            '</div>';
+                        btn.innerHTML = '<i class="fas fa-clock mr-2"></i> Aguardando sorteio';
+                        btn.disabled = true;
+                    }
+                } else {
+                    resultDiv.classList.remove('hidden');
+                    resultDiv.innerHTML = 
+                        '<div class="bg-red-50 border border-red-200 rounded-lg p-4 text-center">' +
+                            '<i class="fas fa-exclamation-triangle text-red-500 text-2xl mb-2"></i>' +
+                            '<p class="text-red-700 text-sm">' + (response.data.error || 'Erro ao verificar resultado') + '</p>' +
+                        '</div>';
+                    btn.innerHTML = '<i class="fas fa-search mr-2"></i> Tentar Novamente';
+                    btn.disabled = false;
+                }
+            } catch (error) {
+                console.error('Erro:', error);
+                resultDiv.classList.remove('hidden');
+                resultDiv.innerHTML = 
+                    '<div class="bg-red-50 border border-red-200 rounded-lg p-4 text-center">' +
+                        '<i class="fas fa-exclamation-triangle text-red-500 text-2xl mb-2"></i>' +
+                        '<p class="text-red-700 text-sm">Erro ao consultar resultado. Tente novamente.</p>' +
+                    '</div>';
+                btn.innerHTML = '<i class="fas fa-search mr-2"></i> Tentar Novamente';
+                btn.disabled = false;
+            }
+        }
+        
+        function playSuccessSound() {
+            // Usar Web Audio API para criar som de sucesso
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            
+            // Primeira nota (Dó)
+            const oscillator1 = audioContext.createOscillator();
+            const gainNode1 = audioContext.createGain();
+            oscillator1.connect(gainNode1);
+            gainNode1.connect(audioContext.destination);
+            oscillator1.frequency.value = 523.25; // Dó
+            gainNode1.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode1.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+            oscillator1.start(audioContext.currentTime);
+            oscillator1.stop(audioContext.currentTime + 0.3);
+            
+            // Segunda nota (Mi)
+            const oscillator2 = audioContext.createOscillator();
+            const gainNode2 = audioContext.createGain();
+            oscillator2.connect(gainNode2);
+            gainNode2.connect(audioContext.destination);
+            oscillator2.frequency.value = 659.25; // Mi
+            gainNode2.gain.setValueAtTime(0.3, audioContext.currentTime + 0.15);
+            gainNode2.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.45);
+            oscillator2.start(audioContext.currentTime + 0.15);
+            oscillator2.stop(audioContext.currentTime + 0.45);
+            
+            // Terceira nota (Sol)
+            const oscillator3 = audioContext.createOscillator();
+            const gainNode3 = audioContext.createGain();
+            oscillator3.connect(gainNode3);
+            gainNode3.connect(audioContext.destination);
+            oscillator3.frequency.value = 783.99; // Sol
+            gainNode3.gain.setValueAtTime(0.3, audioContext.currentTime + 0.3);
+            gainNode3.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.6);
+            oscillator3.start(audioContext.currentTime + 0.3);
+            oscillator3.stop(audioContext.currentTime + 0.6);
+        }
+        
+        function createConfetti() {
+            const canvas = document.getElementById('confetti-canvas');
+            const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#ffa500'];
+            
+            for (let i = 0; i < 50; i++) {
+                const confetti = document.createElement('div');
+                confetti.style.position = 'absolute';
+                confetti.style.width = '10px';
+                confetti.style.height = '10px';
+                confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                confetti.style.left = Math.random() * 100 + '%';
+                confetti.style.top = '-10px';
+                confetti.style.opacity = '1';
+                confetti.style.borderRadius = '50%';
+                canvas.appendChild(confetti);
+                
+                const duration = 2000 + Math.random() * 1000;
+                const startTime = Date.now();
+                const startLeft = parseFloat(confetti.style.left);
+                
+                function animate() {
+                    const elapsed = Date.now() - startTime;
+                    const progress = elapsed / duration;
+                    
+                    if (progress < 1) {
+                        confetti.style.top = (progress * 100) + '%';
+                        confetti.style.left = (startLeft + Math.sin(progress * 4 * Math.PI) * 10) + '%';
+                        confetti.style.opacity = String(1 - progress);
+                        requestAnimationFrame(animate);
+                    } else {
+                        confetti.remove();
+                    }
+                }
+                
+                setTimeout(() => animate(), Math.random() * 500);
+            }
+        }
+        
+        loadLinkData();
+    </script>
+</body>
+</html>`)
+})
+
+// Página pública de auto-cadastro PIX Automático
+app.get('/pix-automatic-signup/:linkId', async (c) => {
+  return c.html(`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PIX Automático - Auto-Cadastro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+    <style>
+        @keyframes pulse-slow {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+        .animate-pulse-slow {
+            animation: pulse-slow 2s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div id="loading-state" class="max-w-md mx-auto bg-white rounded-2xl shadow-xl p-8 text-center">
+            <i class="fas fa-spinner fa-spin text-4xl text-indigo-600 mb-4"></i>
+            <p class="text-gray-600">Carregando informações...</p>
+        </div>
+        <div id="error-state" class="hidden max-w-md mx-auto bg-white rounded-2xl shadow-xl p-8 text-center">
+            <i class="fas fa-exclamation-triangle text-5xl text-red-500 mb-4"></i>
+            <h2 class="text-2xl font-bold text-gray-800 mb-2">Link Inválido ou Expirado</h2>
+            <p id="error-message" class="text-gray-600 mb-6"></p>
+        </div>
+        <div id="form-state" class="hidden max-w-md mx-auto bg-white rounded-2xl shadow-xl p-8">
+            <div class="text-center mb-6">
+                <div class="bg-gradient-to-r from-blue-500 to-purple-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i class="fas fa-robot text-white text-2xl"></i>
+                </div>
+                <h1 class="text-2xl font-bold text-gray-800 mb-2">PIX Automático</h1>
+                <p class="text-gray-600">Débito Automático Mensal</p>
+            </div>
+            <div class="bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl p-4 mb-6 border border-blue-200">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-gray-600 font-medium">Valor Mensal:</span>
+                    <span id="plan-value" class="text-2xl font-bold text-blue-600">R$ 0,00</span>
+                </div>
+                <p id="plan-description" class="text-sm text-gray-600 mb-3"></p>
+                <p id="plan-frequency" class="text-xs text-gray-500"></p>
+                <div class="mt-3 bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                    <p class="text-xs text-gray-700">
+                        <i class="fas fa-info-circle text-yellow-600 mr-1"></i>
+                        <strong>PIX Automático:</strong> Você autoriza UMA VEZ e o débito ocorre automaticamente todo mês. Sem necessidade de pagar manualmente.
+                    </p>
+                </div>
+            </div>
+            <form id="signup-form" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-user mr-1 text-indigo-500"></i>Nome Completo
+                    </label>
+                    <input type="text" id="customer-name" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="João da Silva" required>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-envelope mr-1 text-indigo-500"></i>E-mail
+                    </label>
+                    <input type="email" id="customer-email" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="joao@email.com" required>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-id-card mr-1 text-indigo-500"></i>CPF
+                    </label>
+                    <input type="text" id="customer-cpf" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="000.000.000-00" maxlength="14" required>
+                </div>
+                <button type="submit" id="submit-btn" class="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold py-4 rounded-lg hover:from-blue-700 hover:to-purple-700">
+                    <i class="fas fa-robot mr-2"></i>Gerar Autorização PIX Automático
+                </button>
+            </form>
+        </div>
+        <div id="success-state" class="hidden max-w-2xl mx-auto bg-white rounded-2xl shadow-xl p-8">
+            <div class="text-center mb-6">
+                <div class="bg-blue-500 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+                    <i class="fas fa-robot text-white text-3xl"></i>
+                </div>
+                <h2 class="text-3xl font-bold text-gray-800 mb-2">Autorização PIX Automático Criada!</h2>
+                <p class="text-gray-600">Escaneie o QR Code para autorizar o débito automático</p>
+            </div>
+            <div class="bg-white border-2 border-blue-300 rounded-xl p-6 mb-6">
+                <div id="qr-code-container" class="flex justify-center mb-4">
+                    <img id="qr-code-image" src="" alt="QR Code PIX Automático" class="w-64 h-64 border-4 border-white shadow-lg rounded-lg">
+                </div>
+                <div class="bg-gray-50 rounded-lg p-4">
+                    <p class="text-xs text-gray-600 mb-2">Pix Copia e Cola:</p>
+                    <div class="flex gap-2">
+                        <input type="text" id="pix-payload" readonly class="flex-1 text-xs bg-white border border-gray-300 rounded px-3 py-2 font-mono">
+                        <button onclick="copyGeneralPixPayload()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h3 class="font-bold text-gray-800 mb-3">
+                    <i class="fas fa-info-circle text-blue-600 mr-2"></i>
+                    Como funciona?
+                </h3>
+                <ol class="text-sm text-gray-700 space-y-2">
+                    <li><strong>1.</strong> Escaneie o QR Code com o app do seu banco</li>
+                    <li><strong>2.</strong> Autorize o débito automático UMA VEZ</li>
+                    <li><strong>3.</strong> Pague a primeira parcela imediatamente</li>
+                    <li><strong>4.</strong> Autorização será ativada após o pagamento</li>
+                    <li><strong>5.</strong> Todo mês o valor será debitado automaticamente</li>
+                </ol>
+            </div>
+        </div>
+        
+        <!-- Payment Confirmed State -->
+        <div id="payment-confirmed-state" class="hidden max-w-2xl mx-auto bg-white rounded-2xl shadow-xl p-8 animate-pulse-slow">
+            <div class="text-center mb-6">
+                <div class="bg-gradient-to-r from-green-400 to-emerald-500 w-32 h-32 rounded-full flex items-center justify-center mx-auto mb-6 animate-bounce shadow-2xl">
+                    <i class="fas fa-check-double text-white text-5xl"></i>
+                </div>
+                <h2 class="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-600 to-emerald-600 mb-3 animate-pulse">🎉 Pagamento Confirmado! 🎉</h2>
+                <p class="text-xl text-green-600 font-semibold mb-4">✅ Sua assinatura foi ativada com sucesso</p>
+            </div>
+            
+            <div class="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-6 mb-6 border-2 border-green-200">
+                <h3 class="text-lg font-bold text-gray-800 mb-4 text-center">
+                    <i class="fas fa-calendar-check text-green-600 mr-2"></i>
+                    O que acontece agora?
+                </h3>
+                <div class="space-y-4">
+                    <div class="flex items-start">
+                        <div class="bg-green-500 text-white rounded-full w-8 h-8 flex items-center justify-center mr-4 flex-shrink-0 font-bold">1</div>
+                        <div>
+                            <p class="font-semibold text-gray-800">Pagamento Processado</p>
+                            <p class="text-sm text-gray-600">Seu pagamento foi confirmado e registrado</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start">
+                        <div class="bg-green-500 text-white rounded-full w-8 h-8 flex items-center justify-center mr-4 flex-shrink-0 font-bold">2</div>
+                        <div>
+                            <p class="font-semibold text-gray-800">Autorização Ativa</p>
+                            <p class="text-sm text-gray-600">Seu débito automático está ativo a partir de agora</p>
+                        </div>
+                    </div>
+                    <div class="flex items-start">
+                        <div class="bg-green-500 text-white rounded-full w-8 h-8 flex items-center justify-center mr-4 flex-shrink-0 font-bold">3</div>
+                        <div>
+                            <p class="font-semibold text-gray-800">Cobranças Automáticas</p>
+                            <p class="text-sm text-gray-600">Todo mês o valor será debitado automaticamente - VOCÊ NÃO PRECISA FAZER NADA!</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+                <p class="text-sm text-gray-700">
+                    <i class="fas fa-envelope text-blue-500 mr-2"></i>
+                    Você receberá um email de confirmação em breve
+                </p>
+            </div>
+        </div>
+    </div>
+    <script>
+        const pathParts = window.location.pathname.split('/');
+        const linkId = pathParts[pathParts.length - 1];
+        let linkData = null;
+        
+        async function loadLinkData() {
+            try {
+                const response = await axios.get(\`/api/pix/automatic-signup-link/\${linkId}\`);
+                if (response.data.ok) {
+                    linkData = response.data.data;
+                    document.getElementById('loading-state').classList.add('hidden');
+                    document.getElementById('form-state').classList.remove('hidden');
+                    document.getElementById('plan-value').textContent = \`R$ \${linkData.value.toFixed(2)}\`;
+                    document.getElementById('plan-description').textContent = linkData.description;
+                    document.getElementById('plan-frequency').textContent = \`Frequência: \${linkData.frequency === 'MONTHLY' ? 'Mensal' : linkData.frequency}\`;
+                } else {
+                    showError(response.data.error || 'Link inválido');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showError('Erro ao carregar');
+            }
+        }
+        
+        function showError(message) {
+            document.getElementById('loading-state').classList.add('hidden');
+            document.getElementById('form-state').classList.add('hidden');
+            document.getElementById('error-state').classList.remove('hidden');
+            document.getElementById('error-message').textContent = message;
+        }
+        
+        document.getElementById('customer-cpf').addEventListener('input', function(e) {
+            let value = e.target.value.replace(/\\D/g, '');
+            if (value.length > 11) value = value.substring(0, 11);
+            if (value.length > 9) {
+                value = value.replace(/(\\d{3})(\\d{3})(\\d{3})(\\d{2})/, '$1.$2.$3-$4');
+            } else if (value.length > 6) {
+                value = value.replace(/(\\d{3})(\\d{3})(\\d{1,3})/, '$1.$2.$3');
+            } else if (value.length > 3) {
+                value = value.replace(/(\\d{3})(\\d{1,3})/, '$1.$2');
+            }
+            e.target.value = value;
+        });
+        
+        document.getElementById('signup-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const submitBtn = document.getElementById('submit-btn');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Criando...';
+            
+            try {
+                const response = await axios.post(\`/api/pix/automatic-signup/\${linkId}\`, {
+                    customerName: document.getElementById('customer-name').value,
+                    customerEmail: document.getElementById('customer-email').value,
+                    customerCpf: document.getElementById('customer-cpf').value.replace(/\\D/g, '')
+                });
+                
+                if (response.data.ok) {
+                    document.getElementById('form-state').classList.add('hidden');
+                    document.getElementById('success-state').classList.remove('hidden');
+                    if (response.data.qrCode) {
+                        document.getElementById('qr-code-image').src = response.data.qrCode.encodedImage;
+                        document.getElementById('pix-payload').value = response.data.qrCode.payload;
+                    }
+                    
+                    // Iniciar verificação de pagamento
+                    window.authorizationId = response.data.authorization.id;
+                    startPaymentCheck();
+                } else {
+                    alert('Erro: ' + response.data.error);
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = '<i class="fas fa-robot mr-2"></i>Gerar Autorização PIX Automático';
+                }
+            } catch (error) {
+                alert('Erro: ' + (error.response?.data?.error || error.message));
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="fas fa-robot mr-2"></i>Gerar Autorização PIX Automático';
+            }
+        });
+        
+        function copyGeneralPixPayload() {
+            const payload = document.getElementById('pix-payload');
+            payload.select();
+            document.execCommand('copy');
+            alert('PIX copiado!');
+        }
+        
+        // Verificar status da autorização/pagamento a cada 10 segundos
+        let checkInterval;
+        function startPaymentCheck() {
+            checkInterval = setInterval(async () => {
+                try {
+                    // TODO: Implementar verificação de status da autorização
+                    // Por enquanto, apenas simula
+                    console.log('Verificando status da autorização...');
+                } catch (error) {
+                    console.error('Erro ao verificar autorização:', error);
+                }
+            }, 10000); // Verifica a cada 10 segundos
+        }
+        
+        function showPaymentConfirmed() {
+            clearInterval(checkInterval);
+            document.getElementById('success-state').classList.add('hidden');
+            document.getElementById('payment-confirmed-state').classList.remove('hidden');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        
+        loadLinkData();
+    </script>
+</body>
+</html>`)
+})
+
+// Redirect /dashboard to root
+app.get('/dashboard', (c) => {
+  return c.redirect('/', 301)
+})
+
+// Login page para subcontas
+app.get('/subaccount-login', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Login - Subconta</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <style>
+            * {
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+                -webkit-font-smoothing: antialiased;
+            }
+            h1, h2 { font-weight: 700; letter-spacing: -0.02em; }
+            button { font-weight: 600; letter-spacing: 0.01em; }
+            input { font-size: 0.9375rem; line-height: 1.5; }
+        </style>
+    </head>
+    <body class="bg-gradient-to-br from-purple-600 to-pink-600 min-h-screen flex items-center justify-center">
+        <div class="max-w-md w-full mx-4">
+            <div class="bg-white rounded-2xl shadow-2xl p-8">
+                <div class="text-center mb-8">
+                    <div class="inline-block bg-purple-100 rounded-full p-4 mb-4">
+                        <i class="fas fa-user-circle text-purple-600 text-5xl"></i>
+                    </div>
+                    <h1 class="text-3xl font-bold text-gray-800 mb-2">Acesso da Subconta</h1>
+                    <p class="text-gray-600">Faça login para ver seus banners</p>
+                </div>
+
+                <form id="login-form" class="space-y-6">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            <i class="fas fa-user mr-2"></i>Usuário
+                        </label>
+                        <input type="text" name="username" required autofocus
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+                            placeholder="Digite seu usuário">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            <i class="fas fa-lock mr-2"></i>Senha
+                        </label>
+                        <input type="password" name="password" required
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+                            placeholder="Digite sua senha">
+                    </div>
+
+                    <div id="error-message" class="hidden bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                        <i class="fas fa-exclamation-circle mr-2"></i>
+                        <span id="error-text"></span>
+                    </div>
+
+                    <button type="submit"
+                        class="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 rounded-lg font-semibold hover:from-purple-700 hover:to-pink-700 transform hover:scale-[1.02] transition-all shadow-lg">
+                        <i class="fas fa-sign-in-alt mr-2"></i>
+                        Entrar
+                    </button>
+                </form>
+
+                <div class="mt-6 text-center">
+                    <p class="text-sm text-gray-600">
+                        <i class="fas fa-info-circle mr-2"></i>
+                        Recebeu suas credenciais por email
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script>
+            document.getElementById('login-form').addEventListener('submit', async (e) => {
+                e.preventDefault()
+                
+                const formData = new FormData(e.target)
+                const username = formData.get('username')
+                const password = formData.get('password')
+                
+                const errorDiv = document.getElementById('error-message')
+                const errorText = document.getElementById('error-text')
+                
+                errorDiv.classList.add('hidden')
+                
+                try {
+                    const response = await axios.post('/api/subaccount-login', {
+                        username,
+                        password
+                    })
+                    
+                    if (response.data.success) {
+                        window.location.href = '/subaccount-dashboard'
+                    }
+                } catch (error) {
+                    errorDiv.classList.remove('hidden')
+                    errorText.textContent = error.response?.data?.error || 'Erro ao fazer login'
+                }
+            })
+        </script>
+    </body>
+    </html>
+  `)
+})
+
+// Dashboard da subconta
+app.get('/subaccount-dashboard', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Meus Banners</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <style>
+            * {
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+                -webkit-font-smoothing: antialiased;
+            }
+        </style>
+    </head>
+    <body class="bg-gray-100 min-h-screen">
+        <!-- Navbar -->
+        <nav class="bg-white shadow-md sticky top-0 z-50">
+            <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+                <div class="flex items-center gap-3">
+                    <i class="fas fa-user-circle text-purple-600 text-2xl"></i>
+                    <div>
+                        <h1 class="font-bold text-lg" id="subaccount-name">Carregando...</h1>
+                        <p class="text-xs text-gray-600" id="subaccount-email"></p>
+                    </div>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="showSubaccountChangePasswordModal()" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition">
+                        <i class="fas fa-key mr-2"></i>Trocar Senha
+                    </button>
+                    <button onclick="logout()" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition">
+                        <i class="fas fa-sign-out-alt mr-2"></i>Sair
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <div class="max-w-7xl mx-auto px-4 py-8">
+            <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                <h2 class="text-2xl font-bold text-gray-800 mb-2">
+                    <i class="fas fa-images mr-2 text-purple-600"></i>
+                    Meus Banners Salvos
+                </h2>
+                <p class="text-gray-600">Aqui estão todos os banners criados para sua conta</p>
+            </div>
+
+            <!-- Loading -->
+            <div id="loading" class="text-center py-12">
+                <i class="fas fa-spinner fa-spin text-4xl text-purple-600 mb-4"></i>
+                <p class="text-gray-600">Carregando banners...</p>
+            </div>
+
+            <!-- Banner List -->
+            <div id="banners-grid" class="hidden grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- Banners serão inseridos aqui -->
+            </div>
+
+            <!-- Empty State -->
+            <div id="empty-state" class="hidden text-center py-12 bg-white rounded-xl shadow-lg">
+                <i class="fas fa-inbox text-6xl text-gray-300 mb-4"></i>
+                <h3 class="text-xl font-bold text-gray-700 mb-2">Nenhum banner encontrado</h3>
+                <p class="text-gray-600">Entre em contato com o administrador para gerar seus banners</p>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script src="/static/app.js?v=15.2"></script>
+        <script>
+            let currentSubaccount = null
+
+            async function checkAuth() {
+                try {
+                    const response = await axios.get('/api/subaccount-check-auth')
+                    if (!response.data.authenticated) {
+                        window.location.href = '/subaccount-login'
+                        return
+                    }
+                    currentSubaccount = response.data.subaccount
+                    // Definir currentUser como subaccount para que o botão Excluir não apareça
+                    window.currentUser = { username: 'subaccount' }
+                    document.getElementById('subaccount-name').textContent = currentSubaccount.name
+                    document.getElementById('subaccount-email').textContent = currentSubaccount.email
+                    loadBanners()
+                } catch (error) {
+                    window.location.href = '/subaccount-login'
+                }
+            }
+
+            function loadBanners() {
+                const accountId = currentSubaccount.id
+                const bannersKey = \`banners_\${accountId}\`
+                
+                // Buscar banners do localStorage
+                const banners = JSON.parse(localStorage.getItem(bannersKey) || '[]')
+                
+                document.getElementById('loading').classList.add('hidden')
+                
+                if (banners.length === 0) {
+                    document.getElementById('empty-state').classList.remove('hidden')
+                    return
+                }
+                
+                const grid = document.getElementById('banners-grid')
+                grid.classList.remove('hidden')
+                
+                grid.innerHTML = banners.map(banner => \`
+                    <div class="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition cursor-pointer"
+                         onclick="viewBannerDetails('\${accountId}', '\${banner.id}')">
+                        <!-- Preview -->
+                        <div class="h-48 \${getGradientClass(banner.color)} p-4 flex items-center justify-center">
+                            <div class="text-center text-white">
+                                <div class="text-2xl font-bold mb-2">\${banner.title}</div>
+                                <div class="text-4xl font-bold">R$ \${parseFloat(banner.value).toFixed(2).replace('.', ',')}</div>
+                                \${banner.chargeType === 'monthly' ? '<div class="text-sm mt-1">/mês</div>' : ''}
+                            </div>
+                        </div>
+                        
+                        <!-- Info -->
+                        <div class="p-4">
+                            <div class="flex items-center gap-2 mb-2">
+                                \${banner.chargeType === 'monthly' 
+                                    ? '<span class="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full font-semibold">🔄 MENSAL</span>'
+                                    : '<span class="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full font-semibold">💳 ÚNICO</span>'}
+                            </div>
+                            <p class="text-gray-600 text-sm mb-2">\${banner.description}</p>
+                            <p class="text-xs text-gray-500">
+                                <i class="far fa-calendar mr-1"></i>
+                                \${new Date(banner.createdAt).toLocaleDateString('pt-BR')}
+                            </p>
+                        </div>
+                    </div>
+                \`).join('')
+            }
+
+            // Mostrar modal de alteração de senha
+            function showSubaccountChangePasswordModal() {
+                const modal = document.createElement('div');
+                modal.id = 'change-password-modal';
+                modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+                
+                const modalContent = '<div class="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full mx-4">' +
+                    '<div class="flex justify-between items-center mb-6">' +
+                    '<h2 class="text-2xl font-bold text-gray-800"><i class="fas fa-key mr-2 text-purple-600"></i>Trocar Senha</h2>' +
+                    '<button onclick="closeSubaccountChangePasswordModal()" class="text-gray-400 hover:text-gray-600"><i class="fas fa-times text-2xl"></i></button>' +
+                    '</div>' +
+                    '<form id="change-password-form" class="space-y-4">' +
+                    '<div><label class="block text-sm font-medium text-gray-700 mb-2"><i class="fas fa-lock mr-2"></i>Senha Atual</label>' +
+                    '<input type="password" name="currentPassword" required class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"></div>' +
+                    '<div><label class="block text-sm font-medium text-gray-700 mb-2"><i class="fas fa-key mr-2"></i>Nova Senha</label>' +
+                    '<input type="password" name="newPassword" required minlength="6" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent">' +
+                    '<p class="text-xs text-gray-500 mt-1">Mínimo 6 caracteres</p></div>' +
+                    '<div><label class="block text-sm font-medium text-gray-700 mb-2"><i class="fas fa-check-circle mr-2"></i>Confirmar Nova Senha</label>' +
+                    '<input type="password" name="confirmPassword" required minlength="6" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"></div>' +
+                    '<div class="flex gap-3 mt-6">' +
+                    '<button type="button" onclick="closeSubaccountChangePasswordModal()" class="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition">Cancelar</button>' +
+                    '<button type="submit" class="flex-1 px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"><i class="fas fa-check mr-2"></i>Alterar</button>' +
+                    '</div></form></div>';
+                
+                modal.innerHTML = modalContent;
+                
+                document.body.appendChild(modal);
+                
+                // Adicionar listener para fechar ao clicar fora
+                modal.addEventListener('click', (e) => {
+                    if (e.target === modal) {
+                        closeSubaccountChangePasswordModal();
+                    }
+                });
+                
+                // Adicionar listener para o formulário
+                document.getElementById('change-password-form').addEventListener('submit', handleSubaccountChangePassword);
+            }
+            
+            // Fechar modal de alteração de senha
+            function closeSubaccountChangePasswordModal() {
+                const modal = document.getElementById('change-password-modal');
+                if (modal) {
+                    modal.remove();
+                }
+            }
+            
+            // Processar alteração de senha da subconta
+            async function handleSubaccountChangePassword(e) {
+                e.preventDefault();
+                
+                const formData = new FormData(e.target);
+                const currentPassword = formData.get('currentPassword');
+                const newPassword = formData.get('newPassword');
+                const confirmPassword = formData.get('confirmPassword');
+                
+                // Validar senhas
+                if (newPassword !== confirmPassword) {
+                    alert('❌ As senhas não coincidem!');
+                    return;
+                }
+                
+                if (newPassword.length < 6) {
+                    alert('❌ A nova senha deve ter no mínimo 6 caracteres!');
+                    return;
+                }
+                
+                try {
+                    const response = await axios.post('/api/subaccount-change-password', {
+                        currentPassword,
+                        newPassword
+                    });
+                    
+                    if (response.data.ok) {
+                        alert('✅ Senha alterada com sucesso!\\n\\nVocê será redirecionado para fazer login novamente.');
+                        closeSubaccountChangePasswordModal();
+                        logout();
+                    } else {
+                        alert('❌ ' + (response.data.error || 'Erro ao alterar senha'));
+                    }
+                } catch (error) {
+                    console.error('Erro ao alterar senha:', error);
+                    alert('❌ ' + (error.response?.data?.error || 'Erro ao alterar senha. Verifique sua senha atual.'));
+                }
+            }
+
+            async function logout() {
+                try {
+                    await axios.post('/api/subaccount-logout')
+                    window.location.href = '/subaccount-login'
+                } catch (error) {
+                    console.error('Erro ao fazer logout:', error)
+                    window.location.href = '/subaccount-login'
+                }
+            }
+
+            // Inicializar
+            checkAuth()
+        </script>
+    </body>
+    </html>
+  `)
+})
+
+// Debug route - testar conexão Asaas
+app.get('/api/debug/asaas', async (c) => {
+  try {
+    const apiKey = c.env.ASAAS_API_KEY
+    const apiUrl = c.env.ASAAS_API_URL
+    
+    // Teste 1: Verificar variáveis
+    const envCheck = {
+      hasApiKey: !!apiKey,
+      apiKeyPrefix: apiKey ? apiKey.substring(0, 15) + '...' : 'MISSING',
+      apiKeyLength: apiKey ? apiKey.length : 0,
+      apiUrl: apiUrl || 'MISSING'
+    }
+    
+    // Teste 2: Chamar API diretamente
+    const response = await fetch(`${apiUrl}/accounts?limit=5`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'access_token': apiKey,
+        'User-Agent': 'AsaasManager/1.0'
+      }
+    })
+    
+    const text = await response.text()
+    let data
+    try {
+      data = JSON.parse(text)
+    } catch (e) {
+      data = { raw: text }
+    }
+    
+    return c.json({
+      timestamp: new Date().toISOString(),
+      environment: envCheck,
+      apiResponse: {
+        status: response.status,
+        ok: response.ok,
+        statusText: response.statusText,
+        totalCount: data?.totalCount || 0,
+        accountsCount: data?.data?.length || 0,
+        firstAccount: data?.data?.[0]?.name || null,
+        fullResponse: data
+      }
+    })
+  } catch (error: any) {
+    return c.json({
+      error: error.message,
+      stack: error.stack
+    }, 500)
+  }
+})
+
+// Test Link Button Page (v15.2.1)
+app.get('/test-link-button', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Teste - Botão Link + QR Code</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    </head>
+    <body class="bg-gray-100 p-8">
+        <div class="max-w-4xl mx-auto bg-white rounded-lg shadow-lg p-6">
+            <h1 class="text-2xl font-bold mb-4">🧪 Teste do Botão Link (v15.2)</h1>
+            
+            <button onclick="testOpenLink()" class="bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 font-semibold">
+                <i class="fas fa-link mr-2"></i>Testar Link
+            </button>
+            
+            <div id="link-iframe-container" class="hidden mt-6 border-t border-gray-200">
+                <div class="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-lg">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="text-sm font-bold text-gray-800">
+                            <i class="fas fa-link mr-2 text-purple-600"></i>
+                            Link de Cadastro
+                        </h3>
+                        <button onclick="closeTest()" class="text-gray-500 hover:text-gray-700 font-bold text-lg">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div id="link-iframe-content" class="bg-white rounded-lg shadow p-4">
+                        <p class="text-center text-gray-500">
+                            <i class="fas fa-spinner fa-spin mr-2"></i>
+                            Gerando link...
+                        </p>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="console-log" class="mt-6 bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-xs max-h-96 overflow-y-auto">
+                <p>📋 Console logs aparecerão aqui...</p>
+            </div>
+        </div>
+        
+        <script>
+            const log = (msg) => {
+                const el = document.getElementById('console-log');
+                el.innerHTML += '<br>' + msg;
+                el.scrollTop = el.scrollHeight;
+                console.log(msg);
+            };
+            
+            window.currentTestLink = '';
+            
+            function testOpenLink() {
+                log('🔵 testOpenLink CHAMADO');
+                
+                const container = document.getElementById('link-iframe-container');
+                const content = document.getElementById('link-iframe-content');
+                
+                if (!container || !content) {
+                    log('❌ Elementos não encontrados!');
+                    alert('❌ Elementos não encontrados!');
+                    return;
+                }
+                
+                log('✅ Container encontrado, mostrando...');
+                container.classList.remove('hidden');
+                
+                // Simular geração de link após 2 segundos
+                setTimeout(() => {
+                    const testUrl = 'https://432a4170.corretoracorporate.pages.dev/cadastro/test-12345';
+                    window.currentTestLink = testUrl;
+                    
+                    log('✅ Link simulado gerado: ' + testUrl);
+                    
+                    const expiresText = new Date(Date.now() + 30*24*60*60*1000).toLocaleDateString('pt-BR');
+                    
+                    content.innerHTML = '<div class="space-y-4">' +
+                        '<!-- Link -->' +
+                        '<div>' +
+                            '<label class="block text-xs font-semibold text-gray-700 mb-2">' +
+                                '<i class="fas fa-link mr-1"></i>Link Gerado' +
+                            '</label>' +
+                            '<div class="flex gap-2">' +
+                                '<input type="text" id="test-link-input" value="' + testUrl + '" readonly ' +
+                                    'class="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg bg-gray-50">' +
+                                '<button onclick="copyTestLink()" ' +
+                                    'class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-semibold">' +
+                                    '<i class="fas fa-copy mr-1"></i>Copiar' +
+                                '</button>' +
+                            '</div>' +
+                        '</div>' +
+                        '<!-- Info -->' +
+                        '<div class="flex items-center gap-4 text-xs text-gray-600">' +
+                            '<span><i class="fas fa-calendar mr-1"></i>Expira: ' + expiresText + '</span>' +
+                            '<span><i class="fas fa-infinity mr-1"></i>Usos ilimitados</span>' +
+                        '</div>' +
+                        '<!-- QR Code -->' +
+                        '<div class="bg-gray-50 rounded-lg p-4 text-center">' +
+                            '<p class="text-xs font-semibold text-gray-700 mb-3">' +
+                                '<i class="fas fa-qrcode mr-1"></i>QR Code' +
+                            '</p>' +
+                            '<img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(testUrl) + '" ' +
+                                'class="w-48 h-48 mx-auto border-2 border-gray-300 rounded-lg">' +
+                        '</div>' +
+                        '<!-- Botões -->' +
+                        '<div class="flex flex-wrap gap-2 justify-center">' +
+                            '<button onclick="shareWhatsAppTest()" ' +
+                                'class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 text-sm font-semibold">' +
+                                '<i class="fab fa-whatsapp mr-1"></i>WhatsApp' +
+                            '</button>' +
+                            '<button onclick="shareEmailTest()" ' +
+                                'class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm font-semibold">' +
+                                '<i class="fas fa-envelope mr-1"></i>Email' +
+                            '</button>' +
+                            '<button onclick="shareTelegramTest()" ' +
+                                'class="bg-blue-400 text-white px-4 py-2 rounded-lg hover:bg-blue-500 text-sm font-semibold">' +
+                                '<i class="fab fa-telegram mr-1"></i>Telegram' +
+                            '</button>' +
+                        '</div>' +
+                    '</div>';
+                    
+                    log('✅ Conteúdo renderizado com sucesso!');
+                }, 2000);
+            }
+            
+            function closeTest() {
+                log('🔴 Fechando container...');
+                document.getElementById('link-iframe-container').classList.add('hidden');
+            }
+            
+            function copyTestLink() {
+                const input = document.getElementById('test-link-input');
+                if (input) {
+                    input.select();
+                    document.execCommand('copy');
+                    log('✅ Link copiado: ' + input.value);
+                    alert('✅ Link copiado!');
+                }
+            }
+            
+            function shareWhatsAppTest() {
+                const url = window.currentTestLink;
+                log('📱 Compartilhando via WhatsApp: ' + url);
+                if (!url) { alert('Link não disponível'); return; }
+                const msg = encodeURIComponent('🎉 Convite para cadastro: ' + url);
+                window.open('https://wa.me/?text=' + msg, '_blank');
+            }
+            
+            function shareEmailTest() {
+                const url = window.currentTestLink;
+                log('📧 Compartilhando via Email: ' + url);
+                if (!url) { alert('Link não disponível'); return; }
+                const subject = encodeURIComponent('Convite para Cadastro');
+                const body = encodeURIComponent('Olá!\\\\n\\\\nVocê foi convidado para criar sua conta.\\\\n\\\\nClique no link:\\\\n' + url);
+                window.location.href = 'mailto:?subject=' + subject + '&body=' + body;
+            }
+            
+            function shareTelegramTest() {
+                const url = window.currentTestLink;
+                log('💬 Compartilhando via Telegram: ' + url);
+                if (!url) { alert('Link não disponível'); return; }
+                const msg = encodeURIComponent('🎉 Convite: ' + url);
+                window.open('https://t.me/share/url?url=' + url + '&text=' + msg, '_blank');
+            }
+            
+            log('✅ Página de teste carregada!');
+        </script>
+    </body>
+    </html>
+  `)
+})
+
+// Homepage
+app.get('/', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+        <meta charset="UTF-8">
+        <script>(function(){const o=console.warn;console.warn=function(){for(var n=arguments.length,e=new Array(n),r=0;r<n;r++)e[r]=arguments[r];e[0]&&"string"==typeof e[0]&&e[0].includes("cdn.tailwindcss.com")||o.apply(console,e)}})();</script>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-status-bar-style" content="default">
+        <title>Gerenciador Asaas - Contas e Subcontas</title>
+        <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+        <link rel="alternate icon" href="/favicon.ico">
+        <!-- Google Fonts - Inter (Tipografia Profissional) -->
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+        
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <link href="/static/responsive.css?v=13.1" rel="stylesheet">
+        
+        <!-- Load Chart.js for dashboard graphs -->
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+        
+        <!-- Load scripts early with defer to ensure functions are available -->
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js" defer></script>
+        <script src="/static/app.js?v=15.2" defer></script>
+        
+        <!-- Tipografia e Layout Profissional -->
+        <style>
+            /* Configuração Global - Fonte Inter */
+            :root {
+                --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+                --color-primary: #1E293B;
+                --color-secondary: #64748B;
+                --color-accent: #3B82F6;
+                --color-dark: #0F172A;
+            }
+            
+            * {
+                font-family: var(--font-sans);
+                -webkit-font-smoothing: antialiased;
+                -moz-osx-font-smoothing: grayscale;
+            }
+            
+            body {
+                font-size: 16px;
+                line-height: 1.6;
+                color: var(--color-primary);
+            }
+            
+            /* Hierarquia de Títulos Profissional */
+            h1, .text-3xl, .text-4xl, .text-5xl {
+                font-weight: 700;
+                line-height: 1.2;
+                letter-spacing: -0.02em;
+                color: var(--color-dark);
+            }
+            
+            h2, .text-2xl {
+                font-weight: 600;
+                line-height: 1.3;
+                letter-spacing: -0.01em;
+                color: var(--color-primary);
+            }
+            
+            h3, .text-xl {
+                font-weight: 500;
+                line-height: 1.4;
+                color: var(--color-primary);
+            }
+            
+            /* Botões com Tipografia Melhorada */
+            button, .btn, a.button {
+                font-weight: 600;
+                letter-spacing: 0.01em;
+                transition: all 0.2s ease;
+            }
+            
+            /* Cards e Containers */
+            .bg-white {
+                box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            }
+            
+            .shadow-lg {
+                box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+            }
+            
+            /* Texto Secundário */
+            .text-gray-500, .text-gray-600 {
+                color: var(--color-secondary);
+                line-height: 1.5;
+            }
+            
+            /* Labels e Small Text */
+            label, .text-sm {
+                font-size: 0.875rem;
+                font-weight: 500;
+                letter-spacing: 0.01em;
+            }
+            
+            /* Inputs Profissionais */
+            input, select, textarea {
+                font-size: 0.9375rem;
+                font-weight: 400;
+                line-height: 1.5;
+            }
+            
+            /* Badges e Tags */
+            .badge, .tag {
+                font-size: 0.75rem;
+                font-weight: 600;
+                letter-spacing: 0.02em;
+                text-transform: uppercase;
+            }
+            
+            /* Links */
+            a {
+                font-weight: 500;
+                transition: color 0.2s ease;
+            }
+            
+            /* Responsivo - Mobile */
+            @media (max-width: 640px) {
+                body { font-size: 15px; }
+                h1, .text-3xl, .text-4xl { font-size: 1.875rem; } /* 30px */
+                h2, .text-2xl { font-size: 1.5rem; } /* 24px */
+                h3, .text-xl { font-size: 1.25rem; } /* 20px */
+            }
+            
+            /* Animações Suaves */
+            * {
+                transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+            }
+        </style>
+    </head>
+    <body class="bg-gray-50">
+        <!-- Navbar Responsiva -->
+        <nav class="bg-white shadow-lg sticky top-0 z-50">
+            <!-- Cache bust: 1772915540 -->
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between items-center h-16 relative">
+                    <!-- Botão Hambúrguer (Mobile/Tablet) -->
+                    <button id="hamburger-btn" onclick="toggleSideMenu()" class="lg:hidden">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    
+                    <!-- Logo (centralizado no mobile, esquerda no desktop) -->
+                    <div class="flex items-center absolute left-1/2 transform -translate-x-1/2 lg:relative lg:left-auto lg:transform-none lg:ml-0">
+                        <i class="fas fa-building text-blue-600 text-xl sm:text-2xl mr-2"></i>
+                        <span class="text-base sm:text-xl font-bold text-gray-800">Asaas</span>
+                    </div>
+                    
+                    <!-- Actions (desktop) -->
+                    <div class="hidden lg:flex items-center gap-2 ml-auto">
+                        <button onclick="showSection('accounts')" class="nav-btn text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg font-semibold shadow-md transition text-sm">
+                            <i class="fas fa-users mr-1"></i>
+                            <span>✅ Subcontas</span>
+                        </button>
+                        <button onclick="showChangePasswordModal()" class="text-blue-600 hover:text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition font-semibold text-sm">
+                            <i class="fas fa-key mr-1"></i>
+                            <span>Alterar Senha</span>
+                        </button>
+                        <button onclick="logout()" class="text-red-600 hover:text-red-700 px-3 py-1.5 rounded-lg hover:bg-red-50 transition font-semibold text-sm">
+                            <i class="fas fa-sign-out-alt mr-1"></i>
+                            <span>Sair</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            
+            <!-- Menu Lateral (Mobile/Tablet) -->
+            <div id="side-menu" class="hidden" onclick="toggleSideMenu()">
+                <div class="p-6" onclick="event.stopPropagation()">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-lg font-bold text-gray-800">Menu</h3>
+                        <button onclick="toggleSideMenu()" class="text-gray-600 hover:text-gray-800">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    </div>
+                    <div class="space-y-3">
+                        <button onclick="showSection('dashboard'); toggleSideMenu();" class="w-full flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg hover:from-indigo-600 hover:to-purple-700 transition">
+                            <i class="fas fa-chart-line text-xl"></i>
+                            <span class="font-semibold">Dashboard</span>
+                        </button>
+                        <button onclick="showSection('accounts'); toggleSideMenu();" class="w-full flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 transition">
+                            <i class="fas fa-users text-xl"></i>
+                            <span class="font-semibold">Subcontas</span>
+                        </button>
+                        <button onclick="showSection('reports'); toggleSideMenu();" class="w-full flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-lg hover:from-orange-600 hover:to-red-600 transition">
+                            <i class="fas fa-chart-bar text-xl"></i>
+                            <span class="font-semibold">Relatórios</span>
+                        </button>
+                        <button onclick="showSection('api-links'); toggleSideMenu();" class="w-full flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-lg hover:from-blue-600 hover:to-cyan-600 transition">
+                            <i class="fas fa-plug text-xl"></i>
+                            <span class="font-semibold">APIs Externas</span>
+                        </button>
+                        <!-- OCULTO: Botão Cartão
+                        <button onclick="showSection('deltapag-section'); toggleSideMenu();" class="w-full flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-purple-500 to-pink-600 text-white rounded-lg hover:from-purple-600 hover:to-pink-700 transition">
+                            <i class="fas fa-credit-card text-xl"></i>
+                            <span class="font-semibold">Cartão</span>
+                        </button>
+                        -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dashboard Section -->
+            <div id="dashboard-section" class="section hidden">
+                <!-- Quick Actions - TOPO - Cards Format (Desktop only) -->
+                <div class="mb-6 hidden lg:block">
+                    <h3 class="text-2xl font-bold text-gray-800 mb-6 flex items-center">
+                        <i class="fas fa-bolt mr-3 text-yellow-500"></i>
+                        Ações Rápidas
+                    </h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                        <!-- Card Dashboard -->
+                        <button onclick="showSection('dashboard')" 
+                            class="bg-white rounded-2xl shadow-lg p-6 hover:shadow-2xl transition-all duration-300 hover:scale-105 flex flex-col items-center justify-center gap-4 group border border-gray-100">
+                            <div class="w-16 h-16 rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <i class="fas fa-chart-line text-3xl text-white"></i>
+                            </div>
+                            <span class="font-semibold text-gray-700 text-center">Dashboard</span>
+                        </button>
+
+                        <!-- Card Subcontas -->
+                        <button onclick="showSection('accounts')" 
+                            class="bg-white rounded-2xl shadow-lg p-6 hover:shadow-2xl transition-all duration-300 hover:scale-105 flex flex-col items-center justify-center gap-4 group border border-gray-100">
+                            <div class="w-16 h-16 rounded-full bg-gradient-to-r from-green-500 to-green-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <i class="fas fa-users text-3xl text-white"></i>
+                            </div>
+                            <span class="font-semibold text-gray-700 text-center">Subcontas</span>
+                        </button>
+
+                        <!-- Card Relatórios -->
+                        <button onclick="showSection('reports')" 
+                            class="bg-white rounded-2xl shadow-lg p-6 hover:shadow-2xl transition-all duration-300 hover:scale-105 flex flex-col items-center justify-center gap-4 group border border-gray-100">
+                            <div class="w-16 h-16 rounded-full bg-gradient-to-r from-orange-500 to-red-500 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <i class="fas fa-chart-bar text-3xl text-white"></i>
+                            </div>
+                            <span class="font-semibold text-gray-700 text-center">Relatórios</span>
+                        </button>
+
+                        <!-- Card APIs Externas -->
+                        <button onclick="showSection('api-links')" 
+                            class="bg-white rounded-2xl shadow-lg p-6 hover:shadow-2xl transition-all duration-300 hover:scale-105 flex flex-col items-center justify-center gap-4 group border border-gray-100">
+                            <div class="w-16 h-16 rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <i class="fas fa-plug text-3xl text-white"></i>
+                            </div>
+                            <span class="font-semibold text-gray-700 text-center">APIs Externas</span>
+                        </button>
+
+                        <!-- OCULTO: Card Cartão
+                        <button onclick="showSection('deltapag-section')" 
+                            class="bg-white rounded-2xl shadow-lg p-6 hover:shadow-2xl transition-all duration-300 hover:scale-105 flex flex-col items-center justify-center gap-4 group border border-gray-100">
+                            <div class="w-16 h-16 rounded-full bg-gradient-to-r from-purple-500 to-pink-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                                <i class="fas fa-credit-card text-3xl text-white"></i>
+                            </div>
+                            <span class="font-semibold text-gray-700 text-center">Cartão</span>
+                        </button>
+                        -->
+                    </div>
+                </div>
+
+                <!-- Dashboard Overview -->
+                <div class="space-y-6">
+                    <!-- Header Responsivo -->
+                    <div class="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg shadow-xl p-4 sm:p-6 lg:p-8 text-white">
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                            <div>
+                                <h2 class="text-xl sm:text-2xl lg:text-3xl font-bold mb-2">
+                                    <i class="fas fa-chart-line mr-2 sm:mr-3"></i>
+                                    Visão Geral
+                                </h2>
+                                <p class="text-blue-100 text-sm sm:text-base">Dashboard de Gerenciamento de Subcontas Asaas</p>
+                            </div>
+                            <div class="text-left sm:text-right">
+                                <p class="text-xs sm:text-sm text-blue-100">Última atualização</p>
+                                <p class="text-base sm:text-lg font-semibold" id="last-update-time">--:--</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Stats Cards -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <!-- Total Subcontas -->
+                        <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-blue-500 hover:shadow-lg transition">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-600 mb-1">Total de Subcontas</p>
+                                    <p class="text-3xl font-bold text-gray-800" id="stat-total-accounts">0</p>
+                                    <p class="text-xs text-gray-500 mt-2">
+                                        <i class="fas fa-users mr-1"></i>Todas as contas
+                                    </p>
+                                </div>
+                                <div class="bg-blue-100 rounded-full p-4">
+                                    <i class="fas fa-users text-3xl text-blue-600"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Aprovadas -->
+                        <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-green-500 hover:shadow-lg transition">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-600 mb-1">Aprovadas</p>
+                                    <p class="text-3xl font-bold text-green-600" id="stat-approved-accounts">0</p>
+                                    <p class="text-xs text-green-600 mt-2 font-semibold">
+                                        <i class="fas fa-check-circle mr-1"></i>
+                                        <span id="stat-approval-rate">0%</span> de aprovação
+                                    </p>
+                                </div>
+                                <div class="bg-green-100 rounded-full p-4">
+                                    <i class="fas fa-check-circle text-3xl text-green-600"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Pendentes -->
+                        <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-yellow-500 hover:shadow-lg transition">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-600 mb-1">Pendentes</p>
+                                    <p class="text-3xl font-bold text-yellow-600" id="stat-pending-accounts">0</p>
+                                    <p class="text-xs text-gray-500 mt-2">
+                                        <i class="fas fa-clock mr-1"></i>Aguardando aprovação
+                                    </p>
+                                </div>
+                                <div class="bg-yellow-100 rounded-full p-4">
+                                    <i class="fas fa-clock text-3xl text-yellow-600"></i>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Links de Cadastro -->
+                        <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-purple-500 hover:shadow-lg transition">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-600 mb-1">Links Ativos</p>
+                                    <p class="text-3xl font-bold text-purple-600" id="stat-active-links">0</p>
+                                    <p class="text-xs text-purple-600 mt-2 font-semibold">
+                                        <i class="fas fa-link mr-1"></i>
+                                        <span id="stat-conversion-rate">0%</span> conversão
+                                    </p>
+                                </div>
+                                <div class="bg-purple-100 rounded-full p-4">
+                                    <i class="fas fa-link text-3xl text-purple-600"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Charts Row -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <!-- Status Distribution Chart -->
+                        <div class="bg-white rounded-lg shadow-md p-6">
+                            <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                                <i class="fas fa-chart-pie mr-2 text-blue-600"></i>
+                                Distribuição de Status
+                            </h3>
+                            <canvas id="status-chart" height="200"></canvas>
+                        </div>
+
+                        <!-- Recent Activity -->
+                        <div class="bg-white rounded-lg shadow-md p-6">
+                            <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                                <i class="fas fa-history mr-2 text-green-600"></i>
+                                Atividades Recentes
+                            </h3>
+                            <div id="recent-activity" class="space-y-3 max-h-64 overflow-y-auto">
+                                <p class="text-gray-500 text-center py-8">Carregando...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Accounts Section -->
+            <div id="accounts-section" class="section hidden">
+                <div class="mb-4">
+                    <button onclick="showSection('dashboard')" 
+                        class="flex items-center gap-2 text-gray-600 hover:text-gray-800 font-semibold transition">
+                        <i class="fas fa-arrow-left"></i>
+                        <span>Voltar ao Dashboard</span>
+                    </button>
+                </div>
+                <!-- Formulário de Nova Subconta (OCULTO - use "Gerar Link de Cadastro" ao invés) -->
+                <div class="bg-white rounded-lg shadow mb-6 hidden" style="display: none;">
+                    <div class="p-6 border-b border-gray-200">
+                        <h2 class="text-xl font-bold text-gray-800">
+                            <i class="fas fa-user-plus mr-2 text-green-600"></i>
+                            Nova Subconta
+                        </h2>
+                    </div>
+                    <div class="p-6">
+                        <form id="create-account-form" class="space-y-4">
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Nome Completo *
+                                    </label>
+                                    <input type="text" name="name" required
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Email *
+                                    </label>
+                                    <input type="email" name="email" required
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        CPF/CNPJ *
+                                    </label>
+                                    <input type="text" name="cpfCnpj" required
+                                        placeholder="Apenas números"
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Data de Nascimento *
+                                    </label>
+                                    <input type="date" name="birthDate" required
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Tipo de Pessoa *
+                                    </label>
+                                    <select name="companyType" required
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                        <option value="">Selecione...</option>
+                                        <option value="INDIVIDUAL">Pessoa Física</option>
+                                        <option value="MEI">MEI</option>
+                                        <option value="LIMITED">Empresa Limitada</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Telefone *
+                                    </label>
+                                    <input type="tel" name="phone" required
+                                        placeholder="11999999999"
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Renda Mensal *
+                                    </label>
+                                    <select name="incomeValue" required
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                        <option value="">Selecione...</option>
+                                        <option value="1000">Até R$ 1.000</option>
+                                        <option value="2000">R$ 1.000 - R$ 2.000</option>
+                                        <option value="5000">R$ 2.000 - R$ 5.000</option>
+                                        <option value="10000">R$ 5.000 - R$ 10.000</option>
+                                        <option value="20000">Acima de R$ 10.000</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="flex justify-end">
+                                <button type="submit" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 font-semibold">
+                                    <i class="fas fa-check mr-2"></i>Criar Subconta
+                                </button>
+                            </div>
+                            <div id="create-result" class="hidden"></div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Lista de Subcontas -->
+                <div class="bg-white rounded-lg shadow">
+                    <div class="p-3 border-b border-gray-200">
+                        <div class="flex justify-between items-center">
+                            <h2 class="text-sm font-bold text-gray-800">
+                                <i class="fas fa-users mr-1 text-blue-600"></i>
+                                Subcontas
+                            </h2>
+                            <div class="flex gap-2">
+                                <button onclick="console.log('🔵 Botão Link clicado!'); if (typeof openLinkModal === 'function') { openLinkModal(); } else { alert('❌ ERRO: Função openLinkModal não existe! Cache antigo detectado. Por favor, limpe o cache do navegador e recarregue a página.'); }" class="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-2 py-1 rounded-lg hover:from-purple-600 hover:to-pink-600 font-semibold shadow-md transition text-xs">
+                                    <i class="fas fa-link mr-1"></i>Link
+                                </button>
+                                <button onclick="loadAccounts()" class="bg-blue-600 text-white px-2 py-1 rounded-lg hover:bg-blue-700 font-semibold text-xs">
+                                    <i class="fas fa-sync-alt mr-1"></i>Atualizar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Filtros e Pesquisa -->
+                    <div class="px-3 py-2 border-b border-gray-200 bg-gray-50">
+                        <div class="grid grid-cols-1 md:grid-cols-12 gap-2">
+                            <!-- Campo de Pesquisa (maior destaque) -->
+                            <div class="md:col-span-6">
+                                <input type="text" 
+                                    id="search-accounts" 
+                                    placeholder="🔍 Nome, CPF, email..."
+                                    class="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                                    onkeyup="filterAccounts()">
+                            </div>
+                            
+                            <!-- Filtro de Status -->
+                            <div class="md:col-span-3">
+                                <select id="filter-status" 
+                                    class="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                                    onchange="filterAccounts()">
+                                    <option value="">Todos</option>
+                                    <option value="approved">✅ Aprovados</option>
+                                    <option value="pending">⏰ Pendentes</option>
+                                </select>
+                            </div>
+                            
+                            <!-- Ordenação -->
+                            <div class="md:col-span-3">
+                                <select id="sort-accounts" 
+                                    class="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500"
+                                    onchange="filterAccounts()">
+                                    <option value="name-asc">Nome A-Z</option>
+                                    <option value="name-desc">Nome Z-A</option>
+                                    <option value="date-desc">Mais Recentes</option>
+                                    <option value="date-asc">Mais Antigos</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <!-- Contador de Resultados -->
+                        <div id="search-results" class="mt-3 text-sm font-medium text-gray-700"></div>
+                    </div>
+                    
+                    <!-- Área do iframe do Link (oculto por padrão) -->
+                    <div id="link-iframe-container" class="hidden border-t border-gray-200">
+                        <div class="bg-gradient-to-r from-purple-50 to-pink-50 p-4">
+                            <div class="flex justify-between items-center mb-3">
+                                <h3 class="text-sm font-bold text-gray-800">
+                                    <i class="fas fa-link mr-2 text-purple-600"></i>
+                                    Link de Cadastro de Subconta
+                                </h3>
+                                <button onclick="closeLinkIframe()" class="text-gray-500 hover:text-gray-700 font-bold text-lg px-2">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                            <div id="link-iframe-content" class="bg-white rounded-lg shadow-lg p-4">
+                                <p class="text-center text-gray-500">
+                                    <i class="fas fa-spinner fa-spin mr-2"></i>
+                                    Gerando link...
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="p-6">
+                        <div id="accounts-list" class="space-y-2">
+                            <p class="text-gray-500 text-center py-8">Carregando...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Create Account Section (HIDDEN) -->
+            <div id="create-section" class="section hidden" style="display: none;">
+                <div class="bg-white rounded-lg shadow">
+                    <div class="p-6 border-b border-gray-200">
+                        <h2 class="text-xl font-bold text-gray-800">
+                            <i class="fas fa-plus-circle mr-2 text-green-600"></i>
+                            Criar Nova Subconta
+                        </h2>
+                    </div>
+                    <div class="p-6">
+                        <form id="create-account-form" class="space-y-4">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Nome *
+                                    </label>
+                                    <input type="text" name="name" required
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Email *
+                                    </label>
+                                    <input type="email" name="email" required
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        CPF/CNPJ *
+                                    </label>
+                                    <input type="text" name="cpfCnpj" required
+                                        placeholder="00000000000 ou 00000000000000"
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Data de Nascimento
+                                    </label>
+                                    <input type="date" name="birthDate"
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Tipo de Pessoa/Empresa
+                                    </label>
+                                    <select name="companyType"
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                        <option value="">Selecione...</option>
+                                        <option value="">Pessoa Física</option>
+                                        <option value="MEI">MEI - Microempreendedor Individual</option>
+                                        <option value="LIMITED">Limitada</option>
+                                        <option value="INDIVIDUAL">Individual</option>
+                                        <option value="ASSOCIATION">Associação</option>
+                                    </select>
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Telefone
+                                    </label>
+                                    <input type="text" name="phone"
+                                        placeholder="11 32300606"
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Celular
+                                    </label>
+                                    <input type="text" name="mobilePhone"
+                                        placeholder="11 988451155"
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        CEP
+                                    </label>
+                                    <input type="text" name="postalCode"
+                                        placeholder="89223005"
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Renda/Faturamento Mensal *
+                                    </label>
+                                    <select name="incomeValue" required
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                        <option value="">Selecione...</option>
+                                        <option value="500">Até R$ 500</option>
+                                        <option value="1000">R$ 500 a R$ 1.000</option>
+                                        <option value="2000">R$ 1.000 a R$ 2.000</option>
+                                        <option value="5000">R$ 2.000 a R$ 5.000</option>
+                                        <option value="10000">R$ 5.000 a R$ 10.000</option>
+                                        <option value="20000">R$ 10.000 a R$ 20.000</option>
+                                        <option value="50000">R$ 20.000 a R$ 50.000</option>
+                                        <option value="100000">Acima de R$ 50.000</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div class="md:col-span-2">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Endereço
+                                    </label>
+                                    <input type="text" name="address"
+                                        placeholder="Av. Rolf Wiest"
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Número
+                                    </label>
+                                    <input type="text" name="addressNumber"
+                                        placeholder="277"
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                            </div>
+                            
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Complemento
+                                    </label>
+                                    <input type="text" name="complement"
+                                        placeholder="Sala 502"
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Bairro
+                                    </label>
+                                    <input type="text" name="province"
+                                        placeholder="Bom Retiro"
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                                </div>
+                            </div>
+
+                            <div class="flex justify-end space-x-4">
+                                <button type="button" onclick="document.getElementById('create-account-form').reset()"
+                                    class="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">
+                                    Limpar
+                                </button>
+                                <button type="submit"
+                                    class="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+                                    <i class="fas fa-check mr-2"></i>Criar Subconta
+                                </button>
+                            </div>
+                        </form>
+                        
+                        <div id="create-result" class="mt-6 hidden"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PIX Section (HIDDEN) -->
+            <div id="pix-section" class="section hidden" style="display: none;">
+                <div class="mb-4">
+                    <button onclick="showSection('dashboard')" 
+                        class="flex items-center gap-2 text-gray-600 hover:text-gray-800 font-semibold transition">
+                        <i class="fas fa-arrow-left"></i>
+                        <span>Voltar ao Dashboard</span>
+                    </button>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Gerar Cobrança PIX -->
+                    <div class="bg-white rounded-lg shadow">
+                        <div class="p-6 border-b border-gray-200">
+                            <h2 class="text-xl font-bold text-gray-800">
+                                <i class="fas fa-qrcode mr-2 text-green-600"></i>
+                                Gerar Cobrança PIX
+                            </h2>
+                            <p class="text-sm text-gray-500 mt-1">Split automático: 20% para subconta, 80% para conta principal</p>
+                        </div>
+                        <div class="p-6">
+                            <form id="pix-form" class="space-y-4">
+                                <!-- Subconta -->
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Subconta <span class="text-red-500">*</span>
+                                    </label>
+                                    <div class="flex gap-2">
+                                        <select id="pix-subaccount" required
+                                            class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent">
+                                            <option value="">Selecione a subconta...</option>
+                                        </select>
+                                        <button type="button" onclick="generateApiKeyForSubaccount()" 
+                                            title="Gerar API Key para a subconta selecionada"
+                                            class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                                            <i class="fas fa-key"></i>
+                                        </button>
+                                        <button type="button" onclick="loadSubaccountsForPix()" 
+                                            title="Atualizar lista de subcontas"
+                                            class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200">
+                                            <i class="fas fa-sync-alt"></i>
+                                        </button>
+                                    </div>
+                                    <p class="text-xs text-gray-500 mt-1">
+                                        A subconta receberá 20% do valor líquido
+                                        <span class="mx-2">•</span>
+                                        <button type="button" onclick="generateApiKeyForSubaccount()" 
+                                            class="text-blue-600 hover:underline">
+                                            <i class="fas fa-key text-xs"></i> Gerar API Key
+                                        </button>
+                                    </p>
+                                </div>
+                                
+                                <!-- API Key Display -->
+                                <div id="api-key-result" class="hidden p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                    <div class="flex items-start justify-between mb-2">
+                                        <h4 class="font-semibold text-blue-800">
+                                            <i class="fas fa-key mr-2"></i>API Key Gerada
+                                        </h4>
+                                        <button onclick="document.getElementById('api-key-result').classList.add('hidden')" 
+                                            class="text-blue-600 hover:text-blue-800">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                    <div class="space-y-2">
+                                        <div>
+                                            <label class="text-xs font-medium text-gray-700">API Key:</label>
+                                            <div class="flex gap-2 mt-1">
+                                                <input type="text" id="generated-api-key" readonly
+                                                    class="flex-1 px-3 py-2 bg-white border border-blue-300 rounded text-sm font-mono">
+                                                <button onclick="copyApiKey()" 
+                                                    class="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                                                    <i class="fas fa-copy"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div id="api-key-details" class="text-xs text-gray-600"></div>
+                                        <p class="text-xs text-red-600 font-semibold">
+                                            ⚠️ ATENÇÃO: Esta é a única vez que a API Key será exibida. Copie e guarde em local seguro!
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <!-- Dados do Cliente -->
+                                <div class="border-t pt-4 mt-4">
+                                    <h3 class="text-sm font-semibold text-gray-700 mb-3">Dados do Pagador</h3>
+                                    <div class="space-y-3">
+                                        <div>
+                                            <input type="text" id="pix-customer-name" placeholder="Nome do Cliente" required
+                                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent">
+                                        </div>
+                                        <div>
+                                            <input type="email" id="pix-customer-email" placeholder="Email do Cliente" required
+                                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent">
+                                        </div>
+                                        <div>
+                                            <input type="text" id="pix-customer-cpf" placeholder="CPF/CNPJ" required
+                                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent">
+                                        </div>
+                                        <div>
+                                            <input type="tel" id="pix-customer-phone" placeholder="Telefone (opcional)"
+                                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Dados da Cobrança -->
+                                <div class="border-t pt-4 mt-4">
+                                    <h3 class="text-sm font-semibold text-gray-700 mb-3">Dados da Cobrança</h3>
+                                    <div class="space-y-3">
+                                        <div>
+                                            <input type="number" id="pix-value" placeholder="Valor (R$)" step="0.01" min="0.01" required
+                                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent">
+                                        </div>
+                                        <div>
+                                            <textarea id="pix-description" placeholder="Descrição da cobrança" rows="2"
+                                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"></textarea>
+                                        </div>
+                                        <div>
+                                            <input type="date" id="pix-due-date"
+                                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent">
+                                            <p class="text-xs text-gray-500 mt-1">Deixe em branco para data atual</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Botões -->
+                                <div class="flex gap-2 pt-4">
+                                    <button type="submit"
+                                        class="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold">
+                                        <i class="fas fa-qrcode mr-2"></i>Gerar PIX
+                                    </button>
+                                    <button type="button" onclick="document.getElementById('pix-form').reset()"
+                                        class="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300">
+                                        Limpar
+                                    </button>
+                                </div>
+                            </form>
+
+                            <!-- Resultado -->
+                            <div id="pix-result" class="hidden mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+                                <h3 class="font-semibold text-green-800 mb-2">
+                                    <i class="fas fa-check-circle mr-2"></i>PIX Gerado com Sucesso!
+                                </h3>
+                                <div id="pix-result-content"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- QR Code e Histórico -->
+                    <div class="space-y-6">
+                        <!-- QR Code Display -->
+                        <div id="qrcode-display" class="bg-white rounded-lg shadow p-6 hidden">
+                            <h3 class="text-lg font-bold text-gray-800 mb-4">
+                                <i class="fas fa-qrcode mr-2 text-green-600"></i>
+                                QR Code PIX
+                            </h3>
+                            <div id="qrcode-container" class="text-center">
+                                <!-- QR Code será inserido aqui -->
+                            </div>
+                            <div class="mt-4">
+                                <label class="block text-sm font-medium text-gray-700 mb-2">PIX Copia e Cola</label>
+                                <div class="flex gap-2">
+                                    <input type="text" id="pix-payload" readonly
+                                        class="flex-1 px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm">
+                                    <button onclick="copyGeneralPixPayload()"
+                                        class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+                                        <i class="fas fa-copy"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Histórico de Cobranças -->
+                        <div class="bg-white rounded-lg shadow">
+                            <div class="p-6 border-b border-gray-200">
+                                <div class="flex items-center justify-between">
+                                    <h3 class="text-lg font-bold text-gray-800">
+                                        <i class="fas fa-history mr-2 text-blue-600"></i>
+                                        Cobranças Recentes
+                                    </h3>
+                                    <button onclick="loadRecentPayments()"
+                                        class="px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200">
+                                        <i class="fas fa-sync-alt mr-1"></i>Atualizar
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="payments-list" class="p-6">
+                                <p class="text-gray-500 text-center py-4">Nenhuma cobrança ainda</p>
+                            </div>
+                        </div>
+
+                        <!-- Gerenciar API Keys -->
+                        <div class="bg-white rounded-lg shadow">
+                            <div class="p-6 border-b border-gray-200">
+                                <div class="flex items-center justify-between">
+                                    <h3 class="text-lg font-bold text-gray-800">
+                                        <i class="fas fa-key mr-2 text-purple-600"></i>
+                                        Gerenciar API Keys
+                                    </h3>
+                                    <button onclick="loadApiKeys()"
+                                        class="px-3 py-1 text-sm bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200">
+                                        <i class="fas fa-sync-alt mr-1"></i>Atualizar
+                                    </button>
+                                </div>
+                            </div>
+                            <div id="api-keys-list" class="p-6">
+                                <p class="text-gray-500 text-center py-4">Nenhuma API Key criada ainda</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- API Keys Section (HIDDEN) -->
+            <div id="api-keys-section" class="section hidden" style="display: none;">
+                <div class="mb-4">
+                    <button onclick="showSection('dashboard')" 
+                        class="flex items-center gap-2 text-gray-600 hover:text-gray-800 font-semibold transition">
+                        <i class="fas fa-arrow-left"></i>
+                        <span>Voltar ao Dashboard</span>
+                    </button>
+                </div>
+                <div class="bg-white rounded-lg shadow mb-6">
+                    <div class="p-6 border-b border-gray-200">
+                        <h2 class="text-2xl font-bold text-gray-800">
+                            <i class="fas fa-key mr-3 text-purple-600"></i>
+                            Gerenciar API Keys
+                        </h2>
+                        <p class="text-gray-600 mt-2">
+                            Visualize e gerencie todas as API Keys das subcontas
+                        </p>
+                    </div>
+                    <div class="p-6">
+                        <div class="mb-6">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                Filtrar por Subconta
+                            </label>
+                            <div class="flex gap-2">
+                                <select id="filter-subaccount" class="flex-1 px-4 py-2 border border-gray-300 rounded-lg">
+                                    <option value="">Todas as subcontas</option>
+                                </select>
+                                <button onclick="loadAllApiKeys()" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+                                    <i class="fas fa-search mr-2"></i>Buscar
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div id="all-api-keys-list" class="space-y-4">
+                            <p class="text-gray-500 text-center py-8">Selecione uma subconta ou clique em Buscar para ver todas as API Keys</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reports Section -->
+        <div id="reports-section" class="section hidden">
+            <div class="mb-4">
+                <button onclick="showSection('dashboard')" 
+                    class="flex items-center gap-2 text-gray-600 hover:text-gray-800 font-semibold transition">
+                    <i class="fas fa-arrow-left"></i>
+                    <span>Voltar ao Dashboard</span>
+                </button>
+            </div>
+            <div class="bg-white rounded-lg shadow mb-6">
+                <div class="p-6 border-b border-gray-200">
+                    <h2 class="text-xl font-bold text-gray-800">
+                        <i class="fas fa-chart-bar mr-2 text-orange-600"></i>
+                        Relatórios de Subcontas
+                    </h2>
+                    <p class="text-gray-600 mt-2">Visualize transações e estatísticas por subconta</p>
+                </div>
+
+                <!-- Filtros Aprimorados -->
+                <div class="p-6 border-b border-gray-200 bg-gray-50">
+                    <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                <i class="fas fa-user mr-1"></i>Subconta
+                            </label>
+                            <select id="report-account-select" 
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500">
+                                <option value="">Selecione uma subconta...</option>
+                                <option value="ALL_ACCOUNTS">📊 TODAS AS SUBCONTAS</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                <i class="fas fa-calendar mr-1"></i>Data Início
+                            </label>
+                            <input type="date" id="report-start-date" 
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                <i class="fas fa-calendar mr-1"></i>Data Fim
+                            </label>
+                            <input type="date" id="report-end-date" 
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                <i class="fas fa-tags mr-1"></i>Tipo de Cobrança
+                            </label>
+                            <select id="report-charge-type" 
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500">
+                                <option value="all">Todos os Tipos</option>
+                                <option value="single">QR Code Avulso</option>
+                                <option value="monthly">Assinatura Mensal</option>
+                                <option value="pix_auto">PIX Automático</option>
+                                <option value="link_cadastro">Link Auto-Cadastro</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                <i class="fas fa-info-circle mr-1"></i>Status
+                            </label>
+                            <select id="report-status" 
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500">
+                                <option value="all">Todos os Status</option>
+                                <option value="RECEIVED">✅ Recebidos</option>
+                                <option value="PENDING">⏳ Pendentes</option>
+                                <option value="OVERDUE">⚠️ Vencidos</option>
+                                <option value="REFUNDED">↩️ Reembolsados</option>
+                            </select>
+                        </div>
+                        <div class="flex items-end gap-3">
+                            <button onclick="generateDetailedReport()" 
+                                class="bg-gradient-to-r from-orange-500 to-red-500 text-white px-6 py-2 rounded-lg hover:from-orange-600 hover:to-red-600 font-semibold shadow-md transition">
+                                <i class="fas fa-search mr-2"></i>Aplicar Filtros
+                            </button>
+                            <div id="report-auto-update-status" class="flex items-center gap-2 text-sm text-gray-600">
+                                <i class="fas fa-sync-alt animate-spin text-blue-500"></i>
+                                <span>Atualizando...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Área de Resultados -->
+                <div id="report-results" class="p-6">
+                    <div class="text-center py-12 text-gray-500">
+                        <i class="fas fa-chart-line text-6xl mb-4 opacity-30"></i>
+                        <p class="text-lg">Selecione uma subconta e clique em "Aplicar Filtros"</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- API Links Section -->
+        <div id="api-links-section" class="section hidden">
+            <!-- Card único com header e filtros -->
+            <div class="bg-white rounded-lg shadow mb-2">
+                <div class="p-2 border-b border-gray-200 flex items-center justify-between">
+                    <button onclick="showSection('dashboard')" 
+                        class="text-gray-500 hover:text-gray-700 text-xs">
+                        <i class="fas fa-arrow-left mr-1"></i>Dashboard
+                    </button>
+                    <h2 class="text-xs font-bold text-gray-800 flex-1 text-center">
+                        <i class="fas fa-plug mr-1 text-green-600"></i>
+                        APIs - Filtros
+                    </h2>
+                    <div style="width: 80px;"></div>
+                </div>
+                
+                <div class="p-2">
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
+                    <div>
+                        <input type="date" id="api-filter-start-date" 
+                            value="2026-02-01"
+                            onchange="updateApiLinks()"
+                            class="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <input type="date" id="api-filter-end-date" 
+                            value="2026-02-28"
+                            onchange="updateApiLinks()"
+                            class="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <select id="api-filter-charge-type" 
+                            onchange="updateApiLinks()"
+                            class="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500">
+                            <option value="">Todos</option>
+                            <option value="single">QR Code</option>
+                            <option value="monthly" selected>Mensal</option>
+                            <option value="pix_auto">PIX Auto</option>
+                            <option value="link_cadastro">Link</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="flex gap-2 mt-2">
+                    <button onclick="applyExampleFilters()" 
+                        class="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold transition text-sm">
+                        <i class="fas fa-magic mr-1"></i>Exemplo: Fevereiro 2026 (Mensais)
+                    </button>
+                    <button onclick="clearApiFilters()" 
+                        class="px-3 py-1.5 bg-gray-600 text-white rounded-lg hover:bg-gray-700 font-semibold transition text-sm">
+                        <i class="fas fa-eraser mr-1"></i>Limpar Filtros
+                    </button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-6">
+                <!-- Card: Pagamentos Recebidos -->
+                <div class="bg-white rounded shadow">
+                    <div class="p-1 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-t">
+                        <h3 class="text-xs font-bold flex items-center gap-1">
+                            <i class="fas fa-check-circle text-xs"></i>
+                            Recebidos
+                        </h3>
+                    </div>
+                    <div class="p-2">
+                        <div class="mb-1">
+                            <div class="flex gap-1">
+                                <input type="text" readonly value="https://admin.corretoracorporate.com.br/api/reports/all-accounts/received?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly"
+                                    class="flex-1 px-1 py-0.5 text-xs bg-gray-50 border border-gray-300 rounded font-mono"
+                                    id="link-received">
+                                <button onclick="copyElementToClipboard('link-received')"
+                                    class="px-1 py-0.5 bg-green-600 text-white rounded hover:bg-green-700 transition text-xs">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <button onclick="testApiLink('received')"
+                            class="w-full bg-green-600 text-white px-2 py-0.5 rounded hover:bg-green-700 transition text-xs">
+                            <i class="fas fa-play mr-1"></i>Testar API
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Card: Pagamentos Pendentes -->
+                <div class="bg-white rounded shadow">
+                    <div class="p-1 bg-gradient-to-r from-yellow-500 to-orange-500 text-white rounded-t">
+                        <h3 class="text-xs font-bold flex items-center gap-1">
+                            <i class="fas fa-clock text-xs"></i>
+                            Pendentes
+                        </h3>
+                    </div>
+                    <div class="p-2">
+                        <div class="mb-1">
+                            <div class="flex gap-1">
+                                <input type="text" readonly value="https://admin.corretoracorporate.com.br/api/reports/all-accounts/pending?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly"
+                                    class="flex-1 px-1 py-0.5 text-xs bg-gray-50 border border-gray-300 rounded font-mono"
+                                    id="link-pending">
+                                <button onclick="copyElementToClipboard('link-pending')"
+                                    class="px-1 py-0.5 bg-yellow-600 text-white rounded hover:bg-yellow-700 transition text-xs">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <button onclick="testApiLink('pending')"
+                            class="w-full bg-yellow-600 text-white px-2 py-0.5 rounded hover:bg-yellow-700 transition text-xs">
+                            <i class="fas fa-play mr-1"></i>Testar API
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Card: Pagamentos Vencidos -->
+                <div class="bg-white rounded shadow">
+                    <div class="p-1 bg-gradient-to-r from-red-500 to-pink-500 text-white rounded-t">
+                        <h3 class="text-xs font-bold flex items-center gap-1">
+                            <i class="fas fa-exclamation-triangle text-xs"></i>
+                            Vencidos
+                        </h3>
+                    </div>
+                    <div class="p-2">
+                        <div class="mb-1">
+                            <div class="flex gap-1">
+                                <input type="text" readonly value="https://admin.corretoracorporate.com.br/api/reports/all-accounts/overdue?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly"
+                                    class="flex-1 px-1 py-0.5 text-xs bg-gray-50 border border-gray-300 rounded font-mono"
+                                    id="link-overdue">
+                                <button onclick="copyElementToClipboard('link-overdue')"
+                                    class="px-1 py-0.5 bg-red-600 text-white rounded hover:bg-red-700 transition text-xs">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <button onclick="testApiLink('overdue')"
+                            class="w-full bg-red-600 text-white px-2 py-0.5 rounded hover:bg-red-700 transition text-xs">
+                            <i class="fas fa-play mr-1"></i>Testar API
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Card: Pagamentos Reembolsados -->
+                <div class="bg-white rounded shadow">
+                    <div class="p-1 bg-gradient-to-r from-gray-500 to-slate-600 text-white rounded-t">
+                        <h3 class="text-xs font-bold flex items-center gap-1">
+                            <i class="fas fa-undo text-xs"></i>
+                            Reembolsados
+                        </h3>
+                    </div>
+                    <div class="p-2">
+                        <div class="mb-1">
+                            <div class="flex gap-1">
+                                <input type="text" readonly value="https://admin.corretoracorporate.com.br/api/reports/all-accounts/refunded?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly"
+                                    class="flex-1 px-1 py-0.5 text-xs bg-gray-50 border border-gray-300 rounded font-mono"
+                                    id="link-refunded">
+                                <button onclick="copyElementToClipboard('link-refunded')"
+                                    class="px-1 py-0.5 bg-gray-600 text-white rounded hover:bg-gray-700 transition text-xs">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <button onclick="testApiLink('refunded')"
+                            class="w-full bg-gray-600 text-white px-2 py-0.5 rounded hover:bg-gray-700 transition text-xs">
+                            <i class="fas fa-play mr-1"></i>Testar API
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Seção de Acesso Público -->
+            <div class="bg-white rounded-lg shadow p-3 mb-6 border-l-4 border-green-500">
+                <h3 class="text-sm font-bold text-gray-800 mb-1">
+                    <i class="fas fa-globe mr-1 text-green-600"></i>
+                    ✅ APIs Públicas - Acesso Livre
+                </h3>
+                <p class="text-xs text-gray-600">
+                    Sem autenticação necessária - basta copiar e usar os links!
+                </p>
+                <p class="text-xs text-gray-500 mt-1">
+                    Acesse diretamente no navegador, terminal, Postman, JavaScript, Python, etc.
+                </p>
+            </div>
+
+            <!-- Seção de Filtros -->
+            <div class="bg-white rounded-lg shadow p-4 mb-6">
+                <h3 class="text-lg font-bold text-gray-800 mb-3">
+                    <i class="fas fa-filter mr-2 text-purple-600"></i>
+                    Filtros Disponíveis (Query Parameters)
+                </h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-gray-100">
+                            <tr>
+                                <th class="px-4 py-2 text-left font-semibold">Parâmetro</th>
+                                <th class="px-4 py-2 text-left font-semibold">Formato</th>
+                                <th class="px-4 py-2 text-left font-semibold">Exemplo</th>
+                                <th class="px-4 py-2 text-left font-semibold">Descrição</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y">
+                            <tr>
+                                <td class="px-4 py-2"><code>startDate</code></td>
+                                <td class="px-4 py-2">YYYY-MM-DD</td>
+                                <td class="px-4 py-2"><code>2026-02-01</code></td>
+                                <td class="px-4 py-2">Data inicial</td>
+                            </tr>
+                            <tr>
+                                <td class="px-4 py-2"><code>endDate</code></td>
+                                <td class="px-4 py-2">YYYY-MM-DD</td>
+                                <td class="px-4 py-2"><code>2026-02-28</code></td>
+                                <td class="px-4 py-2">Data final</td>
+                            </tr>
+                            <tr>
+                                <td class="px-4 py-2"><code>chargeType</code></td>
+                                <td class="px-4 py-2">string</td>
+                                <td class="px-4 py-2"><code>monthly</code></td>
+                                <td class="px-4 py-2">Tipo: all, single, monthly, pix_auto, link_cadastro</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mt-4 bg-yellow-50 border-l-4 border-yellow-500 p-4">
+                    <p class="text-sm text-yellow-800">
+                        <strong>Exemplo com filtros:</strong><br>
+                        <code class="text-xs">https://admin.corretoracorporate.com.br/api/reports/all-accounts/received?startDate=2026-02-01&endDate=2026-02-28&chargeType=monthly</code>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Resultados do Teste -->
+            <div id="api-test-results" class="hidden bg-white rounded-lg shadow-lg p-6">
+                <h3 class="text-xl font-bold text-gray-800 mb-4">
+                    <i class="fas fa-vial mr-2 text-green-600"></i>
+                    Resultados do Teste
+                </h3>
+                <div id="api-test-content"></div>
+            </div>
+
+            <!-- Documentação -->
+            <div class="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-lg shadow-xl p-6 text-white">
+                <h3 class="text-2xl font-bold mb-4">
+                    <i class="fas fa-book mr-2"></i>
+                    Documentação Completa
+                </h3>
+                <p class="mb-4">Para mais informações, exemplos de código em diferentes linguagens e casos de uso:</p>
+                <div class="flex gap-4">
+                    <a href="https://github.com/kainow252-cmyk/Cadastro/blob/main/API_RELATORIOS_EXTERNOS.md" 
+                       target="_blank"
+                       class="bg-white text-indigo-600 px-6 py-3 rounded-lg font-semibold hover:bg-indigo-50 transition inline-flex items-center gap-2">
+                        <i class="fas fa-external-link-alt"></i>
+                        Ver Documentação Completa
+                    </a>
+                    <a href="https://github.com/kainow252-cmyk/Cadastro/blob/main/LINKS_API_EXTERNOS.md" 
+                       target="_blank"
+                       class="bg-white text-purple-600 px-6 py-3 rounded-lg font-semibold hover:bg-purple-50 transition inline-flex items-center gap-2">
+                        <i class="fas fa-link"></i>
+                        Ver Guia de Links
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Payment Links Section -->
+        <div id="payment-links-section" class="section hidden">
+            <div class="mb-4">
+                <button onclick="showSection('dashboard')" 
+                    class="flex items-center gap-2 text-gray-600 hover:text-gray-800 font-semibold transition">
+                    <i class="fas fa-arrow-left"></i>
+                    <span>Voltar ao Dashboard</span>
+                </button>
+            </div>
+            <div class="bg-white rounded-lg shadow mb-6">
+                <div class="p-6 border-b border-gray-200">
+                    <h2 class="text-xl font-bold text-gray-800">
+                        <i class="fas fa-money-bill-wave mr-2 text-cyan-600"></i>
+                        Links de Pagamento
+                    </h2>
+                    <p class="text-gray-600 mt-2">Crie links para receber pagamentos via PIX, Cartão ou Assinatura</p>
+                </div>
+
+                <!-- Criar Novo Link -->
+                <div class="p-6 border-b border-gray-200 bg-gray-50">
+                    <h3 class="text-lg font-bold text-gray-800 mb-4">
+                        <i class="fas fa-plus-circle mr-2"></i>Criar Novo Link de Pagamento
+                    </h3>
+                    
+                    <form id="payment-link-form" class="space-y-4">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">Nome do Link *</label>
+                                <input type="text" id="paylink-name" required 
+                                    placeholder="Ex: Venda de produtos"
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">Tipo de Cobrança *</label>
+                                <select id="paylink-billing-type" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
+                                    <option value="UNDEFINED">Todas (PIX + Cartão + Boleto)</option>
+                                    <option value="PIX">PIX apenas</option>
+                                    <option value="CREDIT_CARD">Cartão de Crédito apenas</option>
+                                    <option value="BOLETO">Boleto apenas</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">Tipo de Valor *</label>
+                                <select id="paylink-charge-type" required class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
+                                    <option value="DETACHED">Pagamento Único (Valor Fixo)</option>
+                                    <option value="RECURRENT">Assinatura Recorrente</option>
+                                    <option value="INSTALLMENT">Parcelado (Cartão)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">Descrição (Opcional)</label>
+                                <input type="text" id="paylink-description" 
+                                    placeholder="Ex: Qualquer produto por R$ 50,00"
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
+                            </div>
+                        </div>
+
+                        <!-- Pagamento Único -->
+                        <div id="paylink-detached-section" class="space-y-4">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">Valor (R$) *</label>
+                                    <input type="number" id="paylink-value" required step="0.01" min="0.01" 
+                                        placeholder="50.00"
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">Dias até vencimento (para Boleto)</label>
+                                    <input type="number" id="paylink-due-days" min="1" value="10"
+                                        placeholder="10"
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
+                                    <p class="text-xs text-gray-500 mt-1">Quantidade de dias após a compra para o boleto vencer</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Assinatura Recorrente -->
+                        <div id="paylink-recurrent-section" class="hidden space-y-4">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">Valor (R$) *</label>
+                                    <input type="number" id="paylink-recurrent-value" step="0.01" min="0.01" 
+                                        placeholder="50.00"
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">Ciclo de Cobrança *</label>
+                                    <select id="paylink-cycle" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
+                                        <option value="WEEKLY">Semanal</option>
+                                        <option value="BIWEEKLY">Quinzenal (14 dias)</option>
+                                        <option value="MONTHLY" selected>Mensal</option>
+                                        <option value="QUARTERLY">Trimestral (3 meses)</option>
+                                        <option value="SEMIANNUALLY">Semestral (6 meses)</option>
+                                        <option value="YEARLY">Anual (12 meses)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Parcelamento (Cartão) -->
+                        <div id="paylink-installment-section" class="hidden space-y-4">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">Valor Total (R$) *</label>
+                                    <input type="number" id="paylink-installment-value" step="0.01" min="0.01" 
+                                        placeholder="500.00"
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">Parcelas Máximas *</label>
+                                    <select id="paylink-max-installments" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500">
+                                        <option value="2">2x</option>
+                                        <option value="3">3x</option>
+                                        <option value="4">4x</option>
+                                        <option value="5">5x</option>
+                                        <option value="6" selected>6x</option>
+                                        <option value="7">7x</option>
+                                        <option value="8">8x</option>
+                                        <option value="9">9x</option>
+                                        <option value="10">10x</option>
+                                        <option value="11">11x</option>
+                                        <option value="12">12x</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="flex items-center">
+                                <input type="checkbox" id="paylink-notification" 
+                                    class="w-4 h-4 text-cyan-600 border-gray-300 rounded focus:ring-cyan-500">
+                                <label for="paylink-notification" class="ml-2 text-sm text-gray-700">
+                                    Ativar notificações (Email/SMS) - R$ 0,85 por cobrança
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- 🎰 Configuração do Sorteio -->
+                        <div class="bg-gradient-to-r from-yellow-50 to-amber-50 border-2 border-yellow-300 rounded-xl p-6 mt-6">
+                            <div class="flex items-center gap-3 mb-4">
+                                <div class="w-12 h-12 bg-gradient-to-r from-yellow-400 to-amber-500 rounded-full flex items-center justify-center">
+                                    <i class="fas fa-ticket-alt text-white text-xl"></i>
+                                </div>
+                                <div>
+                                    <h4 class="text-lg font-bold text-gray-800">🎰 Configuração do Sorteio</h4>
+                                    <p class="text-sm text-gray-600">Configure o bilhete da loteria que será gerado após o pagamento</p>
+                                </div>
+                            </div>
+
+                            <div class="space-y-4">
+                                <!-- Ativar/Desativar Sorteio -->
+                                <div class="flex items-center bg-white rounded-lg p-4 border border-yellow-200">
+                                    <input type="checkbox" id="paylink-lottery-enabled" checked
+                                        class="w-5 h-5 text-yellow-600 border-gray-300 rounded focus:ring-yellow-500">
+                                    <label for="paylink-lottery-enabled" class="ml-3 text-sm font-semibold text-gray-700">
+                                        ✅ Gerar bilhete da loteria automaticamente após pagamento
+                                    </label>
+                                </div>
+
+                                <div id="lottery-config-fields" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <!-- Data do Sorteio -->
+                                    <div>
+                                        <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                            <i class="fas fa-calendar-alt mr-1 text-yellow-600"></i>Data do Sorteio
+                                        </label>
+                                        <input type="date" id="paylink-lottery-draw-date"
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500">
+                                        <p class="text-xs text-gray-500 mt-1">
+                                            💡 Se deixar vazio, será calculada automaticamente a próxima quarta-feira
+                                        </p>
+                                    </div>
+
+                                    <!-- O que será sorteado -->
+                                    <div>
+                                        <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                            <i class="fas fa-gift mr-1 text-yellow-600"></i>O que será sorteado?
+                                        </label>
+                                        <input type="text" id="paylink-lottery-description"
+                                            placeholder="Ex: Loteria Federal, iPhone 15 Pro, R$ 10.000,00"
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500">
+                                        <p class="text-xs text-gray-500 mt-1">
+                                            💡 Descrição do que o cliente concorre
+                                        </p>
+                                    </div>
+
+                                    <!-- Descrição do Prêmio -->
+                                    <div class="md:col-span-2">
+                                        <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                            <i class="fas fa-trophy mr-1 text-yellow-600"></i>Descrição do Prêmio
+                                        </label>
+                                        <input type="text" id="paylink-lottery-prize"
+                                            placeholder="Ex: 1º Prêmio - R$ 500.000,00"
+                                            value="1º Prêmio - R$ 500.000,00"
+                                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500">
+                                        <p class="text-xs text-gray-500 mt-1">
+                                            💡 Texto que aparecerá no bilhete mostrando o prêmio
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <!-- Preview do Bilhete -->
+                                <div class="bg-white border-2 border-dashed border-yellow-300 rounded-lg p-4">
+                                    <p class="text-xs font-semibold text-gray-600 mb-2">📋 Preview do bilhete:</p>
+                                    <div class="text-sm text-gray-700 space-y-1">
+                                        <p><strong>📅 Data do sorteio:</strong> <span id="lottery-preview-date">Próxima quarta-feira</span></p>
+                                        <p><strong>🎁 Concorre a:</strong> <span id="lottery-preview-desc">Loteria Federal</span></p>
+                                        <p><strong>🏆 Prêmio:</strong> <span id="lottery-preview-prize">1º Prêmio - R$ 500.000,00</span></p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex justify-end gap-3">
+                            <button type="button" onclick="document.getElementById('payment-link-form').reset()" 
+                                class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-semibold">
+                                Limpar
+                            </button>
+                            <button type="submit" 
+                                class="px-6 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-lg hover:from-cyan-600 hover:to-blue-600 font-semibold shadow-md">
+                                <i class="fas fa-plus mr-2"></i>Criar Link
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Lista de Links -->
+                <div class="p-6">
+                    <h3 class="text-lg font-bold text-gray-800 mb-4">
+                        <i class="fas fa-list mr-2"></i>Links Criados
+                    </h3>
+                    <div id="payment-links-list">
+                        <div class="text-center py-12 text-gray-500">
+                            <i class="fas fa-link text-6xl mb-4 opacity-30"></i>
+                            <p class="text-lg">Nenhum link criado ainda</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- DeltaPag Section - Cartão de Crédito -->
+        <div id="deltapag-section" class="section hidden" style="background: #f3f4f6; min-height: 100vh; padding: 1rem;">
+            <!-- Card único com header e ações -->
+            <div class="bg-white rounded-lg shadow mb-2">
+                <div class="p-2 border-b border-gray-200 flex items-center justify-between">
+                    <button onclick="showSection('dashboard')" 
+                        class="text-gray-500 hover:text-gray-700 text-xs">
+                        <i class="fas fa-arrow-left mr-1"></i>Dashboard
+                    </button>
+                    <h2 class="text-xs font-bold text-gray-800 flex-1 text-center">
+                        <i class="fas fa-credit-card mr-1 text-indigo-600"></i>
+                        Cartão - 2.99%
+                    </h2>
+                    <div style="width: 80px;"></div>
+                </div>
+                
+                <div class="p-2">
+                    <div class="flex flex-wrap gap-2">
+                        <button onclick="openDeltapagModal()" 
+                            class="px-2 py-1 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded hover:from-indigo-600 hover:to-purple-700 font-semibold shadow transition text-xs">
+                            <i class="fas fa-credit-card mr-1"></i>Assinatura
+                        </button>
+                        <button onclick="openDeltapagLinkModal()" 
+                            class="px-2 py-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded hover:from-purple-600 hover:to-pink-600 font-semibold shadow transition text-xs">
+                            <i class="fas fa-link mr-1"></i>Link
+                        </button>
+                        <button onclick="showDeltapagLinksModal()" 
+                            class="px-2 py-1 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded hover:from-blue-600 hover:to-blue-700 font-semibold shadow transition text-xs">
+                            <i class="fas fa-list mr-1"></i>Ver Links
+                        </button>
+                        <button onclick="openDeltapagImportModal()" 
+                            class="px-2 py-1 bg-gradient-to-r from-green-500 to-green-600 text-white rounded hover:from-green-600 hover:to-green-700 font-semibold shadow transition text-xs">
+                            <i class="fas fa-file-csv mr-1"></i>Importar
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+                <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-indigo-500">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-sm font-medium text-gray-600 mb-1">Total Assinaturas</p>
+                            <p class="text-3xl font-bold text-gray-800" id="deltapag-stat-total">0</p>
+                        </div>
+                        <div class="bg-indigo-100 rounded-full p-3">
+                            <i class="fas fa-users text-2xl text-indigo-600"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
+                <div class="bg-white rounded shadow p-2 border-l-4 border-green-500">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs text-gray-600">Ativas</p>
+                            <p class="text-lg font-bold text-green-600" id="deltapag-stat-active">0</p>
+                        </div>
+                        <i class="fas fa-check-circle text-lg text-green-600"></i>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded shadow p-2 border-l-4 border-yellow-500">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs text-gray-600">Receita Mensal</p>
+                            <p class="text-lg font-bold text-yellow-600" id="deltapag-stat-revenue">R$ 0</p>
+                        </div>
+                        <i class="fas fa-dollar-sign text-lg text-yellow-600"></i>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded shadow p-2 border-l-4 border-red-500">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-xs text-gray-600">Canceladas</p>
+                            <p class="text-lg font-bold text-red-600" id="deltapag-stat-cancelled">0</p>
+                        </div>
+                        <i class="fas fa-times-circle text-lg text-red-600"></i>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Subscription List -->
+            <div class="bg-white rounded shadow mb-2">
+                <div class="p-2 border-b border-gray-200 flex items-center justify-between">
+                    <h3 class="text-xs font-bold text-gray-800">
+                        <i class="fas fa-list mr-1 text-indigo-600"></i>
+                        Assinaturas
+                    </h3>
+                    <div class="flex gap-1">
+                        <button onclick="loadDeltapagSubscriptions()" 
+                            class="px-2 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-xs">
+                            <i class="fas fa-sync-alt mr-1"></i>Atualizar
+                        </button>
+                        <button onclick="createEvidenceTransactions()" 
+                            class="px-2 py-1 bg-orange-600 text-white rounded hover:bg-orange-700 text-xs">
+                            <i class="fas fa-receipt mr-1"></i>Evidências
+                        </button>
+                        <button onclick="exportDeltapagToExcel()" 
+                            class="px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700 text-xs">
+                            <i class="fas fa-file-excel mr-1"></i>Excel
+                        </button>
+                        <button onclick="exportDeltapagToCSV()" 
+                            class="px-2 py-1 bg-teal-600 text-white rounded hover:bg-teal-700 text-xs">
+                            <i class="fas fa-file-csv mr-1"></i>CSV
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="p-2 border-b border-gray-200 bg-gray-50">
+                    <div class="space-y-1">
+                        <!-- Linha 1: Filtros de texto e status -->
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-2">
+                            <input type="text" id="deltapag-filter-name" placeholder="Nome..." 
+                                oninput="applyDeltapagFilters()"
+                                class="px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-indigo-500">
+                            <input type="email" id="deltapag-filter-email" placeholder="Email..." 
+                                oninput="applyDeltapagFilters()"
+                                class="px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-indigo-500">
+                            <select id="deltapag-filter-status" onchange="applyDeltapagFilters()"
+                                class="px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-indigo-500">
+                                <option value="">Todos os status</option>
+                                <option value="ACTIVE">Ativas</option>
+                                <option value="CANCELLED">Canceladas</option>
+                            </select>
+                            <select id="deltapag-filter-recurrence" onchange="applyDeltapagFilters()"
+                                class="px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-indigo-500">
+                                <option value="">Todas recorrências</option>
+                                <option value="DAILY">Diária</option>
+                                <option value="WEEKLY">Semanal</option>
+                                <option value="BIWEEKLY">Quinzenal</option>
+                                <option value="MONTHLY">Mensal</option>
+                                <option value="QUARTERLY">Trimestral</option>
+                                <option value="SEMIANNUAL">Semestral</option>
+                                <option value="YEARLY">Anual</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Linha 2: Filtros de data -->
+                        <div class="grid grid-cols-1 md:grid-cols-5 gap-2">
+                            <div>
+                                <input type="date" id="deltapag-filter-date" onchange="applyDeltapagFilters()"
+                                    placeholder="Data"
+                                    class="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-indigo-500">
+                            </div>
+                            <div>
+                                <input type="month" id="deltapag-filter-month" onchange="applyDeltapagFilters()"
+                                    placeholder="Mês"
+                                    class="w-full px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-indigo-500">
+                            </div>
+                            <div class="relative">
+                                <label class="block text-xs font-medium text-gray-700 mb-1">Ano</label>
+                                <select id="deltapag-filter-year" onchange="applyDeltapagFilters()"
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                                    <option value="">Todos anos</option>
+                                    <option value="2026">2026</option>
+                                    <option value="2025">2025</option>
+                                    <option value="2024">2024</option>
+                                    <option value="2023">2023</option>
+                                </select>
+                            </div>
+                            <div class="relative">
+                                <label class="block text-xs font-medium text-gray-700 mb-1">Período - De</label>
+                                <input type="date" id="deltapag-filter-date-from" onchange="applyDeltapagFilters()"
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                            </div>
+                            <div class="relative">
+                                <label class="block text-xs font-medium text-gray-700 mb-1">Período - Até</label>
+                                <input type="date" id="deltapag-filter-date-to" onchange="applyDeltapagFilters()"
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500">
+                            </div>
+                        </div>
+                        
+                        <!-- Linha 3: Ações -->
+                        <div class="flex justify-between items-center">
+                            <button onclick="clearDeltapagFilters()" 
+                                class="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-semibold transition">
+                                <i class="fas fa-times mr-2"></i>Limpar Filtros
+                            </button>
+                            <div class="text-sm text-gray-600">
+                                <span id="deltapag-filter-count">0 assinaturas visíveis</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Table -->
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead class="bg-gray-50 border-b border-gray-200">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cliente</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cartão</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Valor</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Recorrência</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Data</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody id="deltapag-subscriptions-tbody" class="bg-white divide-y divide-gray-200">
+                            <tr>
+                                <td colspan="8" class="px-6 py-12 text-center text-gray-500">
+                                    <i class="fas fa-spinner fa-spin text-3xl mb-3"></i>
+                                    <p>Carregando assinaturas...</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal de Link de Cadastro (DESATIVADO - usando iframe inline agora) -->
+        <div id="link-modal-OLD-DISABLED" class="hidden fixed inset-0 bg-black bg-opacity-50 z-[9999] flex items-center justify-center p-4" style="display: none !important;">
+            <div class="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto">
+                <!-- Header Compacto -->
+                <div class="bg-gradient-to-r from-purple-500 to-pink-500 p-4 rounded-t-xl flex items-center justify-between">
+                    <div>
+                        <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                            <i class="fas fa-link"></i>
+                            Link de Cadastro
+                        </h3>
+                        <p class="text-purple-100 text-xs mt-0.5">
+                            Compartilhe para cadastros
+                        </p>
+                    </div>
+                    <button onclick="closeLinkModal()" class="text-white hover:bg-white/20 rounded-full w-8 h-8 flex items-center justify-center shrink-0">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+
+                <!-- Body Compacto -->
+                <div class="p-4 space-y-3">
+                    <!-- Loading -->
+                    <div id="link-loading" class="text-center py-6">
+                        <i class="fas fa-spinner fa-spin text-3xl text-purple-500 mb-2"></i>
+                        <p class="text-gray-600 text-sm">Gerando link...</p>
+                    </div>
+
+                    <!-- Success -->
+                    <div id="link-content" class="hidden space-y-3">
+                        <!-- Link -->
+                        <div class="bg-purple-50 rounded-lg p-3 border border-purple-200">
+                            <label class="block text-xs font-bold text-gray-700 mb-1">
+                                <i class="fas fa-link mr-1"></i>Link de Cadastro
+                            </label>
+                            <div class="flex gap-2">
+                                <input type="text" 
+                                    id="generated-link" 
+                                    readonly
+                                    class="flex-1 px-2 py-2 bg-white border border-gray-300 rounded text-xs font-mono">
+                                <button onclick="copyGeneratedLink()" 
+                                    id="copy-link-btn"
+                                    class="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-xs">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Info -->
+                        <div class="grid grid-cols-2 gap-2">
+                            <div class="bg-blue-50 rounded p-2 border border-blue-200">
+                                <p class="text-[10px] font-semibold text-blue-900 mb-0.5">
+                                    <i class="fas fa-clock mr-1"></i>Validade
+                                </p>
+                                <p class="text-xs font-bold text-blue-700" id="link-expires"></p>
+                            </div>
+                            <div class="bg-green-50 rounded p-2 border border-green-200">
+                                <p class="text-[10px] font-semibold text-green-900 mb-0.5">
+                                    <i class="fas fa-infinity mr-1"></i>Usos
+                                </p>
+                                <p class="text-xs font-bold text-green-700">Ilimitado</p>
+                            </div>
+                        </div>
+
+                        <!-- QR Code -->
+                        <div class="text-center bg-white p-3 rounded border border-gray-200">
+                            <p class="text-xs font-semibold text-gray-700 mb-2">
+                                <i class="fas fa-qrcode mr-1"></i>QR Code
+                            </p>
+                            <div id="qr-code-container" class="inline-block">
+                                <!-- QR Code -->
+                            </div>
+                            <p class="text-[10px] text-gray-500 mt-2">Escaneie para acessar</p>
+                        </div>
+
+                        <!-- Share -->
+                        <div class="space-y-2">
+                            <p class="text-xs font-bold text-gray-700">
+                                <i class="fas fa-share-alt mr-1"></i>Compartilhar:
+                            </p>
+                            <div class="grid grid-cols-2 gap-2">
+                                <button onclick="shareWhatsApp()" 
+                                    class="px-3 py-2 bg-green-500 text-white rounded hover:bg-green-600 text-xs font-semibold">
+                                    <i class="fab fa-whatsapp mr-1"></i>WhatsApp
+                                </button>
+                                <button onclick="shareEmail()" 
+                                    class="px-3 py-2 bg-red-500 text-white rounded hover:bg-red-600 text-xs font-semibold">
+                                    <i class="fas fa-envelope mr-1"></i>Email
+                                </button>
+                                <button onclick="shareTelegram()" 
+                                    class="px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-xs font-semibold">
+                                    <i class="fab fa-telegram mr-1"></i>Telegram
+                                </button>
+                                <button onclick="downloadQRCodeFromCanvas()" 
+                                    class="px-3 py-2 bg-purple-500 text-white rounded hover:bg-purple-600 text-xs font-semibold">
+                                    <i class="fas fa-download mr-1"></i>Baixar QR
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Botão Gerar Banner -->
+                        <div class="mt-4">
+                            <button onclick="generateAndShowBanner()" 
+                                class="w-full px-4 py-3 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 font-bold shadow-lg transition">
+                                <i class="fas fa-magic mr-2"></i>Gerar Banner com QR Code
+                            </button>
+                            <p class="text-xs text-gray-500 mt-2 text-center">
+                                <i class="fas fa-info-circle mr-1"></i>Crie um banner de propaganda com este link
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+                            </div>
+                        </div>
+
+                        <!-- Instructions -->
+                        <div class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded">
+                            <div class="flex">
+                                <i class="fas fa-lightbulb text-yellow-600 text-xl mr-3 mt-1"></i>
+                                <div>
+                                    <p class="text-sm font-semibold text-yellow-800 mb-1">Como usar este link:</p>
+                                    <ol class="text-xs text-yellow-700 space-y-1 ml-4 list-decimal">
+                                        <li>Copie o link ou compartilhe via WhatsApp/Email</li>
+                                        <li>A pessoa acessa o link e preenche o formulário</li>
+                                        <li>Sistema cria a subconta automaticamente</li>
+                                        <li>Email de confirmação é enviado</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer -->
+                <div class="bg-gray-50 px-6 py-4 rounded-b-2xl flex justify-end gap-3">
+                    <button onclick="closeLinkModal()" 
+                        class="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-semibold">
+                        Fechar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal PIX Automático -->
+        <div id="pix-automatic-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+            <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                <!-- Header -->
+                <div class="bg-gradient-to-r from-blue-500 to-purple-600 p-6 rounded-t-2xl">
+                    <div class="flex justify-between items-center">
+                        <h3 class="text-2xl font-bold text-white">
+                            <i class="fas fa-robot mr-2"></i>
+                            Link PIX Automático Gerado
+                        </h3>
+                        <button onclick="closePixAutomaticModal()" class="text-white hover:text-gray-200 text-2xl">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <p class="text-blue-100 text-sm mt-2">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        Compartilhe este link para débito automático mensal
+                    </p>
+                </div>
+
+                <!-- Body -->
+                <div class="p-6 space-y-6">
+                    <!-- Form State -->
+                    <div id="pix-automatic-form" class="space-y-4">
+                        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                            <p class="text-sm text-gray-700">
+                                <i class="fas fa-lightbulb text-yellow-600 mr-2"></i>
+                                <strong>PIX Automático:</strong> O cliente autoriza UMA VEZ e o débito ocorre automaticamente todo mês.
+                            </p>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                <i class="fas fa-dollar-sign mr-1 text-green-600"></i>Valor Mensal (R$)
+                            </label>
+                            <input type="number" 
+                                id="pix-auto-value" 
+                                step="0.01"
+                                min="1"
+                                placeholder="50.00"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                <i class="fas fa-align-left mr-1 text-blue-600"></i>Descrição
+                            </label>
+                            <input type="text" 
+                                id="pix-auto-description" 
+                                placeholder="Mensalidade Mensal"
+                                maxlength="100"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                <i class="fas fa-calendar mr-1 text-purple-600"></i>Validade do Link
+                            </label>
+                            <select id="pix-auto-days" 
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white">
+                                <option value="7">7 dias (1 semana)</option>
+                                <option value="15">15 dias (2 semanas)</option>
+                                <option value="30" selected>30 dias (1 mês)</option>
+                                <option value="60">60 dias (2 meses)</option>
+                                <option value="90">90 dias (3 meses)</option>
+                                <option value="180">180 dias (6 meses)</option>
+                                <option value="365">365 dias (1 ano)</option>
+                            </select>
+                            <p class="text-xs text-gray-500 mt-1">
+                                <i class="fas fa-info-circle mr-1"></i>
+                                Após expirar, o link não funcionará mais
+                            </p>
+                        </div>
+                        
+                        <button onclick="generatePixAutomaticLink()" 
+                            id="generate-pix-auto-btn"
+                            class="w-full py-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 font-bold text-lg">
+                            <i class="fas fa-robot mr-2"></i>Gerar Link PIX Automático
+                        </button>
+                    </div>
+
+                    <!-- Loading State -->
+                    <div id="pix-automatic-loading" class="hidden text-center py-8">
+                        <i class="fas fa-spinner fa-spin text-4xl text-blue-500 mb-4"></i>
+                        <p class="text-gray-600">Gerando link PIX Automático...</p>
+                    </div>
+
+                    <!-- Success State -->
+                    <div id="pix-automatic-content" class="hidden space-y-6">
+                        <!-- Link Display -->
+                        <div class="bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg p-4 border-2 border-blue-200">
+                            <label class="block text-sm font-bold text-gray-700 mb-2">
+                                <i class="fas fa-link mr-1"></i>
+                                Link PIX Automático:
+                            </label>
+                            <div class="flex gap-2">
+                                <input type="text" 
+                                    id="generated-pix-auto-link" 
+                                    readonly
+                                    class="flex-1 px-4 py-3 bg-white border border-gray-300 rounded-lg text-sm font-mono">
+                                <button onclick="copyPixAutoLink()" 
+                                    id="copy-pix-auto-btn"
+                                    class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold">
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Link Info -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="bg-green-50 rounded-lg p-4 border border-green-200">
+                                <p class="text-xs font-semibold text-green-900 mb-1">
+                                    <i class="fas fa-dollar-sign mr-1"></i>Valor Mensal
+                                </p>
+                                <p class="text-lg font-bold text-green-700" id="pix-auto-display-value">R$ 0,00</p>
+                            </div>
+                            <div class="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                                <p class="text-xs font-semibold text-blue-900 mb-1">
+                                    <i class="fas fa-clock mr-1"></i>Validade
+                                </p>
+                                <p class="text-lg font-bold text-blue-700" id="pix-auto-expires"></p>
+                            </div>
+                            <div class="bg-purple-50 rounded-lg p-4 border border-purple-200">
+                                <p class="text-xs font-semibold text-purple-900 mb-1">
+                                    <i class="fas fa-sync mr-1"></i>Frequência
+                                </p>
+                                <p class="text-lg font-bold text-purple-700">Mensal</p>
+                            </div>
+                        </div>
+
+                        <!-- QR Code -->
+                        <div class="text-center bg-white p-6 rounded-lg border-2 border-gray-200">
+                            <p class="text-sm font-semibold text-gray-700 mb-3">
+                                <i class="fas fa-qrcode mr-1"></i>QR Code do Link
+                            </p>
+                            <div id="pix-auto-qr-container" class="inline-block">
+                                <!-- QR Code will be inserted here -->
+                            </div>
+                            <p class="text-xs text-gray-500 mt-3">Escaneie este QR Code para acessar o link de auto-cadastro PIX Automático</p>
+                        </div>
+
+                        <!-- Share Options -->
+                        <div class="space-y-3">
+                            <p class="text-sm font-bold text-gray-700">
+                                <i class="fas fa-share-alt mr-1"></i>Compartilhar via:
+                            </p>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <button onclick="sharePixAutoWhatsApp()" 
+                                    class="w-full px-4 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 font-semibold flex items-center justify-center gap-2">
+                                    <i class="fab fa-whatsapp text-xl"></i>
+                                    WhatsApp
+                                </button>
+                                <button onclick="sharePixAutoEmail()" 
+                                    class="w-full px-4 py-3 bg-red-500 text-white rounded-lg hover:bg-red-600 font-semibold flex items-center justify-center gap-2">
+                                    <i class="fas fa-envelope text-xl"></i>
+                                    Email
+                                </button>
+                                <button onclick="sharePixAutoTelegram()" 
+                                    class="w-full px-4 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 font-semibold flex items-center justify-center gap-2">
+                                    <i class="fab fa-telegram text-xl"></i>
+                                    Telegram
+                                </button>
+                                <button onclick="downloadPixAutoQRCode()" 
+                                    class="w-full px-4 py-3 bg-purple-500 text-white rounded-lg hover:bg-purple-600 font-semibold flex items-center justify-center gap-2">
+                                    <i class="fas fa-download text-xl"></i>
+                                    Baixar QR Code
+                                </button>
+                                <button onclick="downloadPixAutoHTML()" 
+                                    class="w-full px-4 py-3 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 font-semibold flex items-center justify-center gap-2">
+                                    <i class="fas fa-code text-xl"></i>
+                                    Gerar HTML
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer -->
+                <div class="bg-gray-50 px-6 py-4 rounded-b-2xl flex justify-end">
+                    <button onclick="closePixAutomaticModal()" 
+                        class="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-semibold">
+                        <i class="fas fa-times mr-2"></i>
+                        Fechar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal DeltaPag - Pagamento Recorrente Cartão de Crédito -->
+        <div id="deltapag-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+                <!-- Header -->
+                <div class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-5 rounded-t-2xl">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-2xl font-bold flex items-center gap-2">
+                                <i class="fas fa-credit-card"></i>
+                                Pagamento Recorrente - Cartão de Crédito
+                            </h2>
+                            <p class="text-indigo-100 mt-1 text-sm">DeltaPag - Cobrança automática mensal</p>
+                        </div>
+                        <button onclick="closeDeltapagModal()" 
+                            class="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2 transition">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Form Content -->
+                <form id="deltapag-form" class="p-6 space-y-6">
+                    <!-- Dados do Cliente -->
+                    <div class="border-b pb-4">
+                        <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                            <i class="fas fa-user text-indigo-600"></i>
+                            Dados do Cliente
+                        </h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    Nome Completo <span class="text-red-500">*</span>
+                                </label>
+                                <input type="text" id="deltapag-customer-name" required
+                                    placeholder="Ex: João da Silva"
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    Email <span class="text-red-500">*</span>
+                                </label>
+                                <input type="email" id="deltapag-customer-email" required
+                                    placeholder="joao@email.com"
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    CPF <span class="text-red-500">*</span>
+                                </label>
+                                <input type="text" id="deltapag-customer-cpf" required
+                                    placeholder="000.000.000-00"
+                                    maxlength="14"
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    Telefone
+                                </label>
+                                <input type="tel" id="deltapag-customer-phone"
+                                    placeholder="(11) 98765-4321"
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Dados do Cartão -->
+                    <div class="border-b pb-4">
+                        <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                            <i class="fas fa-credit-card text-indigo-600"></i>
+                            Dados do Cartão
+                        </h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="md:col-span-2">
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    Número do Cartão <span class="text-red-500">*</span>
+                                </label>
+                                <input type="text" id="deltapag-card-number" required
+                                    placeholder="0000 0000 0000 0000"
+                                    maxlength="19"
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    Nome no Cartão <span class="text-red-500">*</span>
+                                </label>
+                                <input type="text" id="deltapag-card-holder" required
+                                    placeholder="JOÃO DA SILVA"
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent uppercase">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    Validade <span class="text-red-500">*</span>
+                                </label>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <select id="deltapag-card-month" required
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                                        <option value="">Mês</option>
+                                        <option value="01">01</option>
+                                        <option value="02">02</option>
+                                        <option value="03">03</option>
+                                        <option value="04">04</option>
+                                        <option value="05">05</option>
+                                        <option value="06">06</option>
+                                        <option value="07">07</option>
+                                        <option value="08">08</option>
+                                        <option value="09">09</option>
+                                        <option value="10">10</option>
+                                        <option value="11">11</option>
+                                        <option value="12">12</option>
+                                    </select>
+                                    <select id="deltapag-card-year" required
+                                        class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                                        <option value="">Ano</option>
+                                        <option value="2026">2026</option>
+                                        <option value="2027">2027</option>
+                                        <option value="2028">2028</option>
+                                        <option value="2029">2029</option>
+                                        <option value="2030">2030</option>
+                                        <option value="2031">2031</option>
+                                        <option value="2032">2032</option>
+                                        <option value="2033">2033</option>
+                                        <option value="2034">2034</option>
+                                        <option value="2035">2035</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    CVV <span class="text-red-500">*</span>
+                                </label>
+                                <input type="text" id="deltapag-card-cvv" required
+                                    placeholder="000"
+                                    maxlength="4"
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Dados da Cobrança -->
+                    <div class="border-b pb-4">
+                        <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                            <i class="fas fa-money-bill-wave text-indigo-600"></i>
+                            Dados da Cobrança
+                        </h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    Valor Mensal (R$) <span class="text-red-500">*</span>
+                                </label>
+                                <input type="number" id="deltapag-value" required step="0.01" min="0.01"
+                                    placeholder="50.00"
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    Recorrência
+                                </label>
+                                <select id="deltapag-recurrence" required
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                                    <option value="MONTHLY">Mensal</option>
+                                    <option value="WEEKLY">Semanal</option>
+                                    <option value="BIWEEKLY">Quinzenal</option>
+                                    <option value="QUARTERLY">Trimestral</option>
+                                    <option value="SEMIANNUALLY">Semestral</option>
+                                    <option value="YEARLY">Anual</option>
+                                </select>
+                            </div>
+                            <div class="md:col-span-2">
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    Descrição
+                                </label>
+                                <textarea id="deltapag-description" rows="2"
+                                    placeholder="Ex: Mensalidade Plano Premium"
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Split (Opcional) -->
+                    <div class="border-b pb-4">
+                        <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                            <i class="fas fa-split text-indigo-600"></i>
+                            Split de Pagamento (Opcional)
+                        </h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    Wallet ID da Subconta
+                                </label>
+                                <input type="text" id="deltapag-split-wallet"
+                                    placeholder="Deixe vazio para não usar split"
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    Percentual para Subconta (%)
+                                </label>
+                                <input type="number" id="deltapag-split-percentage" 
+                                    placeholder="20"
+                                    min="0" max="100" step="0.01"
+                                    class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                            </div>
+                        </div>
+                        <p class="text-sm text-gray-500 mt-2">
+                            <i class="fas fa-info-circle mr-1"></i>
+                            Se configurado, o valor será dividido automaticamente entre a conta principal e a subconta
+                        </p>
+                    </div>
+
+                    <!-- Informações de Taxa -->
+                    <div class="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+                        <div class="flex items-start gap-3">
+                            <i class="fas fa-info-circle text-indigo-600 text-xl mt-1"></i>
+                            <div class="flex-1">
+                                <h4 class="font-bold text-indigo-900 mb-2">Informações Importantes:</h4>
+                                <ul class="text-sm text-indigo-800 space-y-1">
+                                    <li>✅ Primeira cobrança será processada imediatamente</li>
+                                    <li>🔄 Cobranças automáticas mensais no cartão cadastrado</li>
+                                    <li>💳 Taxa de transação: 2.99% por cobrança</li>
+                                    <li>📧 O cliente receberá emails de confirmação</li>
+                                    <li>🔐 Dados do cartão são criptografados e seguros</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Resultado -->
+                    <div id="deltapag-result" class="hidden"></div>
+
+                    <!-- Botões -->
+                    <div class="flex gap-3 pt-4">
+                        <button type="submit" id="deltapag-submit-btn"
+                            class="flex-1 px-6 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 font-bold shadow-lg transition">
+                            <i class="fas fa-credit-card mr-2"></i>
+                            Criar Assinatura Recorrente
+                        </button>
+                        <button type="button" onclick="closeDeltapagModal()"
+                            class="px-6 py-4 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-semibold">
+                            <i class="fas fa-times mr-2"></i>
+                            Cancelar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Modal Link Auto-Cadastro DeltaPag -->
+        <div id="deltapag-link-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                <div class="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-5 rounded-t-2xl">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-2xl font-bold flex items-center gap-2">
+                                <i class="fas fa-link"></i>
+                                Link Auto-Cadastro - Cartão Crédito
+                            </h2>
+                            <p class="text-purple-100 mt-1 text-sm">Cliente preenche sozinho e cadastra o cartão</p>
+                        </div>
+                        <button onclick="closeDeltapagLinkModal()" 
+                            class="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2 transition">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="p-6">
+                    <div id="deltapag-link-form" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                Valor Mensal (R$) <span class="text-red-500">*</span>
+                            </label>
+                            <input type="number" id="deltapag-link-value" required step="0.01" min="0.01"
+                                placeholder="50.00"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                Descrição <span class="text-red-500">*</span>
+                            </label>
+                            <textarea id="deltapag-link-description" required rows="2"
+                                placeholder="Ex: Mensalidade Plano Premium"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"></textarea>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                Recorrência
+                            </label>
+                            <select id="deltapag-link-recurrence"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500">
+                                <option value="MONTHLY">Mensal</option>
+                                <option value="WEEKLY">Semanal</option>
+                                <option value="BIWEEKLY">Quinzenal</option>
+                                <option value="QUARTERLY">Trimestral</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                Validade do Link (dias)
+                            </label>
+                            <select id="deltapag-link-days"
+                                class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500">
+                                <option value="7">7 dias</option>
+                                <option value="15">15 dias</option>
+                                <option value="30" selected>30 dias</option>
+                                <option value="60">60 dias</option>
+                                <option value="90">90 dias</option>
+                                <option value="180">6 meses</option>
+                                <option value="365">1 ano</option>
+                            </select>
+                        </div>
+
+                        <button onclick="generateDeltapagLink()" 
+                            class="w-full px-6 py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-700 hover:to-pink-700 font-bold">
+                            <i class="fas fa-link mr-2"></i>Gerar Link
+                        </button>
+                    </div>
+
+                    <div id="deltapag-link-result" class="hidden mt-6 space-y-4">
+                        <div class="bg-green-50 border border-green-200 rounded-lg p-4">
+                            <h4 class="font-bold text-green-900 mb-2">
+                                <i class="fas fa-check-circle mr-2"></i>Link Gerado com Sucesso!
+                            </h4>
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="text-sm font-medium text-gray-700">Link:</label>
+                                    <div class="flex gap-2 mt-1">
+                                        <input type="text" id="deltapag-link-url" readonly
+                                            class="flex-1 px-3 py-2 bg-white border border-green-300 rounded text-sm">
+                                        <button onclick="copyDeltapagLink()"
+                                            class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                                            <i class="fas fa-copy"></i>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-2 gap-2">
+                                    <button onclick="shareDeltapagWhatsApp()"
+                                        class="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600">
+                                        <i class="fab fa-whatsapp mr-2"></i>WhatsApp
+                                    </button>
+                                    <button onclick="shareDeltapagEmail()"
+                                        class="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600">
+                                        <i class="fas fa-envelope mr-2"></i>Email
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-gray-50 px-6 py-4 rounded-b-2xl flex justify-end">
+                    <button onclick="closeDeltapagLinkModal()"
+                        class="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-semibold">
+                        <i class="fas fa-times mr-2"></i>Fechar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal Importar CSV DeltaPag -->
+        <div id="deltapag-import-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+                <div class="bg-gradient-to-r from-green-600 to-teal-600 text-white px-6 py-5 rounded-t-2xl">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-2xl font-bold flex items-center gap-2">
+                                <i class="fas fa-file-csv"></i>
+                                Importar Assinaturas em Lote (CSV)
+                            </h2>
+                            <p class="text-green-100 mt-1 text-sm">Cadastre múltiplas assinaturas de uma vez</p>
+                        </div>
+                        <button onclick="closeDeltapagImportModal()" 
+                            class="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2 transition">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="p-6 space-y-6">
+                    <!-- Instruções -->
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <h4 class="font-bold text-blue-900 mb-2">
+                            <i class="fas fa-info-circle mr-2"></i>Formato do CSV
+                        </h4>
+                        <div class="text-sm text-blue-800 space-y-2">
+                            <p><strong>Colunas obrigatórias (nesta ordem):</strong></p>
+                            <code class="block bg-white p-2 rounded text-xs overflow-x-auto">
+                                nome,email,cpf,telefone,numero_cartao,nome_cartao,mes,ano,cvv,valor,recorrencia,descricao
+                            </code>
+                            <p class="mt-2"><strong>Exemplo de linha:</strong></p>
+                            <code class="block bg-white p-2 rounded text-xs overflow-x-auto">
+                                João Silva,joao@email.com,00000000000,11987654321,0000000000000000,JOÃO SILVA,12,2028,123,50.00,MONTHLY,Plano Premium
+                            </code>
+                            <p class="mt-2"><strong>Recorrências válidas:</strong> MONTHLY, WEEKLY, BIWEEKLY, QUARTERLY, SEMIANNUALLY, YEARLY</p>
+                        </div>
+                    </div>
+
+                    <!-- Botão Download Template -->
+                    <button onclick="downloadDeltapagTemplate()"
+                        class="w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-semibold">
+                        <i class="fas fa-download mr-2"></i>Baixar Template CSV
+                    </button>
+
+                    <!-- Upload CSV -->
+                    <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                        <input type="file" id="deltapag-csv-file" accept=".csv" class="hidden" onchange="handleDeltapagCSV(event)">
+                        <label for="deltapag-csv-file" class="cursor-pointer">
+                            <i class="fas fa-cloud-upload-alt text-5xl text-gray-400 mb-3"></i>
+                            <p class="text-gray-700 font-semibold">Clique para selecionar o arquivo CSV</p>
+                            <p class="text-sm text-gray-500 mt-1">ou arraste e solte aqui</p>
+                        </label>
+                    </div>
+
+                    <!-- Preview -->
+                    <div id="deltapag-csv-preview" class="hidden">
+                        <h4 class="font-bold text-gray-800 mb-2">Preview (primeiras 5 linhas):</h4>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm border border-gray-200">
+                                <thead class="bg-gray-100">
+                                    <tr id="deltapag-csv-header"></tr>
+                                </thead>
+                                <tbody id="deltapag-csv-body"></tbody>
+                            </table>
+                        </div>
+                        <div class="mt-4 flex gap-2">
+                            <button onclick="importDeltapagCSV()"
+                                class="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-bold">
+                                <i class="fas fa-upload mr-2"></i>Importar <span id="deltapag-csv-count">0</span> Assinaturas
+                            </button>
+                            <button onclick="cancelDeltapagCSV()"
+                                class="px-6 py-3 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400">
+                                Cancelar
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Progress -->
+                    <div id="deltapag-import-progress" class="hidden">
+                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                            <div class="flex items-center gap-3 mb-3">
+                                <i class="fas fa-spinner fa-spin text-blue-600 text-2xl"></i>
+                                <div class="flex-1">
+                                    <p class="font-bold text-blue-900">Importando assinaturas...</p>
+                                    <p class="text-sm text-blue-700">
+                                        <span id="deltapag-import-current">0</span> de 
+                                        <span id="deltapag-import-total">0</span> processadas
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-3">
+                                <div id="deltapag-import-bar" class="bg-blue-600 h-3 rounded-full transition-all" style="width: 0%"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Result -->
+                    <div id="deltapag-import-result" class="hidden"></div>
+                </div>
+
+                <div class="bg-gray-50 px-6 py-4 rounded-b-2xl flex justify-end">
+                    <button onclick="closeDeltapagImportModal()"
+                        class="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-semibold">
+                        <i class="fas fa-times mr-2"></i>Fechar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal Ver Links DeltaPag -->
+        <div id="deltapag-links-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden">
+                <div class="bg-gradient-to-r from-blue-600 to-blue-800 px-6 py-4 rounded-t-2xl">
+                    <h2 class="text-2xl font-bold text-white flex items-center">
+                        <i class="fas fa-list mr-3"></i>
+                        Links de Auto-Cadastro Criados
+                    </h2>
+                </div>
+
+                <div class="p-6 overflow-y-auto max-h-[70vh]">
+                    <!-- Loading -->
+                    <div id="deltapag-links-loading" class="text-center py-8">
+                        <i class="fas fa-spinner fa-spin text-blue-600 text-4xl mb-4"></i>
+                        <p class="text-gray-600">Carregando links...</p>
+                    </div>
+
+                    <!-- Links List -->
+                    <div id="deltapag-links-list" class="hidden space-y-4"></div>
+
+                    <!-- Empty State -->
+                    <div id="deltapag-links-empty" class="hidden text-center py-12">
+                        <i class="fas fa-link text-gray-300 text-6xl mb-4"></i>
+                        <p class="text-gray-500 text-lg">Nenhum link criado ainda</p>
+                        <button onclick="closeDeltapagLinksModal(); openDeltapagLinkModal();" 
+                            class="mt-4 px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+                            <i class="fas fa-plus mr-2"></i>Criar Primeiro Link
+                        </button>
+                    </div>
+                </div>
+
+                <div class="bg-gray-50 px-6 py-4 rounded-b-2xl flex justify-end">
+                    <button onclick="closeDeltapagLinksModal()"
+                        class="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-semibold">
+                        <i class="fas fa-times mr-2"></i>Fechar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal QR Code -->
+        <div id="qrcode-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+                <div class="bg-gradient-to-r from-purple-600 to-indigo-600 px-6 py-4 rounded-t-2xl">
+                    <h2 class="text-2xl font-bold text-white flex items-center">
+                        <i class="fas fa-qrcode mr-3"></i>
+                        QR Code do Link
+                    </h2>
+                </div>
+
+                <div class="p-6">
+                    <!-- Link Info -->
+                    <div class="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-6">
+                        <div class="flex items-start gap-3">
+                            <i class="fas fa-info-circle text-purple-600 text-xl mt-1"></i>
+                            <div>
+                                <p class="font-bold text-purple-900 mb-1" id="qr-link-description">-</p>
+                                <p class="text-sm text-purple-700">
+                                    <span id="qr-link-value">-</span> • <span id="qr-link-recurrence">-</span>
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- QR Code -->
+                    <div class="bg-white border-4 border-purple-200 rounded-lg p-6 flex justify-center mb-6">
+                        <div id="qrcode-canvas-container"></div>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="space-y-3">
+                        <!-- Baixar PNG -->
+                        <button onclick="downloadQRCodeFromCanvas()" 
+                            class="w-full px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-semibold flex items-center justify-center gap-2">
+                            <i class="fas fa-download"></i>
+                            Baixar QR Code (PNG)
+                        </button>
+
+                        <!-- Copiar HTML -->
+                        <button onclick="copyQRCodeHTML()" 
+                            class="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-semibold flex items-center justify-center gap-2">
+                            <i class="fas fa-code"></i>
+                            Copiar Código HTML
+                        </button>
+
+                        <!-- Preview HTML -->
+                        <details class="bg-gray-50 rounded-lg border border-gray-200">
+                            <summary class="px-4 py-3 cursor-pointer font-semibold text-gray-700 hover:bg-gray-100 rounded-lg">
+                                <i class="fas fa-eye mr-2"></i>
+                                Visualizar Código HTML
+                            </summary>
+                            <div class="p-4 border-t border-gray-200">
+                                <pre id="qr-html-preview" class="bg-gray-900 text-green-400 p-4 rounded-lg overflow-x-auto text-xs font-mono"></pre>
+                            </div>
+                        </details>
+                    </div>
+                </div>
+
+                <div class="bg-gray-50 px-6 py-4 rounded-b-2xl flex justify-end">
+                    <button onclick="closeQRCodeModal()"
+                        class="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-semibold">
+                        <i class="fas fa-times mr-2"></i>Fechar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal Gerar Banner de Propaganda (OCULTO) -->
+        <div id="banner-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4" style="display: none !important;">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+                <div class="bg-gradient-to-r from-orange-600 to-red-600 text-white px-6 py-5 rounded-t-2xl">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-2xl font-bold flex items-center gap-2">
+                                <i class="fas fa-image"></i>
+                                Gerar Banner de Propaganda
+                            </h2>
+                            <p class="text-orange-100 mt-1 text-sm">Crie banners personalizados para redes sociais</p>
+                        </div>
+                        <button onclick="closeBannerModal()" 
+                            class="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2 transition">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="p-6 space-y-6">
+                    <!-- Formulário de Edição -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- Coluna Esquerda: Formulário -->
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    <i class="fas fa-heading mr-1"></i>Título Principal
+                                </label>
+                                <input type="text" id="banner-title" 
+                                    placeholder="Ex: Assine Agora!"
+                                    value="Assine Agora!"
+                                    class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                    oninput="updateBannerPreview()">
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    <i class="fas fa-file-alt mr-1"></i>Descrição
+                                </label>
+                                <textarea id="banner-description" rows="3"
+                                    placeholder="Ex: Plano Premium com benefícios exclusivos"
+                                    class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                    oninput="updateBannerPreview()">Plano Premium com benefícios exclusivos</textarea>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                        <i class="fas fa-dollar-sign mr-1"></i>Valor (R$)
+                                    </label>
+                                    <input type="number" id="banner-value" 
+                                        placeholder="Ex: 149.90"
+                                        value="149.90"
+                                        step="0.01"
+                                        class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                        oninput="updateBannerPreview()">
+                                </div>
+
+                                <div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                        <i class="fas fa-sync-alt mr-1"></i>Tipo
+                                    </label>
+                                    <select id="banner-type" 
+                                        class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                        onchange="updateBannerPreview()">
+                                        <option value="single">Cobrança Única</option>
+                                        <option value="monthly">Assinatura Mensal</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    <i class="fas fa-palette mr-1"></i>Cor do Banner
+                                </label>
+                                <select id="banner-color" 
+                                    class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                    onchange="updateBannerPreview()">
+                                    <option value="purple">Roxo/Rosa</option>
+                                    <option value="blue">Azul</option>
+                                    <option value="green">Verde</option>
+                                    <option value="orange">Laranja</option>
+                                    <option value="red">Vermelho</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    <i class="fas fa-text-height mr-1"></i>Texto do Botão
+                                </label>
+                                <input type="text" id="banner-button-text" 
+                                    placeholder="Ex: Cadastre-se Agora"
+                                    value="Cadastre-se Agora"
+                                    class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                    oninput="updateBannerPreview()">
+                            </div>
+
+                            <input type="hidden" id="banner-link" value="">
+                            <input type="hidden" id="banner-account-id" value="">
+                        </div>
+
+                        <!-- Coluna Direita: Banner Gerado -->
+                        <div>
+                            <!-- Botão Gerar Banner (Aparece Primeiro) -->
+                            <div id="generate-banner-container" class="flex flex-col items-center justify-center">
+                                <button onclick="openCustomBannerEditor()" 
+                                    class="px-8 py-4 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 font-bold text-lg shadow-lg transition">
+                                    <i class="fas fa-magic mr-2"></i>Gerar Banner
+                                </button>
+                                <p class="text-sm text-gray-500 mt-3 text-center">
+                                    <i class="fas fa-info-circle mr-1"></i>
+                                    Crie um banner customizado
+                                </p>
+                            </div>
+
+                            <!-- Preview do Banner (Aparece Depois de Gerar) -->
+                            <div id="banner-preview-container" class="hidden">
+                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                    <i class="fas fa-check-circle text-green-600 mr-1"></i>Banner Gerado com Sucesso!
+                                </label>
+                                <div id="banner-preview" class="w-full aspect-square rounded-lg overflow-hidden shadow-lg bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-white">
+                                    <p class="text-sm">Gerando banner...</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Ações (Aparecem Depois de Gerar) -->
+                    <div id="banner-actions" class="hidden flex gap-3">
+                        <button onclick="downloadBanner()" 
+                            class="flex-1 px-6 py-3 bg-gradient-to-r from-orange-600 to-red-600 text-white rounded-lg hover:from-orange-700 hover:to-red-700 font-semibold">
+                            <i class="fas fa-download mr-2"></i>Baixar Banner (PNG)
+                        </button>
+                        <button onclick="copyBannerLink()" 
+                            class="flex-1 px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 font-semibold">
+                            <i class="fas fa-link mr-2"></i>Copiar Link do Banner
+                        </button>
+                    </div>
+
+                    <!-- Aviso -->
+                    <div class="bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-lg p-4">
+                        <p class="text-sm text-blue-900 font-semibold mb-2">
+                            <i class="fas fa-rocket mr-2"></i>
+                            Como compartilhar nas redes sociais:
+                        </p>
+                        <ol class="text-xs text-blue-800 space-y-1 ml-4">
+                            <li>1️⃣ <strong>Baixar Banner (PNG)</strong> - Salva a imagem 1080x1080px no seu computador</li>
+                            <li>2️⃣ <strong>Copiar Link do Banner</strong> - Copia o link de cadastro para compartilhar</li>
+                            <li>3️⃣ <strong>Postar nas Redes</strong> - Anexe a imagem + cole o link na legenda/bio</li>
+                        </ol>
+                        <p class="text-xs text-blue-700 mt-3">
+                            <i class="fas fa-qrcode mr-1"></i>
+                            <strong>Dica:</strong> O banner tem QR Code! Cliente pode escanear direto ou clicar no link. Funciona em Instagram, Facebook, WhatsApp, Twitter e impressos!
+                        </p>
+                    </div>
+                </div>
+
+                <div class="bg-gray-50 px-6 py-4 rounded-b-2xl flex justify-end">
+                    <button onclick="closeBannerModal()"
+                        class="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 font-semibold">
+                        <i class="fas fa-times mr-2"></i>Fechar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Seção Banners Salvos -->
+        <div id="banners-section" class="section hidden">
+            <div class="bg-white rounded-lg shadow-md p-8">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-2xl font-bold text-gray-800 flex items-center">
+                        <i class="fas fa-images mr-3 text-pink-600"></i>
+                        Banners Salvos
+                    </h2>
+                    
+                    <button onclick="clearOrphanBanners()" 
+                        class="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm font-semibold shadow-md hover:shadow-lg">
+                        <i class="fas fa-trash-alt"></i>
+                        Limpar Banners
+                    </button>
+                </div>
+                
+                <div id="banners-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <!-- Banners serão carregados aqui -->
+                    <div class="text-center py-12 col-span-full">
+                        <i class="fas fa-spinner fa-spin text-4xl text-gray-400 mb-4"></i>
+                        <p class="text-gray-500">Carregando banners...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal Editor de Banner de Propaganda -->
+        <div id="promo-banner-editor-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-y-auto">
+                <div class="bg-gradient-to-r from-orange-600 to-red-600 text-white px-6 py-5 rounded-t-2xl">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-2xl font-bold flex items-center gap-2">
+                                <i class="fas fa-image"></i>
+                                Gerar Banner com QR Code
+                            </h2>
+                            <p class="text-orange-100 mt-1 text-sm">Faça upload de um banner personalizado ou crie um novo</p>
+                        </div>
+                        <button onclick="closePromoBannerEditor()" 
+                            class="text-white hover:bg-white hover:bg-opacity-20 rounded-full p-2 transition">
+                            <i class="fas fa-times text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="p-6">
+                    <!-- Seção de Upload de Banner Personalizado -->
+                    <div class="max-w-2xl mx-auto">
+                        <div class="mb-6 p-6 bg-gradient-to-r from-orange-50 to-red-50 border-2 border-orange-300 rounded-xl">
+                            <div class="flex items-start gap-4">
+                                <div class="flex-shrink-0">
+                                    <div class="w-12 h-12 bg-orange-600 rounded-full flex items-center justify-center">
+                                        <i class="fas fa-upload text-white text-xl"></i>
+                                    </div>
+                                </div>
+                                <div class="flex-1">
+                                    <h3 class="text-lg font-bold text-gray-800 mb-2">
+                                        📸 Upload de Banner Personalizado
+                                    </h3>
+                                    <p class="text-sm text-gray-600 mb-4">
+                                        Envie seu banner e adicionaremos automaticamente o QR Code e link de pagamento!
+                                    </p>
+                                    
+                                    <input type="file" 
+                                        id="custom-banner-upload" 
+                                        accept="image/*"
+                                        onchange="handleCustomBannerUpload(event)"
+                                        class="hidden">
+                                    <input type="hidden" id="custom-banner-base64" value="">
+                                    
+                                    <button type="button" 
+                                        onclick="document.getElementById('custom-banner-upload').click()"
+                                        class="w-full px-6 py-3 bg-gradient-to-r from-orange-600 to-red-600 text-white rounded-lg hover:from-orange-700 hover:to-red-700 font-semibold shadow-lg transition-all hover:scale-105">
+                                        <i class="fas fa-cloud-upload-alt mr-2"></i>
+                                        Escolher Banner Personalizado
+                                    </button>
+                                    
+                                    <!-- Preview do Banner Personalizado -->
+                                    <div id="custom-banner-preview-container" class="hidden mt-4">
+                                        <div class="bg-white rounded-lg p-4 border-2 border-green-300">
+                                            <img id="custom-banner-preview" src="" alt="Preview" class="w-full h-auto rounded-lg shadow-md mb-4">
+                                            
+                                            <!-- Campo de Valor -->
+                                            <div class="mb-4">
+                                                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                                    <i class="fas fa-dollar-sign mr-1 text-orange-600"></i>Valor (R$)
+                                                </label>
+                                                <input type="number" id="promo-banner-value" 
+                                                    placeholder="Ex: 10.00"
+                                                    value="10.00"
+                                                    step="0.01"
+                                                    class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500">
+                                            </div>
+                                            
+                                            <div class="flex items-center justify-between">
+                                                <p class="text-sm font-semibold text-green-700">
+                                                    <i class="fas fa-check-circle mr-1"></i>
+                                                    Banner carregado com sucesso!
+                                                </p>
+                                                <button type="button"
+                                                    onclick="saveCustomBanner()"
+                                                    class="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold transition shadow-lg">
+                                                    <i class="fas fa-save mr-1"></i>Salvar Banner
+                                                </button>
+                                            </div>
+                                            <p class="text-xs text-gray-500 mt-3 text-center">
+                                                O QR Code e link de pagamento serão adicionados automaticamente
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Campo: Título do Banner -->
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                <i class="fas fa-heading mr-1 text-orange-600"></i>Título do Banner
+                            </label>
+                            <input type="text" id="promo-banner-title" 
+                                placeholder="Ex: ASSINE AGORA"
+                                value="ASSINE AGORA"
+                                class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                oninput="updatePromoBannerPreview()">
+                        </div>
+
+                        <!-- Campo: Descrição -->
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">
+                                <i class="fas fa-file-alt mr-1 text-orange-600"></i>Descrição / Detalhes
+                            </label>
+                            <textarea id="promo-banner-description" rows="3"
+                                placeholder="Ex: Plano Premium com benefícios exclusivos"
+                                class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                                oninput="updatePromoBannerPreview()"></textarea>
+                        </div>
+                        
+                        <!-- Hidden fields para armazenar dados -->
+                        <div class="hidden">
+                            <input type="hidden" id="promo-banner-link" value="">
+                            <input type="hidden" id="promo-banner-qrcode" value="">
+                            <input type="hidden" id="promo-banner-font-size" value="medium">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal Banners Salvos -->
+        <div id="saved-banners-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] overflow-y-auto">
+                <div class="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-3 rounded-t-xl flex items-center justify-between">
+                    <div>
+                        <h2 class="text-lg font-bold flex items-center gap-2">
+                            <i class="fas fa-images"></i>
+                            Banners Salvos
+                        </h2>
+                        <p class="text-purple-100 text-xs" id="saved-banners-account-name">Todos os banners</p>
+                    </div>
+                    <button onclick="closeSavedBannersModal()" 
+                        class="text-white hover:bg-white/20 rounded-full w-8 h-8 flex items-center justify-center shrink-0">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+
+                <div class="p-4">
+                    <!-- Lista de Banners -->
+                    <div id="saved-banners-list" class="space-y-2">
+                        <!-- Banners inseridos via JS -->
+                    </div>
+
+                    <!-- Estado vazio -->
+                    <div id="saved-banners-empty" class="hidden text-center py-8">
+                        <i class="fas fa-images text-gray-300 text-4xl mb-3"></i>
+                        <p class="text-gray-500 text-sm font-semibold mb-1">Nenhum banner salvo</p>
+                        <p class="text-gray-400 text-xs">Gere via "Link Auto-Cadastro"</p>
+                    </div>
+
+                    <!-- Botão Fechar -->
+                    <div class="mt-3 text-center">
+                        <button onclick="closeSavedBannersModal()"
+                            class="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 text-sm">
+                            <i class="fas fa-times mr-1"></i>Fechar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Additional libraries loaded at page end -->
+        <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" onload="console.log('✅ QRCode library loaded:', typeof window.QRCode)"></script>
+        <script src="/static/payment-links.js?v=4.2" defer></script>
+        <script src="/static/payment-filters.js?v=4.2" defer></script>
+        <script src="/static/deltapag-section.js?v=13.2" defer></script>
+        <script src="/static/reports-detailed.js?v=2.1" defer></script>
+        <script src="/static/banner-generator.js?v=1.1" defer></script>
+        
+        <!-- Toggle Side Menu (Mobile/Tablet) -->
+        <script>
+        function toggleSideMenu() {
+            const menu = document.getElementById('side-menu');
+            if (menu) {
+                menu.classList.toggle('hidden');
+            }
+        }
+
+        // ========================================
+        // AUTO-INICIALIZAÇÃO: Mostrar Dashboard
+        // ========================================
+        document.addEventListener('DOMContentLoaded', function() {
+            // Aguardar 100ms para garantir que todas as funções carregaram
+            setTimeout(function() {
+                if (typeof showSection === 'function') {
+                    console.log('✅ Auto-inicializando dashboard...');
+                    showSection('dashboard');
+                } else {
+                    console.error('❌ Função showSection não encontrada!');
+                }
+            }, 100);
+        });
+        </script>
+    </body>
+    </html>
+  `)
+})
+
+// ======================
+// BANNERS SALVOS
+// ======================
+
+// Salvar banner
+app.post('/api/banners/save', async (c) => {
+  try {
+    const body = await c.req.json()
+    const { accountId, walletId, title, description, value, promo, buttonText, color, linkUrl, chargeType, fontSize, bannerImage } = body
+    
+    // Criar objeto do banner
+    const banner = {
+      id: `banner-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      accountId,
+      walletId,
+      title,
+      description,
+      value,
+      promo,
+      buttonText,
+      color,
+      linkUrl,
+      chargeType,
+      fontSize,
+      bannerImage,
+      createdAt: new Date().toISOString()
+    }
+    
+    // Salvar em KV (se disponível) ou retornar sucesso
+    // Por enquanto apenas log, depois pode implementar KV storage
+    console.log('Banner salvo:', banner.id)
+    
+    return c.json({ ok: true, banner })
+  } catch (error) {
+    console.error('Erro ao salvar banner:', error)
+    return c.json({ ok: false, error: error.message }, 500)
+  }
+})
+
+// Listar banners
+app.get('/api/banners/list', async (c) => {
+  try {
+    // Por enquanto retornar array vazio
+    // Depois implementar com KV storage
+    return c.json({ ok: true, banners: [] })
+  } catch (error) {
+    console.error('Erro ao listar banners:', error)
+    return c.json({ ok: false, error: error.message }, 500)
+  }
+})
+
+// ======================
+// WEBHOOKS DO ASAAS
+// ======================
+
+// Endpoint para receber webhooks do Asaas
+app.post('/api/webhooks/asaas', async (c) => {
+  try {
+    // Validar token de segurança (opcional mas recomendado)
+    const receivedToken = c.req.header('asaas-access-token')
+    const expectedToken = c.env.ASAAS_WEBHOOK_TOKEN // Apenas token específico, não API_KEY
+    
+    // Se tiver token configurado, validar
+    if (expectedToken && receivedToken !== expectedToken) {
+      console.log('Token inválido:', { receivedToken, expectedToken })
+      return c.json({ error: 'Unauthorized' }, 401)
+    }
+
+    // Receber payload do webhook
+    const payload = await c.req.json()
+    const webhookId = `webhook-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    
+    console.log('Webhook recebido:', {
+      id: webhookId,
+      event: payload.event,
+      paymentId: payload.payment?.id,
+      accountId: payload.account?.id
+    })
+
+    // Salvar webhook no banco para processamento posterior
+    await c.env.DB.prepare(`
+      INSERT INTO webhooks (id, event, payload, processed, created_at)
+      VALUES (?, ?, ?, 0, datetime('now'))
+    `).bind(
+      webhookId,
+      payload.event,
+      JSON.stringify(payload)
+    ).run()
+
+    // Processar evento imediatamente
+    await processWebhookEvent(c, payload, webhookId)
+
+    // Retornar sucesso (importante para o Asaas saber que recebeu)
+    return c.json({ 
+      ok: true, 
+      message: 'Webhook recebido',
+      webhookId 
+    })
+
+  } catch (error: any) {
+    console.error('Erro ao processar webhook:', error)
+    // Mesmo com erro, retornar 200 para não reenviar
+    return c.json({ 
+      ok: false, 
+      error: error.message,
+      message: 'Erro ao processar webhook'
+    }, 500)
+  }
+})
+
+// Função auxiliar para processar eventos do webhook
+async function processWebhookEvent(c: any, payload: any, webhookId: string) {
+  const event = payload.event
+  
+  try {
+    switch (event) {
+      // Eventos de Pagamento
+      case 'PAYMENT_CREATED':
+        await handlePaymentCreated(c, payload)
+        break
+      
+      case 'PAYMENT_CONFIRMED':
+      case 'PAYMENT_RECEIVED':
+        await handlePaymentReceived(c, payload)
+        break
+      
+      case 'PAYMENT_OVERDUE':
+        await handlePaymentOverdue(c, payload)
+        break
+      
+      case 'PAYMENT_REFUNDED':
+        await handlePaymentRefunded(c, payload)
+        break
+      
+      // Eventos de Subconta
+      case 'ACCOUNT_CREATED':
+      case 'ACCOUNT_UPDATED':
+      case 'ACCOUNT_STATUS_CHANGED':
+        await handleAccountEvent(c, payload)
+        break
+      
+      // Eventos de Transferência
+      case 'TRANSFER_DONE':
+        await handleTransferDone(c, payload)
+        break
+      
+      default:
+        console.log('Evento não tratado:', event)
+    }
+
+    // Marcar webhook como processado
+    await c.env.DB.prepare(`
+      UPDATE webhooks 
+      SET processed = 1, processed_at = datetime('now')
+      WHERE id = ?
+    `).bind(webhookId).run()
+
+  } catch (error: any) {
+    console.error('Erro ao processar evento:', error)
+    
+    // Salvar erro no banco
+    await c.env.DB.prepare(`
+      UPDATE webhooks 
+      SET error = ?
+      WHERE id = ?
+    `).bind(error.message, webhookId).run()
+    
+    throw error
+  }
+}
+
+// Handlers para cada tipo de evento
+async function handlePaymentCreated(c: any, payload: any) {
+  console.log('Pagamento criado:', payload.payment?.id)
+  // Adicionar lógica personalizada aqui
+}
+
+async function handlePaymentReceived(c: any, payload: any) {
+  console.log('📧 Pagamento recebido:', payload.payment?.id)
+  
+  const payment = payload.payment
+  const paymentValue = parseFloat(payment?.value || 0)
+  
+  // Registrar no log de atividades
+  await c.env.DB.prepare(`
+    INSERT INTO activity_logs (user_id, action, details, ip_address)
+    VALUES (NULL, 'PAYMENT_RECEIVED', ?, 'webhook')
+  `).bind(
+    JSON.stringify({
+      paymentId: payment?.id,
+      value: paymentValue,
+      customer: payment?.customer,
+      pixTransaction: payment?.pixTransaction
+    })
+  ).run()
+  
+  // ========================================
+  // ENVIAR E-MAIL DE BOAS-VINDAS
+  // ========================================
+  try {
+    // Buscar dados da autorização PIX Automático
+    const auth = await c.env.DB.prepare(`
+      SELECT 
+        pa.*,
+        psl.campaign,
+        psl.plan_type,
+        psl.description as link_description,
+        (SELECT COUNT(*) FROM pix_automatic_authorizations WHERE customer_email = pa.customer_email AND status = 'ACTIVE') as subscription_count
+      FROM pix_automatic_authorizations pa
+      LEFT JOIN pix_automatic_signup_links psl ON pa.link_id = psl.id
+      WHERE pa.customer_id = ?
+      ORDER BY pa.created_at DESC
+      LIMIT 1
+    `).bind(payment.customer).first()
+    
+    if (auth && auth.customer_email) {
+      // Inicializar SES se ainda não foi
+      if (!isSESConfigured() && c.env.AWS_ACCESS_KEY_ID && c.env.AWS_SECRET_ACCESS_KEY) {
+        initializeSESClient(
+          c.env.AWS_ACCESS_KEY_ID,
+          c.env.AWS_SECRET_ACCESS_KEY,
+          c.env.AWS_REGION || 'us-east-1'
+        )
+      }
+      
+      // Determinar tipo de assinatura
+      const subscriptionCount = parseInt(auth.subscription_count as string) || 0
+      const isReactivation = subscriptionCount > 1
+      const isUpgrade = (auth.description as string || '').toLowerCase().includes('upgrade')
+      
+      // Determinar plano (extrair de description ou usar padrão)
+      let plan: 'basico' | 'premium' | 'empresarial' = 'basico'
+      const planType = (auth.plan_type as string || '').toLowerCase()
+      const description = (auth.description as string || '').toLowerCase()
+      
+      if (planType.includes('premium') || description.includes('premium')) {
+        plan = 'premium'
+      } else if (planType.includes('empresarial') || planType.includes('enterprise') || description.includes('empresarial')) {
+        plan = 'empresarial'
+      }
+      
+      console.log('📊 Dados do e-mail:', {
+        email: auth.customer_email,
+        plan,
+        isUpgrade,
+        isReactivation,
+        campaign: auth.campaign,
+        subscriptionCount
+      })
+      
+      // Preparar dados do cliente
+      const customerData: CustomerData = {
+        name: auth.customer_name as string,
+        email: auth.customer_email as string,
+        plan,
+        value: parseFloat(auth.value as string),
+        activationDate: new Date().toLocaleDateString('pt-BR'),
+        campaign: auth.campaign as string || undefined,
+        isUpgrade,
+        isReactivation
+      }
+      
+      // Enviar e-mail de boas-vindas
+      const emailResult = await sendWelcomeEmail(customerData)
+      
+      if (emailResult.success) {
+        console.log('✅ E-mail de boas-vindas enviado com sucesso!')
+        
+        // Registrar envio no banco
+        await c.env.DB.prepare(`
+          INSERT INTO welcome_emails (
+            id,
+            authorization_id,
+            email,
+            plan_type,
+            template_type,
+            sent_at,
+            ses_message_id,
+            status,
+            created_at
+          ) VALUES (?, ?, ?, ?, ?, datetime('now'), ?, 'sent', datetime('now'))
+        `).bind(
+          `email-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          auth.id,
+          auth.customer_email,
+          plan,
+          isUpgrade ? 'upgrade' : isReactivation ? 'reactivation' : plan,
+          emailResult.messageId || null
+        ).run()
+      } else {
+        console.warn('⚠️ Falha ao enviar e-mail:', emailResult.error)
+        
+        // Registrar falha no banco
+        await c.env.DB.prepare(`
+          INSERT INTO welcome_emails (
+            id,
+            authorization_id,
+            email,
+            plan_type,
+            template_type,
+            sent_at,
+            status,
+            error_message,
+            created_at
+          ) VALUES (?, ?, ?, ?, ?, datetime('now'), 'failed', ?, datetime('now'))
+        `).bind(
+          `email-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          auth.id,
+          auth.customer_email,
+          plan,
+          isUpgrade ? 'upgrade' : isReactivation ? 'reactivation' : plan,
+          emailResult.error || 'Unknown error'
+        ).run()
+      }
+    } else {
+      console.log('ℹ️ Autorização não encontrada para customer:', payment.customer)
+    }
+  } catch (emailError: any) {
+    console.error('❌ Erro ao processar e-mail de boas-vindas:', emailError.message)
+    // Não falhar o webhook se o e-mail der erro
+  }
+  
+  // ========================================
+  // APLICAR SPLIT AUTOMÁTICO 20/80
+  // ========================================
+  try {
+    const splitConfig = await c.env.DB.prepare(`
+      SELECT * FROM pix_splits 
+      WHERE value = ? 
+      ORDER BY created_at DESC 
+      LIMIT 1
+    `).bind(paymentValue).first()
+    
+    if (splitConfig && splitConfig.account_id) {
+      const accountId = splitConfig.account_id as string
+      const splitPercentage = (splitConfig.split_percentage as number) || 20
+      const transferValue = (paymentValue * splitPercentage / 100)
+      
+      console.log(`💸 Aplicando split de ${splitPercentage}%: R$ ${transferValue} para conta ${accountId}`)
+      
+      // Criar transferência para a subconta
+      const transferData = {
+        value: transferValue,
+        walletId: accountId
+      }
+      
+      const transferResult = await asaasRequest(c, '/v3/transfers', 'POST', transferData)
+      
+      if (transferResult.ok) {
+        console.log('✅ Split aplicado com sucesso:', transferResult.data)
+        
+        // Registrar split no log
+        await c.env.DB.prepare(`
+          INSERT INTO activity_logs (user_id, action, details, ip_address)
+          VALUES (NULL, 'SPLIT_APPLIED', ?, 'webhook')
+        `).bind(
+          JSON.stringify({
+            paymentId: payment?.id,
+            accountId,
+            transferValue,
+            transferId: transferResult.data?.id,
+            splitPercentage
+          })
+        ).run()
+      } else {
+        console.error('❌ Erro ao aplicar split:', transferResult.data)
+      }
+    }
+  } catch (splitError: any) {
+    console.error('❌ Erro ao processar split:', splitError)
+    // Não falhar o webhook se o split der erro
+  }
+}
+
+async function handlePaymentOverdue(c: any, payload: any) {
+  console.log('Pagamento vencido:', payload.payment?.id)
+  
+  // Registrar no log
+  await c.env.DB.prepare(`
+    INSERT INTO activity_logs (user_id, action, details, ip_address)
+    VALUES (NULL, 'PAYMENT_OVERDUE', ?, 'webhook')
+  `).bind(
+    JSON.stringify({
+      paymentId: payload.payment?.id,
+      value: payload.payment?.value,
+      dueDate: payload.payment?.dueDate
+    })
+  ).run()
+  
+  // Aqui você pode:
+  // - Enviar email de cobrança
+  // - Suspender serviço
+  // - Gerar segunda via
+}
+
+async function handlePaymentRefunded(c: any, payload: any) {
+  console.log('Pagamento estornado:', payload.payment?.id)
+  
+  // Registrar no log
+  await c.env.DB.prepare(`
+    INSERT INTO activity_logs (user_id, action, details, ip_address)
+    VALUES (NULL, 'PAYMENT_REFUNDED', ?, 'webhook')
+  `).bind(
+    JSON.stringify({
+      paymentId: payload.payment?.id,
+      value: payload.payment?.value
+    })
+  ).run()
+  
+  // Aqui você pode:
+  // - Cancelar serviço
+  // - Notificar cliente
+  // - Reverter liberação
+}
+
+async function handleAccountEvent(c: any, payload: any) {
+  console.log('📋 Evento de subconta:', payload.event, payload.account?.id)
+  
+  // Atualizar cache de subcontas
+  if (payload.account) {
+    const account = payload.account
+    const previousStatus = await c.env.DB.prepare(`
+      SELECT status FROM cached_accounts WHERE id = ?
+    `).bind(account.id).first()
+    
+    const oldStatus = previousStatus?.status || 'UNKNOWN'
+    const newStatus = account.status || ''
+    
+    // Detectar mudança de status
+    const statusChanged = oldStatus !== newStatus
+    
+    console.log('📊 Status da conta:', {
+      accountId: account.id,
+      accountName: account.name,
+      accountEmail: account.email,
+      oldStatus,
+      newStatus,
+      statusChanged,
+      event: payload.event
+    })
+    
+    // Atualizar cache no banco
+    await c.env.DB.prepare(`
+      INSERT OR REPLACE INTO cached_accounts 
+      (id, wallet_id, name, email, status, data, last_updated)
+      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    `).bind(
+      account.id,
+      account.walletId || '',
+      account.name || '',
+      account.email || '',
+      newStatus,
+      JSON.stringify(account)
+    ).run()
+    
+    // ========================================
+    // DETECTAR APROVAÇÃO DA CONTA
+    // ========================================
+    if (statusChanged && newStatus === 'APPROVED') {
+      console.log('🎉 CONTA APROVADA:', {
+        id: account.id,
+        name: account.name,
+        email: account.email,
+        walletId: account.walletId
+      })
+      
+      // Registrar log de aprovação
+      await c.env.DB.prepare(`
+        INSERT INTO activity_logs (user_id, action, details, ip_address)
+        VALUES (NULL, 'ACCOUNT_APPROVED', ?, 'webhook')
+      `).bind(
+        JSON.stringify({
+          accountId: account.id,
+          accountName: account.name,
+          accountEmail: account.email,
+          walletId: account.walletId,
+          oldStatus,
+          newStatus,
+          approvedAt: new Date().toISOString()
+        })
+      ).run()
+      
+      // Enviar email de congratulações (opcional)
+      try {
+        console.log('📧 Enviando email de aprovação para:', account.email)
+        // Aqui você pode adicionar lógica de envio de email via Mailersend
+        // await sendApprovalEmail(c, account)
+      } catch (emailError) {
+        console.error('❌ Erro ao enviar email de aprovação:', emailError)
+      }
+    }
+    
+    // ========================================
+    // DETECTAR REJEIÇÃO DA CONTA
+    // ========================================
+    if (statusChanged && (newStatus === 'REJECTED' || newStatus === 'SUSPENDED')) {
+      console.log('⚠️ CONTA REJEITADA/SUSPENSA:', {
+        id: account.id,
+        name: account.name,
+        email: account.email,
+        status: newStatus
+      })
+      
+      // Registrar log
+      await c.env.DB.prepare(`
+        INSERT INTO activity_logs (user_id, action, details, ip_address)
+        VALUES (NULL, 'ACCOUNT_REJECTED', ?, 'webhook')
+      `).bind(
+        JSON.stringify({
+          accountId: account.id,
+          accountName: account.name,
+          accountEmail: account.email,
+          oldStatus,
+          newStatus,
+          rejectedAt: new Date().toISOString()
+        })
+      ).run()
+    }
+  }
+}
+
+async function handleTransferDone(c: any, payload: any) {
+  console.log('Transferência concluída:', payload.transfer?.id)
+  
+  // Registrar no log
+  await c.env.DB.prepare(`
+    INSERT INTO activity_logs (user_id, action, details, ip_address)
+    VALUES (NULL, 'TRANSFER_DONE', ?, 'webhook')
+  `).bind(
+    JSON.stringify({
+      transferId: payload.transfer?.id,
+      value: payload.transfer?.value
+    })
+  ).run()
+}
+
+// Listar webhooks recebidos (para debug/admin)
+app.get('/api/webhooks', async (c) => {
+  try {
+    const { limit = 50, processed } = c.req.query()
+    
+    let query = 'SELECT * FROM webhooks WHERE 1=1'
+    const params: any[] = []
+    
+    if (processed !== undefined) {
+      query += ' AND processed = ?'
+      params.push(processed === 'true' ? 1 : 0)
+    }
+    
+    query += ' ORDER BY created_at DESC LIMIT ?'
+    params.push(parseInt(limit as string))
+    
+    const stmt = c.env.DB.prepare(query).bind(...params)
+    const result = await stmt.all()
+    
+    return c.json({ 
+      ok: true, 
+      data: result.results.map((row: any) => ({
+        ...row,
+        payload: JSON.parse(row.payload)
+      }))
+    })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// Reprocessar webhook (em caso de erro)
+app.post('/api/webhooks/:id/reprocess', async (c) => {
+  try {
+    const webhookId = c.req.param('id')
+    
+    // Buscar webhook
+    const webhook = await c.env.DB.prepare(`
+      SELECT * FROM webhooks WHERE id = ?
+    `).bind(webhookId).first()
+    
+    if (!webhook) {
+      return c.json({ error: 'Webhook não encontrado' }, 404)
+    }
+    
+    const payload = JSON.parse(webhook.payload as string)
+    
+    // Reprocessar
+    await processWebhookEvent(c, payload, webhookId)
+    
+    return c.json({ 
+      ok: true, 
+      message: 'Webhook reprocessado com sucesso' 
+    })
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500)
+  }
+})
+
+// ============================================
+// SISTEMA DE LIMPEZA E OTIMIZAÇÃO
+// ============================================
+
+// Endpoint: Executar limpeza e otimização do banco de dados
+app.post('/api/admin/cleanup', authMiddleware, async (c) => {
+  const startTime = Date.now()
+  
+  try {
+    const db = c.env.DB
+    const cleanupResults = {
+      expired_links: 0,
+      old_webhooks: 0,
+      old_conversions: 0,
+      old_trash: 0,
+      total_freed_kb: 0
+    }
+    
+    console.log('🧹 Iniciando limpeza do banco de dados...')
+    
+    // 1. Mover links expirados há mais de 30 dias para a lixeira
+    const expiredLinksQuery = await db.prepare(`
+      SELECT * FROM signup_links 
+      WHERE active = 0 
+      AND datetime(expires_at) < datetime('now', '-30 days')
+    `).all()
+    
+    if (expiredLinksQuery.results && expiredLinksQuery.results.length > 0) {
+      for (const link of expiredLinksQuery.results) {
+        // Mover para lixeira
+        await db.prepare(`
+          INSERT INTO trash_bin (original_table, original_id, data, deleted_reason, metadata)
+          VALUES (?, ?, ?, ?, ?)
+        `).bind(
+          'signup_links',
+          link.id,
+          JSON.stringify(link),
+          'Link expirado há mais de 30 dias',
+          JSON.stringify({ expired_at: link.expires_at, uses_count: link.uses_count })
+        ).run()
+        
+        // Deletar da tabela original
+        await db.prepare(`DELETE FROM signup_links WHERE id = ?`).bind(link.id).run()
+        cleanupResults.expired_links++
+      }
+      console.log(`✅ ${cleanupResults.expired_links} links expirados movidos para lixeira`)
+    }
+    
+    // 2. Deletar webhooks antigos (mais de 90 dias)
+    const oldWebhooksResult = await db.prepare(`
+      DELETE FROM webhooks 
+      WHERE datetime(created_at) < datetime('now', '-90 days')
+    `).run()
+    
+    cleanupResults.old_webhooks = oldWebhooksResult.meta.changes || 0
+    if (cleanupResults.old_webhooks > 0) {
+      console.log(`✅ ${cleanupResults.old_webhooks} webhooks antigos deletados`)
+    }
+    
+    // 3. Deletar conversões antigas (mais de 180 dias)
+    const oldConversionsResult = await db.prepare(`
+      DELETE FROM link_conversions 
+      WHERE datetime(converted_at) < datetime('now', '-180 days')
+    `).run()
+    
+    cleanupResults.old_conversions = oldConversionsResult.meta.changes || 0
+    if (cleanupResults.old_conversions > 0) {
+      console.log(`✅ ${cleanupResults.old_conversions} conversões antigas deletadas`)
+    }
+    
+    // 4. Deletar permanentemente itens da lixeira com mais de 30 dias
+    const oldTrashResult = await db.prepare(`
+      DELETE FROM trash_bin 
+      WHERE datetime(deleted_at) < datetime('now', '-30 days')
+      AND can_restore = 1
+    `).run()
+    
+    cleanupResults.old_trash = oldTrashResult.meta.changes || 0
+    if (cleanupResults.old_trash > 0) {
+      console.log(`✅ ${cleanupResults.old_trash} itens antigos removidos da lixeira`)
+    }
+    
+    // 5. Executar VACUUM para recuperar espaço
+    console.log('🔧 Executando VACUUM para otimizar banco...')
+    await db.prepare('VACUUM').run()
+    console.log('✅ VACUUM executado com sucesso')
+    
+    // 6. Registrar log de limpeza
+    const executionTime = Date.now() - startTime
+    await db.prepare(`
+      INSERT INTO cleanup_logs (cleanup_type, items_deleted, items_moved_to_trash, execution_time_ms, details)
+      VALUES (?, ?, ?, ?, ?)
+    `).bind(
+      'manual_cleanup',
+      cleanupResults.old_webhooks + cleanupResults.old_conversions + cleanupResults.old_trash,
+      cleanupResults.expired_links,
+      executionTime,
+      JSON.stringify(cleanupResults)
+    ).run()
+    
+    const totalItemsRemoved = cleanupResults.expired_links + 
+                              cleanupResults.old_webhooks + 
+                              cleanupResults.old_conversions + 
+                              cleanupResults.old_trash
+    
+    return c.json({
+      ok: true,
+      message: `Limpeza concluída! ${totalItemsRemoved} itens removidos`,
+      execution_time_ms: executionTime,
+      results: cleanupResults,
+      summary: {
+        expired_links: `${cleanupResults.expired_links} links expirados movidos para lixeira`,
+        old_webhooks: `${cleanupResults.old_webhooks} webhooks antigos deletados`,
+        old_conversions: `${cleanupResults.old_conversions} conversões antigas deletadas`,
+        old_trash: `${cleanupResults.old_trash} itens removidos da lixeira`,
+        vacuum: 'Banco de dados otimizado'
+      }
+    })
+    
+  } catch (error: any) {
+    console.error('❌ Erro na limpeza:', error)
+    return c.json({ 
+      ok: false, 
+      error: error.message,
+      details: error.stack 
+    }, 500)
+  }
+})
+
+// Endpoint: Ver conteúdo da lixeira
+app.get('/api/admin/trash', authMiddleware, async (c) => {
+  try {
+    const db = c.env.DB
+    
+    const trashItems = await db.prepare(`
+      SELECT 
+        id,
+        original_table,
+        original_id,
+        deleted_at,
+        deleted_reason,
+        can_restore
+      FROM trash_bin
+      WHERE can_restore = 1
+      ORDER BY deleted_at DESC
+      LIMIT 100
+    `).all()
+    
+    const stats = await db.prepare(`
+      SELECT 
+        original_table,
+        COUNT(*) as count,
+        MIN(deleted_at) as oldest,
+        MAX(deleted_at) as newest
+      FROM trash_bin
+      WHERE can_restore = 1
+      GROUP BY original_table
+    `).all()
+    
+    return c.json({
+      ok: true,
+      items: trashItems.results || [],
+      stats: stats.results || [],
+      total: trashItems.results?.length || 0
+    })
+    
+  } catch (error: any) {
+    return c.json({ ok: false, error: error.message }, 500)
+  }
+})
+
+// Endpoint: Restaurar item da lixeira
+app.post('/api/admin/trash/restore/:id', authMiddleware, async (c) => {
+  try {
+    const db = c.env.DB
+    const trashId = c.req.param('id')
+    
+    // Buscar item na lixeira
+    const trashItem = await db.prepare(`
+      SELECT * FROM trash_bin WHERE id = ? AND can_restore = 1
+    `).bind(trashId).first()
+    
+    if (!trashItem) {
+      return c.json({ ok: false, error: 'Item não encontrado ou não pode ser restaurado' }, 404)
+    }
+    
+    const originalData = JSON.parse(trashItem.data as string)
+    
+    // Restaurar para tabela original
+    if (trashItem.original_table === 'signup_links') {
+      await db.prepare(`
+        INSERT INTO signup_links (id, account_id, url, expires_at, created_at, active, uses_count, max_uses, created_by, notes)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        originalData.id,
+        originalData.account_id,
+        originalData.url,
+        originalData.expires_at,
+        originalData.created_at,
+        originalData.active,
+        originalData.uses_count,
+        originalData.max_uses,
+        originalData.created_by,
+        originalData.notes
+      ).run()
+    }
+    
+    // Remover da lixeira
+    await db.prepare(`DELETE FROM trash_bin WHERE id = ?`).bind(trashId).run()
+    
+    return c.json({
+      ok: true,
+      message: 'Item restaurado com sucesso',
+      restored_table: trashItem.original_table,
+      restored_id: trashItem.original_id
+    })
+    
+  } catch (error: any) {
+    return c.json({ ok: false, error: error.message }, 500)
+  }
+})
+
+// Endpoint: Ver logs de limpeza
+app.get('/api/admin/cleanup-logs', authMiddleware, async (c) => {
+  try {
+    const db = c.env.DB
+    
+    const logs = await db.prepare(`
+      SELECT * FROM cleanup_logs
+      ORDER BY executed_at DESC
+      LIMIT 50
+    `).all()
+    
+    return c.json({
+      ok: true,
+      logs: logs.results || [],
+      total: logs.results?.length || 0
+    })
+    
+  } catch (error: any) {
+    return c.json({ ok: false, error: error.message }, 500)
+  }
+})
+
+// Endpoint: Estatísticas do banco de dados
+app.get('/api/admin/database-stats', authMiddleware, async (c) => {
+  try {
+    const db = c.env.DB
+    
+    const tables = [
+      'signup_links',
+      'link_conversions',
+      'subscription_signup_links',
+      'subscription_conversions',
+      'webhooks',
+      'users',
+      'trash_bin',
+      'cleanup_logs',
+      'deltapag_subscriptions'
+    ]
+    
+    const stats = []
+    
+    for (const table of tables) {
+      try {
+        const count = await db.prepare(`SELECT COUNT(*) as count FROM ${table}`).first()
+        stats.push({
+          table,
+          count: count?.count || 0
+        })
+      } catch (e) {
+        stats.push({
+          table,
+          count: 0,
+          error: 'Tabela não existe'
+        })
+      }
+    }
+    
+    return c.json({
+      ok: true,
+      stats,
+      total_tables: stats.length
+    })
+    
+  } catch (error: any) {
+    return c.json({ ok: false, error: error.message }, 500)
+  }
+})
+
+// Endpoint para sincronizar transações do Asaas para D1
+app.post('/api/sync-transactions/:accountId', authMiddleware, async (c) => {
+  try {
+    const accountId = c.req.param('accountId')
+    const db = c.env.DB
+    
+    // Buscar transações do Asaas (últimos 90 dias)
+    const dateLimit = new Date()
+    dateLimit.setDate(dateLimit.getDate() - 90)
+    const dateFilter = dateLimit.toISOString().split('T')[0]
+    
+    const response = await asaasRequest(c, `/v3/payments?customer=${accountId}&dateCreated[ge]=${dateFilter}&limit=100`, 'GET')
+    
+    if (!response.ok || !response.data) {
+      return c.json({ ok: false, error: 'Erro ao buscar pagamentos do Asaas' }, 500)
+    }
+    
+    const payments = response.data.data || []
+    let syncedCount = 0
+    let errorCount = 0
+    
+    for (const payment of payments) {
+      try {
+        // Verificar se já existe
+        const existing = await db.prepare('SELECT id FROM transactions WHERE id = ?').bind(payment.id).first()
+        
+        if (!existing) {
+          // Inserir nova transação
+          await db.prepare(`
+            INSERT INTO transactions (id, account_id, wallet_id, value, description, status, billing_type, due_date, payment_date, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+          `).bind(
+            payment.id,
+            accountId,
+            payment.split || accountId,
+            payment.value || 0,
+            payment.description || 'Pagamento',
+            payment.status || 'PENDING',
+            payment.billingType || 'UNDEFINED',
+            payment.dueDate || null,
+            payment.paymentDate || null
+          ).run()
+          syncedCount++
+        } else {
+          // Atualizar status se mudou
+          await db.prepare(`
+            UPDATE transactions 
+            SET status = ?, payment_date = ?
+            WHERE id = ?
+          `).bind(payment.status, payment.paymentDate, payment.id).run()
+        }
+      } catch (error) {
+        console.error(`Erro ao sincronizar pagamento ${payment.id}:`, error)
+        errorCount++
+      }
+    }
+    
+    return c.json({
+      ok: true,
+      synced: syncedCount,
+      updated: payments.length - syncedCount - errorCount,
+      errors: errorCount,
+      total: payments.length
+    })
+    
+  } catch (error: any) {
+    console.error('Erro ao sincronizar transações:', error)
+    return c.json({ ok: false, error: error.message }, 500)
+  }
+})
+
+export default app

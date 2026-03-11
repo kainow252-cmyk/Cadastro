@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+.wrangler/
+*.local
+
+# Environment variables
+.env
+.dev.vars
+
+# Logs
+*.log
+logs/
+*.pid
+*.seed
+*.pid.lock
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Backup files
+*.backup
+*.bak
+
+# Temporary files
+*.tmp
+tmp/
+
+# Database files
+*.sqlite
+*.db
+
+# Documentation archive
+docs/archive/
+.dev.vars

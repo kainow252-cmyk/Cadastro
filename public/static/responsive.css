@@ -1,0 +1,1395 @@
+/* ========================================
+   SISTEMA RESPONSIVO COMPLETO
+   Mobile First - Web, Tablet, Mobile
+   ======================================== */
+
+/* Reset e Base */
+* {
+    box-sizing: border-box;
+}
+
+body {
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-size: 14px;
+    margin: 0;
+    padding: 0;
+}
+
+/* Ajustes globais de tamanho de fonte */
+h1, h2, h3, h4, h5, h6 {
+    line-height: 1.3;
+}
+
+/* Reduzir tamanhos de fonte globalmente */
+.text-xs {
+    font-size: 0.7rem !important;
+}
+
+.text-sm {
+    font-size: 0.825rem !important;
+}
+
+.text-base {
+    font-size: 0.875rem !important;
+}
+
+/* Container mais compacto - SEM espaços laterais desperdiçados */
+.max-w-7xl {
+    max-width: 100% !important;
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+}
+
+/* Remover padding vertical excessivo */
+.py-8 {
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+}
+
+/* Seções sem espaço no topo */
+.section {
+    padding-top: 0 !important;
+    margin-top: 0 !important;
+    position: relative !important;
+    z-index: 1 !important;
+}
+
+/* Garantir que modais fiquem SEMPRE por cima */
+[id$="-modal"], .modal {
+    z-index: 99999 !important;
+}
+
+/* Botão voltar compacto */
+button[onclick*="showSection('dashboard')"] {
+    font-size: 0.7rem !important;
+    padding: 0.25rem 0.5rem !important;
+}
+
+/* Cards ultra compactos */
+.rounded-lg, .rounded-xl {
+    padding: 0.5rem !important;
+}
+
+/* Margens entre cards */
+.mb-6 {
+    margin-bottom: 0.5rem !important;
+}
+
+.mb-4 {
+    margin-bottom: 0.25rem !important;
+}
+
+.mb-3 {
+    margin-bottom: 0.25rem !important;
+}
+
+/* Gap entre elementos */
+.gap-6 {
+    gap: 0.5rem !important;
+}
+
+.gap-4 {
+    gap: 0.25rem !important;
+}
+
+.gap-3 {
+    gap: 0.25rem !important;
+}
+
+/* Navbar sem espaço extra */
+nav {
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+nav > div {
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+}
+
+/* Scroll suave */
+html {
+    scroll-behavior: smooth;
+}
+
+/* ========================================
+   BOTÃO HAMBÚRGUER - MOBILE/TABLET
+   ======================================== */
+#hamburger-btn {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    background: transparent !important;
+    color: #1f2937 !important;
+    width: 40px !important;
+    height: 40px !important;
+    border-radius: 8px !important;
+    border: none !important;
+    cursor: pointer !important;
+    transition: all 0.3s ease !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+#hamburger-btn:hover {
+    background: #f3f4f6 !important;
+}
+
+#hamburger-btn i {
+    font-size: 24px !important;
+    color: #2563eb !important;
+}
+
+/* Cards de status API - ultra compactos */
+.bg-gradient-to-r {
+    padding: 0.375rem 0.5rem !important;
+}
+
+/* Inputs e botões menores */
+input[type="text"],
+input[type="date"],
+select {
+    padding: 0.25rem 0.5rem !important;
+    font-size: 0.75rem !important;
+    height: 32px !important;
+}
+
+button {
+    padding: 0.375rem 0.75rem !important;
+    font-size: 0.75rem !important;
+}
+
+/* Títulos menores */
+h1 {
+    font-size: 1.25rem !important;
+    margin-bottom: 0.25rem !important;
+}
+
+h2 {
+    font-size: 1rem !important;
+    margin-bottom: 0.25rem !important;
+}
+
+h3 {
+    font-size: 0.875rem !important;
+    margin-bottom: 0.25rem !important;
+}
+
+/* Código curl menor */
+pre, code {
+    font-size: 0.65rem !important;
+    padding: 0.25rem !important;
+}
+
+/* Shadow reduzida */
+.shadow-lg {
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important;
+}
+
+/* Cards de subconta ultra compactos */
+#accounts-list > div {
+    padding: 0.5rem !important;
+}
+
+#accounts-list .text-lg {
+    font-size: 0.875rem !important;
+}
+
+#accounts-list .text-sm {
+    font-size: 0.7rem !important;
+}
+
+#accounts-list .text-xs {
+    font-size: 0.65rem !important;
+}
+
+#accounts-list .p-4 {
+    padding: 0.5rem !important;
+}
+
+#accounts-list .p-6 {
+    padding: 0.5rem !important;
+}
+
+#accounts-list .gap-4 {
+    gap: 0.5rem !important;
+}
+
+#accounts-list .gap-3 {
+    gap: 0.375rem !important;
+}
+
+#accounts-list button {
+    padding: 0.25rem 0.5rem !important;
+    font-size: 0.7rem !important;
+}
+
+#accounts-list i {
+    font-size: 0.875rem !important;
+}
+
+/* Desktop - ocultar hambúrguer */
+@media (min-width: 1024px) {
+    #hamburger-btn {
+        display: none !important;
+    }
+}
+
+/* Menu lateral */
+#side-menu {
+    position: fixed !important;
+    inset: 0 !important;
+    background: rgba(0,0,0,0.5) !important;
+    z-index: 9998 !important;
+}
+
+#side-menu.hidden {
+    display: none !important;
+}
+
+#side-menu > div {
+    position: fixed !important;
+    right: 0 !important;
+    top: 0 !important;
+    height: 100vh !important;
+    width: 280px !important;
+    background: white !important;
+    box-shadow: -4px 0 20px rgba(0,0,0,0.2) !important;
+    overflow-y: auto !important;
+}
+
+@media (min-width: 1024px) {
+    #side-menu {
+        display: none !important;
+    }
+}
+
+/* Evitar quebra de layout */
+img, video, canvas {
+    max-width: 100%;
+    height: auto;
+}
+
+/* ========================================
+   MOBILE APENAS (até 640px)
+   ======================================== */
+@media (max-width: 640px) {
+    /* Navbar compacta */
+    nav .flex {
+        flex-direction: row;
+        gap: 0.5rem;
+    }
+    
+    nav .text-xl {
+        font-size: 1rem;
+    }
+    
+    /* Container com padding reduzido */
+    .max-w-7xl {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+    
+    /* Ações Rápidas - Botões empilhados */
+    .flex.flex-wrap.gap-3 {
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .flex.flex-wrap.gap-3 > button {
+        width: 100%;
+    }
+    
+    /* Header Dashboard */
+    .bg-gradient-to-r.from-blue-600.to-purple-600 > div {
+        flex-direction: column;
+        text-align: center;
+    }
+    
+    /* Cards de Estatísticas - 1 coluna */
+    .grid.grid-cols-1.md\:grid-cols-2.lg\:grid-cols-4 {
+        grid-template-columns: 1fr !important;
+    }
+    
+    /* Grid 2 colunas vira 1 */
+    .grid.grid-cols-1.md\:grid-cols-2 {
+        grid-template-columns: 1fr !important;
+    }
+    
+    /* Grid 3 colunas vira 1 */
+    .grid.grid-cols-1.md\:grid-cols-3 {
+        grid-template-columns: 1fr !important;
+    }
+    
+    /* Tabelas com scroll horizontal */
+    table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    /* Inputs e formulários full width */
+    input, select, textarea {
+        width: 100%;
+        font-size: 16px; /* Evita zoom no iOS */
+    }
+    
+    /* Modais fullscreen */
+    .fixed.inset-0 > div {
+        max-width: 100% !important;
+        max-height: 100vh !important;
+        margin: 0 !important;
+        border-radius: 0 !important;
+    }
+    
+    /* Padding reduzido */
+    .p-8 {
+        padding: 1rem !important;
+    }
+    
+    .p-6 {
+        padding: 1rem !important;
+    }
+    
+    /* Textos menores */
+    .text-3xl {
+        font-size: 1.5rem !important;
+    }
+    
+    .text-2xl {
+        font-size: 1.25rem !important;
+    }
+    
+    /* Botões com área de toque adequada */
+    button, a {
+        min-height: 44px;
+        padding: 0.75rem 1rem;
+    }
+    
+    /* Cards de subconta */
+    .bg-white.rounded-lg.shadow-md.p-6 {
+        padding: 1rem !important;
+    }
+    
+    /* Grids de formulário */
+    .grid.grid-cols-1.md\:grid-cols-12 {
+        grid-template-columns: 1fr !important;
+    }
+    
+    .md\:col-span-6,
+    .md\:col-span-3,
+    .md\:col-span-2 {
+        grid-column: span 1 !important;
+    }
+}
+
+/* ========================================
+   TABLET APENAS (641px - 1024px)
+   ======================================== */
+@media (min-width: 641px) and (max-width: 1024px) {
+    /* Container com padding médio */
+    .max-w-7xl {
+        padding-left: 2rem;
+        padding-right: 2rem;
+    }
+    
+    /* Cards de Estatísticas - 2 colunas */
+    .grid.grid-cols-1.md\:grid-cols-2.lg\:grid-cols-4 {
+        grid-template-columns: repeat(2, 1fr) !important;
+    }
+    
+    /* Ações Rápidas - 3 por linha */
+    .flex.flex-wrap.gap-3 {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+    }
+    
+    /* Grid 3 colunas vira 2 */
+    .grid.grid-cols-1.md\:grid-cols-3 {
+        grid-template-columns: repeat(2, 1fr) !important;
+    }
+    
+    /* Modais com 90% da largura */
+    .fixed.inset-0 > div {
+        max-width: 90% !important;
+    }
+    
+    /* Padding médio */
+    .p-8 {
+        padding: 1.5rem !important;
+    }
+}
+
+/* ========================================
+   DESKTOP (acima de 1024px) - LAYOUT COMPACTO E RESPONSIVO
+   ======================================== */
+@media (min-width: 1025px) {
+    /* Container SEM padding lateral desperdiçado */
+    .max-w-7xl {
+        max-width: 100% !important;
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+    }
+    
+    /* Remover espaço superior */
+    .py-8 {
+        padding-top: 0.25rem !important;
+        padding-bottom: 0.25rem !important;
+    }
+    
+    /* Cards de Estatísticas - 4 colunas */
+    .grid.grid-cols-1.md\:grid-cols-2.lg\:grid-cols-4 {
+        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+        gap: 1rem !important;
+    }
+    
+    /* Grid 3 colunas */
+    .grid.grid-cols-1.md\:grid-cols-3 {
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    }
+    
+    /* Grid 2 colunas */
+    .grid.grid-cols-1.md\:grid-cols-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+    
+    /* Ações Rápidas em linha - mais compacto */
+    .flex.flex-wrap.gap-3 {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        flex-direction: row !important;
+        gap: 0.75rem !important;
+        justify-content: center !important;
+    }
+    
+    .flex.flex-wrap.gap-3 > button {
+        padding: 0.625rem 1rem !important;
+        font-size: 0.875rem !important;
+    }
+    
+    /* Textos REDUZIDOS para caber melhor */
+    .text-3xl {
+        font-size: 1.5rem !important;
+        line-height: 2rem !important;
+    }
+    
+    .text-2xl {
+        font-size: 1.25rem !important;
+        line-height: 1.75rem !important;
+    }
+    
+    .text-xl {
+        font-size: 1.125rem !important;
+        line-height: 1.75rem !important;
+    }
+    
+    .text-lg {
+        font-size: 1rem !important;
+        line-height: 1.5rem !important;
+    }
+    
+    /* Cards compactos */
+    .p-8 {
+        padding: 1.25rem !important;
+    }
+    
+    .p-6 {
+        padding: 1rem !important;
+    }
+    
+    /* Ícones menores */
+    .text-3xl.fas,
+    .text-3xl.far,
+    .text-3xl.fab {
+        font-size: 2rem !important;
+    }
+    
+    /* Navbar em linha */
+    nav .flex {
+        flex-direction: row !important;
+    }
+    
+    /* Header dashboard compacto */
+    .bg-gradient-to-r.from-blue-600.to-purple-600 {
+        padding: 1.25rem !important;
+    }
+    
+    .bg-gradient-to-r.from-blue-600.to-purple-600 > div {
+        flex-direction: row !important;
+    }
+    
+    /* Números dos cards menores mas visíveis */
+    .grid .text-3xl.font-bold {
+        font-size: 2rem !important;
+    }
+    
+    /* Cards de estatísticas mais compactos */
+    .bg-white.rounded-lg.shadow-md.p-6 {
+        padding: 1rem !important;
+    }
+    
+    .bg-white.rounded-lg.shadow-md.p-6 .text-sm {
+        font-size: 0.8rem !important;
+    }
+}
+
+/* ========================================
+   LANDSCAPE em Mobile
+   ======================================== */
+@media (max-width: 640px) and (orientation: landscape) {
+    .p-8, .py-8 {
+        padding: 0.5rem !important;
+    }
+}
+
+/* ========================================
+   COMPONENTES ESPECÍFICOS
+   ======================================== */
+
+/* Dashboard - Ajustes globais - MÁXIMO COMPACTO */
+.space-y-6 {
+    gap: 0.5rem !important;
+}
+
+.space-y-6 > * + * {
+    margin-top: 0.5rem !important;
+}
+
+/* Reduzir espaçamento entre seções */
+.mb-6 {
+    margin-bottom: 0.5rem !important;
+}
+
+/* Grid de cards com gap MÍNIMO */
+.grid.gap-6 {
+    gap: 0.5rem !important;
+}
+
+/* Remover margens laterais dos containers */
+div[class*="mx-auto"] {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+}
+
+/* Remover padding superior da página */
+.py-8 {
+    padding-top: 0.25rem !important;
+    padding-bottom: 0.25rem !important;
+}
+
+/* Cards de estatísticas MUITO compactos */
+.border-l-4.hover\:shadow-lg {
+    min-height: auto !important;
+    padding: 0.75rem !important;
+}
+
+.bg-white.rounded-lg.shadow-md.p-6.border-l-4 {
+    padding: 0.75rem !important;
+}
+
+/* Títulos dos cards menores */
+.text-sm.font-medium.text-gray-600 {
+    font-size: 0.7rem !important;
+    margin-bottom: 0.25rem !important;
+    line-height: 1.2 !important;
+}
+
+/* Números grandes nos cards - MAIS compactos */
+p.text-3xl.font-bold {
+    font-size: 1.5rem !important;
+    line-height: 1.5rem !important;
+    margin: 0.25rem 0 !important;
+}
+
+/* Descrições dos cards */
+.text-xs.text-gray-500,
+.text-xs.text-green-600 {
+    font-size: 0.65rem !important;
+    margin-top: 0.25rem !important;
+    line-height: 1.2 !important;
+}
+
+/* Ícones nos cards menores */
+.bg-blue-100.rounded-full.p-4,
+.bg-green-100.rounded-full.p-4,
+.bg-yellow-100.rounded-full.p-4,
+.bg-purple-100.rounded-full.p-4 {
+    padding: 0.625rem !important;
+}
+
+.bg-blue-100 i.text-3xl,
+.bg-green-100 i.text-3xl,
+.bg-yellow-100 i.text-3xl,
+.bg-purple-100 i.text-3xl {
+    font-size: 1.5rem !important;
+}
+
+/* Botões de ação MUITO compactos */
+button {
+    font-size: 0.8rem !important;
+    padding: 0.5rem 0.75rem !important;
+    line-height: 1.2rem !important;
+}
+
+/* Ícones nos botões menores */
+button i.fas,
+button i.far,
+button i.fab {
+    font-size: 0.8rem !important;
+    margin-right: 0.25rem !important;
+}
+
+/* Botões de ação rápida ainda menores */
+.flex.flex-wrap.gap-3 > button {
+    padding: 0.5rem 0.75rem !important;
+    font-size: 0.75rem !important;
+}
+
+.flex.flex-wrap.gap-3 > button i {
+    font-size: 0.875rem !important;
+}
+
+/* Seção de ações rápidas com menos padding e margin */
+.bg-white.rounded-lg.shadow-md.p-6.mb-6 {
+    padding: 0.5rem !important;
+    margin-bottom: 0.5rem !important;
+    margin-top: 0 !important;
+}
+
+/* Remover espaços em branco extras */
+.bg-white.rounded-lg.shadow-md.p-6 {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+}
+
+/* Título "Ações Rápidas" e outros títulos menores */
+h3.text-lg.font-bold {
+    font-size: 0.875rem !important;
+    margin-bottom: 0.5rem !important;
+}
+
+/* Labels de formulários menores */
+label {
+    font-size: 0.8rem !important;
+    line-height: 1.3 !important;
+}
+
+label.text-sm {
+    font-size: 0.75rem !important;
+}
+
+label.text-xs {
+    font-size: 0.7rem !important;
+}
+
+/* Inputs e selects mais compactos */
+input[type="text"],
+input[type="email"],
+input[type="number"],
+input[type="date"],
+input[type="tel"],
+select,
+textarea {
+    padding: 0.5rem 0.75rem !important;
+    font-size: 0.825rem !important;
+    line-height: 1.3 !important;
+}
+
+/* Placeholders menores */
+::placeholder {
+    font-size: 0.8rem !important;
+    opacity: 0.6;
+}
+
+/* Cards de conteúdo mais compactos */
+.bg-white.rounded-lg.shadow {
+    padding: 0.75rem !important;
+}
+
+.bg-white.rounded-lg.shadow .p-6 {
+    padding: 0.75rem !important;
+}
+
+.bg-white.rounded-lg.shadow .p-4 {
+    padding: 0.5rem !important;
+}
+
+/* Descrições e textos auxiliares */
+.text-gray-500,
+.text-gray-600 {
+    font-size: 0.75rem !important;
+    line-height: 1.3 !important;
+}
+
+/* Código/URL displays */
+code, pre {
+    font-size: 0.75rem !important;
+    line-height: 1.4 !important;
+}
+
+/* Badges e tags */
+.bg-green-100,
+.bg-blue-100,
+.bg-yellow-100,
+.bg-red-100,
+.bg-purple-100 {
+    font-size: 0.7rem !important;
+    padding: 0.25rem 0.5rem !important;
+}
+
+/* Header "Visão Geral" MUITO compacto */
+h2.text-3xl.font-bold {
+    font-size: 1.25rem !important;
+    margin-bottom: 0.25rem !important;
+    line-height: 1.5rem !important;
+}
+
+/* Todos os h2 (títulos de seções) */
+h2.text-2xl,
+h2.text-xl {
+    font-size: 1.125rem !important;
+    line-height: 1.5rem !important;
+    margin-bottom: 0.5rem !important;
+}
+
+/* Todos os h3 (sub-títulos) */
+h3.text-xl,
+h3.text-lg {
+    font-size: 1rem !important;
+    line-height: 1.4rem !important;
+    margin-bottom: 0.375rem !important;
+}
+
+/* Descrição do header menor */
+.text-blue-100,
+.text-green-100,
+.text-orange-100,
+.text-purple-100,
+.text-cyan-100 {
+    font-size: 0.75rem !important;
+    line-height: 1.2 !important;
+}
+
+/* Headers de seções com gradiente - TODOS */
+.bg-gradient-to-r {
+    padding: 0.875rem 1rem !important;
+}
+
+.bg-gradient-to-r.from-blue-600.to-purple-600,
+.bg-gradient-to-r.from-green-600.to-teal-600,
+.bg-gradient-to-r.from-orange-600.to-red-600,
+.bg-gradient-to-r.from-purple-600.to-pink-600,
+.bg-gradient-to-r.from-cyan-600.to-blue-600 {
+    padding: 0.875rem 1rem !important;
+}
+
+/* Ícones no header menores */
+h2 i.fas,
+h3 i.fas {
+    font-size: 1.125rem !important;
+    margin-right: 0.375rem !important;
+}
+
+/* Gráficos e charts */
+canvas {
+    max-height: 300px !important;
+}
+
+/* Modal de Banner - RESPONSIVO COMPLETO */
+@media (max-width: 640px) {
+    /* Modal full screen em mobile */
+    #banner-modal > div {
+        max-width: 100% !important;
+        max-height: 100vh !important;
+        margin: 0 !important;
+        border-radius: 0 !important;
+        overflow-y: auto !important;
+    }
+    
+    /* Grid do formulário vira 1 coluna */
+    #banner-modal .grid.grid-cols-1.md\:grid-cols-2 {
+        grid-template-columns: 1fr !important;
+        gap: 1rem !important;
+    }
+    
+    /* Preview do banner responsivo */
+    #banner-preview {
+        height: 300px !important;
+        width: 100% !important;
+    }
+    
+    /* Botões empilhados */
+    #banner-modal .flex.gap-3 {
+        flex-direction: column !important;
+    }
+    
+    #banner-modal .flex.gap-3 > button {
+        width: 100% !important;
+    }
+    
+    /* Header do modal */
+    #banner-modal .text-2xl {
+        font-size: 1.25rem !important;
+    }
+    
+    /* Inputs e labels */
+    #banner-modal label {
+        font-size: 0.75rem !important;
+    }
+    
+    #banner-modal input,
+    #banner-modal select,
+    #banner-modal textarea {
+        font-size: 0.875rem !important;
+        padding: 0.5rem !important;
+    }
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+    /* Tablet - Modal com 90% da largura */
+    #banner-modal > div {
+        max-width: 90% !important;
+    }
+    
+    /* Preview menor em tablet */
+    #banner-preview {
+        max-height: 400px !important;
+    }
+}
+
+/* Preview do banner - garantir aspect ratio em todos os tamanhos */
+#banner-preview {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    min-height: 250px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#banner-preview > div {
+    width: 100%;
+    height: 100%;
+}
+
+/* Garantir que textos não quebrem layout */
+#banner-preview .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* Textos responsivos no preview */
+@media (max-width: 640px) {
+    #banner-preview {
+        min-height: 280px;
+        max-height: 350px;
+    }
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+    #banner-preview {
+        min-height: 350px;
+        max-height: 450px;
+    }
+}
+
+@media (min-width: 1025px) {
+    #banner-preview {
+        min-height: 400px;
+        max-height: 600px;
+    }
+}
+
+/* Navbar Sticky */
+nav {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+}
+
+/* ========================================
+   UTILITÁRIOS
+   ======================================== */
+
+/* Esconder em mobile */
+@media (max-width: 640px) {
+    .hide-mobile {
+        display: none !important;
+    }
+    
+    .show-mobile {
+        display: block !important;
+    }
+}
+
+@media (min-width: 641px) {
+    .hide-mobile {
+        display: block !important;
+    }
+    
+    .show-mobile {
+        display: none !important;
+    }
+}
+
+/* ========================================
+   ACESSIBILIDADE
+   ======================================== */
+
+/* Foco visível */
+button:focus,
+a:focus,
+input:focus,
+select:focus,
+textarea:focus {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+}
+
+/* Alto contraste */
+@media (prefers-contrast: high) {
+    button {
+        border: 2px solid currentColor;
+    }
+}
+
+/* Respeitar preferências de animação */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* ========================================
+   IMPRESSÃO
+   ======================================== */
+@media print {
+    nav, .no-print {
+        display: none !important;
+    }
+    
+    body {
+        background: white !important;
+    }
+}
+
+/* ========================================
+   AJUSTES GLOBAIS PARA TODAS AS SEÇÕES
+   (Relatórios, APIs Externas, Links Pagamento, DeltaPag)
+   ======================================== */
+
+/* Headers de todas as seções - MESMO ESTILO DO DASHBOARD */
+#reports-section .bg-white.rounded-lg.shadow .p-6,
+#api-links-section .bg-white.rounded-lg.shadow .p-6,
+#api-links-section .bg-white.rounded-lg.shadow-lg .p-6,
+#payment-links-section .bg-white.rounded-lg.shadow .p-6,
+#deltapag-section .bg-white.rounded-lg.shadow .p-6 {
+    padding: 0.75rem !important;
+}
+
+/* Títulos de seções (h2) - MESMO TAMANHO DO DASHBOARD */
+#reports-section h2.text-xl,
+#api-links-section h1.text-3xl,
+#api-links-section h3.text-xl,
+#payment-links-section h2.text-xl,
+#deltapag-section h2.text-xl {
+    font-size: 1.25rem !important;
+    line-height: 1.5rem !important;
+    margin-bottom: 0.25rem !important;
+}
+
+/* Sub-títulos (h3) - MESMO TAMANHO DO DASHBOARD */
+#reports-section h3.text-xl,
+#api-links-section h3.text-xl,
+#payment-links-section h3.text-xl,
+#deltapag-section h3.text-xl {
+    font-size: 1rem !important;
+    line-height: 1.4rem !important;
+    margin-bottom: 0.375rem !important;
+}
+
+/* Descrições e parágrafos - MESMO TAMANHO DO DASHBOARD */
+#reports-section .text-gray-600,
+#api-links-section .text-lg,
+#api-links-section .opacity-90,
+#payment-links-section .text-gray-600,
+#deltapag-section .text-gray-600 {
+    font-size: 0.75rem !important;
+    line-height: 1.3 !important;
+}
+
+/* Labels de filtros - MESMO TAMANHO DO DASHBOARD */
+#reports-section label.text-sm,
+#api-links-section label.text-sm,
+#payment-links-section label.text-sm,
+#deltapag-section label.text-sm {
+    font-size: 0.75rem !important;
+    line-height: 1.3 !important;
+}
+
+/* Inputs, selects e áreas de texto - MESMO TAMANHO DO DASHBOARD */
+#reports-section input,
+#reports-section select,
+#api-links-section input,
+#api-links-section select,
+#payment-links-section input,
+#payment-links-section select,
+#deltapag-section input,
+#deltapag-section select {
+    padding: 0.5rem 0.75rem !important;
+    font-size: 0.825rem !important;
+    line-height: 1.3 !important;
+}
+
+/* Botões - MESMO TAMANHO DO DASHBOARD */
+#reports-section button,
+#api-links-section button,
+#payment-links-section button,
+#deltapag-section button {
+    font-size: 0.8rem !important;
+    padding: 0.5rem 0.75rem !important;
+    line-height: 1.2rem !important;
+}
+
+/* Ícones nos botões - MESMO TAMANHO DO DASHBOARD */
+#reports-section button i,
+#api-links-section button i,
+#payment-links-section button i,
+#deltapag-section button i {
+    font-size: 0.8rem !important;
+    margin-right: 0.25rem !important;
+}
+
+/* Headers com gradiente - MESMO PADDING DO DASHBOARD */
+#api-links-section .bg-gradient-to-r,
+#payment-links-section .bg-gradient-to-r,
+#deltapag-section .bg-gradient-to-r {
+    padding: 0.875rem 1rem !important;
+}
+
+/* Padding dos cards - MESMO DO DASHBOARD */
+#reports-section .p-6,
+#api-links-section .p-6,
+#payment-links-section .p-6,
+#deltapag-section .p-6 {
+    padding: 0.75rem !important;
+}
+
+#reports-section .p-8,
+#api-links-section .p-8,
+#payment-links-section .p-8,
+#deltapag-section .p-8 {
+    padding: 0.75rem !important;
+}
+
+/* Grids de filtros - MANTER ESTRUTURA COMPACTA */
+#reports-section .grid,
+#api-links-section .grid,
+#payment-links-section .grid,
+#deltapag-section .grid {
+    gap: 0.5rem !important;
+}
+
+/* Borders - MESMO DO DASHBOARD */
+#reports-section .border-b,
+#api-links-section .border-b,
+#payment-links-section .border-b,
+#deltapag-section .border-b {
+    border-bottom-width: 1px;
+}
+
+/* Background dos filtros - MESMO DO DASHBOARD */
+#reports-section .bg-gray-50,
+#api-links-section .bg-gray-50,
+#payment-links-section .bg-gray-50,
+#deltapag-section .bg-gray-50 {
+    background-color: #f9fafb;
+}
+
+/* Margin bottom reduzido - MESMO DO DASHBOARD */
+#reports-section .mb-6,
+#api-links-section .mb-6,
+#payment-links-section .mb-6,
+#deltapag-section .mb-6 {
+    margin-bottom: 0.5rem !important;
+}
+
+#reports-section .mb-4,
+#api-links-section .mb-4,
+#payment-links-section .mb-4,
+#deltapag-section .mb-4 {
+    margin-bottom: 0.375rem !important;
+}
+
+#reports-section .mb-2,
+#api-links-section .mb-2,
+#payment-links-section .mb-2,
+#deltapag-section .mb-2 {
+    margin-bottom: 0.25rem !important;
+}
+
+/* Cards de API - COMPACTOS */
+#api-links-section .bg-white.rounded-lg.shadow-lg {
+    padding: 0.75rem !important;
+    margin-bottom: 0.5rem !important;
+}
+
+/* Títulos dos cards de API - COMPACTOS */
+#api-links-section .bg-gradient-to-r.from-green-500,
+#api-links-section .bg-gradient-to-r.from-yellow-500,
+#api-links-section .bg-gradient-to-r.from-red-500,
+#api-links-section .bg-gradient-to-r.from-blue-500 {
+    padding: 0.75rem !important;
+}
+
+/* Inputs readonly (URLs de API) - COMPACTOS */
+#api-links-section input[readonly] {
+    padding: 0.375rem 0.5rem !important;
+    font-size: 0.7rem !important;
+}
+
+/* Blocos de código curl - COMPACTOS */
+#api-links-section .bg-gray-800 {
+    padding: 0.5rem !important;
+    font-size: 0.65rem !important;
+}
+
+/* Textos de ícones - COMPACTOS */
+#api-links-section i.fas,
+#reports-section i.fas,
+#payment-links-section i.fas,
+#deltapag-section i.fas {
+    font-size: 0.875rem !important;
+}
+
+/* Botão "Voltar ao Dashboard" - COMPACTO */
+#reports-section .mb-4 button,
+#api-links-section .mb-4 button,
+#payment-links-section .mb-4 button,
+#deltapag-section .mb-4 button {
+    font-size: 0.8rem !important;
+    padding: 0.5rem 0.75rem !important;
+}
+
+/* Área de resultados - COMPACTA */
+#report-results {
+    padding: 0.75rem !important;
+}
+
+#report-results .text-center {
+    padding-top: 1rem !important;
+    padding-bottom: 1rem !important;
+}
+
+#report-results i.text-6xl {
+    font-size: 2.5rem !important;
+    margin-bottom: 0.5rem !important;
+}
+
+#report-results .text-lg {
+    font-size: 0.875rem !important;
+}
+
+/* Grid de cards de API - 2 COLUNAS RESPONSIVO */
+@media (min-width: 1025px) {
+    #api-links-section .grid.grid-cols-1.lg\:grid-cols-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        gap: 0.5rem !important;
+    }
+}
+
+/* Mobile - API Links */
+@media (max-width: 640px) {
+    #api-links-section .grid.grid-cols-1.lg\:grid-cols-2 {
+        grid-template-columns: 1fr !important;
+    }
+    
+    #api-links-section h1.text-3xl {
+        font-size: 1.25rem !important;
+    }
+    
+    #api-links-section .p-8 {
+        padding: 1rem !important;
+    }
+}
+
+/* Tablet - API Links */
+@media (min-width: 641px) and (max-width: 1024px) {
+    #api-links-section .grid.grid-cols-1.lg\:grid-cols-2 {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+/* ========================================
+   COMPACTAÇÃO EXTREMA - CABER TUDO NA TELA
+   ======================================== */
+
+/* Reduzir TODOS os paddings e margins */
+.p-6 {
+    padding: 0.5rem !important;
+}
+
+.p-4 {
+    padding: 0.375rem !important;
+}
+
+.p-3 {
+    padding: 0.25rem !important;
+}
+
+.py-3 {
+    padding-top: 0.25rem !important;
+    padding-bottom: 0.25rem !important;
+}
+
+.px-4 {
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+}
+
+.px-3 {
+    padding-left: 0.375rem !important;
+    padding-right: 0.375rem !important;
+}
+
+.mb-4 {
+    margin-bottom: 0.25rem !important;
+}
+
+.mb-3 {
+    margin-bottom: 0.25rem !important;
+}
+
+.mb-2 {
+    margin-bottom: 0.125rem !important;
+}
+
+/* Títulos ultra compactos */
+.text-2xl {
+    font-size: 1.1rem !important;
+    line-height: 1.3 !important;
+}
+
+.text-xl {
+    font-size: 0.95rem !important;
+    line-height: 1.2 !important;
+}
+
+.text-lg {
+    font-size: 0.9rem !important;
+    line-height: 1.2 !important;
+}
+
+/* Botões compactos */
+button {
+    padding: 0.25rem 0.5rem !important;
+    font-size: 0.75rem !important;
+}
+
+/* Inputs ultra compactos */
+input[type="text"],
+input[type="date"],
+input[type="email"],
+select {
+    padding: 0.25rem 0.5rem !important;
+    font-size: 0.75rem !important;
+    height: auto !important;
+}
+
+/* Cards de status - altura mínima */
+.bg-white.rounded-lg.shadow {
+    min-height: auto !important;
+}
+
+/* Grid com gap ultra pequeno */
+.grid {
+    gap: 0.375rem !important;
+}
+
+/* Headers de seção compactos */
+.bg-gradient-to-r {
+    padding: 0.375rem !important;
+}
+
+/* Código curl menor */
+.bg-gray-800 {
+    padding: 0.25rem !important;
+    font-size: 0.7rem !important;
+}
+
+/* Labels menores */
+label {
+    font-size: 0.7rem !important;
+    margin-bottom: 0.125rem !important;
+}
+
+/* Parágrafos compactos */
+p {
+    line-height: 1.3 !important;
+}
+
+/* Remover espaço entre elementos */
+* + * {
+    margin-top: 0 !important;
+}
+
+/* ========================================
+   DROPDOWN SELECT - Ocultar opções flutuantes
+   ======================================== */
+select {
+    font-size: 0.75rem !important;
+    padding: 0.25rem 0.5rem !important;
+    cursor: pointer !important;
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 9L1 4h10z'/%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 0.5rem center !important;
+    padding-right: 1.75rem !important;
+}
+
+select option {
+    font-size: 0.75rem !important;
+    padding: 0.25rem 0.5rem !important;
+}
+
+/* Remover altura extra do select */
+select {
+    height: 32px !important;
+    line-height: 1.2 !important;
+}
+
+/* ========================================
+   FIX CRÍTICO: Forçar deltapag-section a aparecer
+   ======================================== */
+#deltapag-section:not(.hidden) {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    min-width: 100vw !important;
+    min-height: 100vh !important;
+    max-width: 100vw !important;
+    max-height: 100vh !important;
+    z-index: 9999 !important;
+    background: #f3f4f6 !important;
+    overflow-y: auto !important;
+    margin: 0 !important;
+    padding: 1rem !important;
+    box-sizing: border-box !important;
+}

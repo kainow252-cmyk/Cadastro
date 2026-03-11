@@ -1,0 +1,31 @@
+# ============================================
+# VARIÁVEIS DE AMBIENTE - DESENVOLVIMENTO LOCAL
+# ============================================
+# 
+# INSTRUÇÕES:
+# 1. Copie este arquivo para .dev.vars
+# 2. Substitua os valores com suas credenciais reais
+# 3. NUNCA commite o arquivo .dev.vars (já está no .gitignore)
+#
+# ============================================
+
+# MailerSend (Email)
+MAILERSEND_API_KEY=mlsn.f942bf0f5e66ee0fa1d80d421727ce3cf0b9ef1f9d11c077619dfc91dba99f3c
+MAILERSEND_FROM_EMAIL=noreply@corretoracorporate.com.br
+MAILERSEND_FROM_NAME=Sorteio Loteria Federal
+
+# Asaas (Pagamentos)
+ASAAS_API_KEY=sua_api_key_producao_aqui
+ASAAS_API_URL=https://api.asaas.com/v3
+ASAAS_API_KEY_SANDBOX=sua_api_key_sandbox_aqui
+
+# DeltaPag / OpenPix (Cartões)
+DELTAPAG_API_KEY=sua_deltapag_api_key_aqui
+DELTAPAG_API_URL=https://api.openpix.com.br/api/v1
+
+# JWT (Autenticação)
+JWT_SECRET=sua_chave_secreta_jwt_aqui
+
+# Admin (Login)
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=sua_senha_admin_aqui

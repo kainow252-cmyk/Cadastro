@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "include": ["/*"],
+  "exclude": [
+    "/static/*",
+    "/favicon.svg",
+    "/favicon.ico",
+    "/seed-test.html",
+    "/criar-transacoes-agora.html",
+    "/subscription-signup.html"
+  ]
+}
